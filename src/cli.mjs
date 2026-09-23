@@ -290,7 +290,7 @@ async function main() {
     say(text);
     say(`Relatório guardado em ${file.split(homedir()).join('~')}`);
     say('Não contém código nem valores da app: só o que está acima. Envie-o com a descrição do problema em');
-    say('  https://github.com/deltaxmodules/codeTac_V2/issues/new');
+    say('  https://github.com/deltaxmodules/codetacvibe/issues/new');
     return;
   }
   if (options.sub === 'diagnostico') {
@@ -491,13 +491,13 @@ async function main() {
   const appUrl = found.url ?? `http://localhost:${found.port}/`;
   say('');
   say(`✓ App pronta em ${appUrl} (${seconds()})${minimal ? ' · modo mínimo' : ''}`);
-  if (found.status >= 500) say(`! A página inicial respondeu com erro ${found.status}. Veja as mensagens da app acima (faltam variáveis de ambiente?). O dossiê desse pedido mostra onde falhou.`);
+  if (found.status >= 500) say(`! A página inicial respondeu com erro ${found.status}. Veja as mensagens da app acima (faltam variáveis de ambiente?). O dossier desse pedido mostra onde falhou.`);
   if (found.page) {
     say('  Abra-a no browser e use-a: a barra do CodeTAC aparece no canto inferior direito.');
-    say('  Cada ação (clique, formulário…) fica com um dossiê; a barra abre-o.');
+    say('  Cada ação (clique, formulário…) fica com um dossier; a barra abre-o.');
     if (!options.noOpen && interactive) openBrowser(appUrl);
   } else {
-    say('  Esta app responde sem páginas HTML (uma API). Faça pedidos como de costume; cada pedido fica com um dossiê no painel.');
+    say('  Esta app responde sem páginas HTML (uma API). Faça pedidos como de costume; cada pedido fica com um dossier no painel.');
   }
   say(`  Painel: ${panelUrl}  ·  Terminar: Ctrl+C`);
   say('');
@@ -511,23 +511,23 @@ async function main() {
       if (seenActions.has(id)) continue;
       seenActions.add(id);
       const link = `${panelUrl}/?action=${encodeURIComponent(id)}`;
-      if (!firstShown) { firstShown = true; say(`✓ Primeiro dossiê (${seconds()} desde o comando): ${link}`); }
+      if (!firstShown) { firstShown = true; say(`✓ Primeiro dossier (${seconds()} desde o comando): ${link}`); }
       else say(`• Ação gravada: ${link}`);
     }
     // A page that loads but where nothing is clicked yet (or that fails to
     // render): the dossier of its own load.
     if (!firstShown && summary.firstPage && Date.now() - summary.firstPage.seenAt > 8000) {
       firstShown = true;
-      say(`✓ Primeiro dossiê (${seconds()} desde o comando), o do carregamento da página: ${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}`);
-      say('  Cada clique na app terá o seu próprio dossiê.');
+      say(`✓ Primeiro dossier (${seconds()} desde o comando), o do carregamento da página: ${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}`);
+      say('  Cada clique na app terá o seu próprio dossier.');
     }
     if (!firstShown && summary.firstRequest && !found.page) {
       firstShown = true;
-      say(`✓ Primeiro dossiê (${seconds()} desde o comando): ${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}`);
+      say(`✓ Primeiro dossier (${seconds()} desde o comando): ${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}`);
     }
     if (!silentWarned && !minimal && summary.requests >= 3 && !summary.withFunctions.size && summary.functions === 0) {
       silentWarned = true;
-      say('! Já chegaram pedidos, mas nenhuma função do projeto foi observada. Os dossiês mostram pedidos e fronteiras.');
+      say('! Já chegaram pedidos, mas nenhuma função do projeto foi observada. Os dossiers mostram pedidos e fronteiras.');
       say('  «codetac diagnostico» explica porquê.');
     }
     // A part that fails later with a taken port: its requests could reach the

@@ -11,7 +11,7 @@ labels: incidência
 **O que esperava:**
 
 
-**O que aconteceu** (a mensagem do terminal ou uma captura de ecrã do dossiê):
+**O que aconteceu** (a mensagem do terminal ou uma captura de ecrã do dossier):
 
 
 **Relatório** (cole aqui o resultado de `codetac relatorio`; não contém código nem dados da app):

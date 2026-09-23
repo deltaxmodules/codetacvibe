@@ -94,7 +94,7 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
   if (!minimal) {
     if (summary.files) ok(`Ficheiros do projeto preparados: ${summary.files} (${summary.functions} funções).`);
     else if (summary.requests) bad('Nenhum ficheiro do projeto passou pelo CodeTAC.',
-      'O servidor pode estar a correr código já empacotado sem source map, ou fora da pasta do projeto. Os dossiês mostram só pedidos e fronteiras.');
+      'O servidor pode estar a correr código já empacotado sem source map, ou fora da pasta do projeto. Os dossiers mostram só pedidos e fronteiras.');
     const failed = summary.failed.length;
     if (failed) {
       note(`${failed} ficheiro(s) correm sem ser seguidos (não foi possível prepará-los):`);

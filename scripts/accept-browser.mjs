@@ -1,9 +1,9 @@
 // Aceitação da Fase 2 num projeto: conduz o Chrome real (cliques e teclado
 // verdadeiros) por um cenário, primeiro sem captura (referência) e depois com
 // captura, e verifica os critérios:
-//   - um clique produz um dossiê único, com a parte do browser e a do servidor;
+//   - um clique produz um dossier único, com a parte do browser e a do servidor;
 //   - uma ação com vários pedidos aparece como uma só ação;
-//   - uma ação só de frontend produz dossiê;
+//   - uma ação só de frontend produz dossier;
 //   - a barra não altera a disposição da página nem acrescenta erros na consola.
 // Procura ainda segredos conhecidos nas gravações e confirma que o projeto não
 // foi alterado (git status igual antes e depois).

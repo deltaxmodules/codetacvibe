@@ -295,7 +295,7 @@ export async function answerQuestion({ config, dossier, stepId, question, readCo
   let step = null;
   let parent = null;
   walk(dossier.digest.nodes, (node, holder) => { if (node.id === stepId) { step = node; parent = holder; } });
-  if (!step) return { available: true, known: false, text: 'Este passo não foi encontrado no dossiê.' };
+  if (!step) return { available: true, known: false, text: 'Este passo não foi encontrado no dossier.' };
   const target = step.type === 'function' ? step : parent?.type === 'function' ? parent : null;
   const code = target ? readCode(dossier.request.run, target.file, target.line, target.endLine) : null;
   const facts = target ? subtree(target) : { boundaries: [step], functions: [] };

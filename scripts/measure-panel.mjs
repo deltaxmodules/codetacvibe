@@ -1,4 +1,4 @@
-// Aceitação da Fase 3: abre dossiês no painel com o Chrome real, mede se a
+// Aceitação da Fase 3: abre dossiers no painel com o Chrome real, mede se a
 // vista agrupada cabe num ecrã e guarda uma captura de cada um.
 // Uso: node scripts/measure-panel.mjs <painel> <pasta das capturas> action:<id>|request:<id>…
 // O painel tem de estar a correr. Espera pelas frases da IA quando há modelo.

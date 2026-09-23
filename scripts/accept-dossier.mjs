@@ -1,5 +1,5 @@
 // Aceitação da Fase 1 num projeto: arranca-o com captura, faz os pedidos
-// configurados, lê o dossiê do armazenamento local e verifica os critérios.
+// configurados, lê o dossier do armazenamento local e verifica os critérios.
 //   node scripts/accept-dossier.mjs <config.json>
 // Critérios: funções do projeto pela ordem, fronteiras (escrita em base de
 // dados e serviço externo) e nenhum segredo conhecido gravado.

@@ -1,6 +1,6 @@
 {
   "name": "codetac",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "codeTAC — perceber o que o código da sua app Node faz, ação a ação: do clique no browser às funções do servidor, base de dados e serviços externos.",
   "keywords": [
     "debug",

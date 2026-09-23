@@ -1,6 +1,6 @@
 // Ensaio da Fase 5: para cada projeto da amostra, corre o comando `codetac`
 // sem ajuda (--sim --nao-abrir), abre a app no Chrome, clica num elemento e
-// mede o tempo do comando ao primeiro dossiê. Verifica que o dossiê existe e
+// mede o tempo do comando ao primeiro dossier. Verifica que o dossier existe e
 // que nada diz «não suportado». Uso:
 //   node scripts/accept-sample.mjs <config.json> [nome…]
 // A configuração: { "painel": 4100, "projetos": [{ "nome", "pasta", "ferramenta",
@@ -99,7 +99,7 @@ async function runProject(chrome, project) {
     for (const item of order.slice(0, 4)) {
       try { await page.click(item.selector); } catch { continue; }
       result.clicado = item.text;
-      const first = await waitLine(/^✓ Primeiro dossiê \((\d+) s.*action=/, 20000);
+      const first = await waitLine(/^✓ Primeiro dossier \((\d+) s.*action=/, 20000);
       if (first) {
         result.primeiroDossieMs = first.ms;
         result.link = first.line.match(/(http\S+)$/)[1];
@@ -113,7 +113,7 @@ async function runProject(chrome, project) {
     // No click produced an action (a page that fails, or nothing clickable):
     // the dossier of the page load, which the command also announces.
     if (!result.link) {
-      const load = await waitLine(/^✓ Primeiro dossiê \((\d+) s.*request=/, 20000);
+      const load = await waitLine(/^✓ Primeiro dossier \((\d+) s.*request=/, 20000);
       if (load) {
         result.primeiroDossieMs = load.ms;
         result.link = load.line.match(/(http\S+)$/)[1];
@@ -173,9 +173,9 @@ try {
     process.stdout.write(`\n=== ${project.nome} (${project.ferramenta}, ${project.stack})\n`);
     const result = await runProject(chrome, project);
     results.push(result);
-    process.stdout.write(`${result.aceite ? 'ACEITE' : 'FALHOU'} · pronta ${Math.round((result.prontaMs ?? 0) / 1000)} s · primeiro dossiê ${result.primeiroDossieMs ? Math.round(result.primeiroDossieMs / 1000) + ' s' : '—'}` +
+    process.stdout.write(`${result.aceite ? 'ACEITE' : 'FALHOU'} · pronta ${Math.round((result.prontaMs ?? 0) / 1000)} s · primeiro dossier ${result.primeiroDossieMs ? Math.round(result.primeiroDossieMs / 1000) + ' s' : '—'}` +
       ` · modo ${result.modo ?? '?'} · clique ${result.clicado ?? '—'}${result.erro ? ` · erro: ${result.erro}` : ''}\n`);
-    if (result.dossie) process.stdout.write(`  dossiê: ${JSON.stringify(result.dossie)}\n`);
+    if (result.dossie) process.stdout.write(`  dossier: ${JSON.stringify(result.dossie)}\n`);
   }
 } finally {
   await chrome.close();

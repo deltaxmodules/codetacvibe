@@ -202,7 +202,7 @@ const page = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CodeTAC — dossiês</title>
+<title>CodeTAC — dossiers</title>
 <style>
 :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e3de; --accent:#2f5bd3;
   --db:#0f7b5f; --http:#6a4bc4; --ia:#b4531f; --mail:#1f73b4; --pay:#9b2c86; --file:#7a6a12; --auth:#3d6b2f; --error:#c0392b; --code:#f1f0ec;

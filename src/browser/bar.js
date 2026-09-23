@@ -521,7 +521,7 @@
       '.top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#18181b;color:#f4f4f5}.top b{margin-right:auto}' +
       '.top button,.top a{all:unset;cursor:pointer;padding:2px 8px;border-radius:5px;color:#e4e4e7}.top button:hover,.top a:hover{background:#3f3f46}' +
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}</style>' +
-      '<button class="pill" part="pill" title="CodeTAC: carregue para ver o dossiê da última ação"><span class="dot"></span><span class="label">CodeTAC</span></button>';
+      '<button class="pill" part="pill" title="CodeTAC: carregue para ver o dossier da última ação"><span class="dot"></span><span class="label">CodeTAC</span></button>';
     shadow.querySelector('.pill').addEventListener('click', () => toggleSheet());
     document.documentElement.appendChild(host);
     updateBar(false);
@@ -562,7 +562,7 @@
     }
     shown.innerHTML = '<div class="top"><b></b><button data-go="-1" title="Ação anterior">◀</button><button data-go="1" title="Ação seguinte">▶</button>' +
       '<a target="_blank" rel="noopener" title="Abrir no painel">painel ↗</a><button data-close title="Fechar">✕</button></div>' +
-      '<iframe title="Dossiê da ação"></iframe>';
+      '<iframe title="Dossier da ação"></iframe>';
     shown.querySelector('b').textContent = (index + 1) + '/' + recorded.length + ' · ' + item.label;
     shown.querySelector('a').href = panel + '/?action=' + encodeURIComponent(item.id);
     shown.querySelector('iframe').src = url;

@@ -1,4 +1,4 @@
-// Vista agrupada do dossiê (Fase 3): árvore de passos com o ruído agrupado,
+// Vista agrupada do dossier (Fase 3): árvore de passos com o ruído agrupado,
 // uma frase de finalidade por função e por fronteira, e o resumo dos efeitos
 // permanentes. Tudo deriva dos factos gravados; nada é removido, só agrupado
 // (cada grupo guarda os passos originais para a expansão).
