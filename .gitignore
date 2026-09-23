@@ -1,0 +1,10 @@
+node_modules/
+.codetac/
+.next/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.claude/settings.local.json

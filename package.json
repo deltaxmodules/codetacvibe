@@ -1,0 +1,60 @@
+{
+  "name": "codetac",
+  "version": "0.1.0",
+  "description": "codeTAC — perceber o que o código da sua app Node faz, ação a ação: do clique no browser às funções do servidor, base de dados e serviços externos.",
+  "keywords": [
+    "debug",
+    "trace",
+    "understand",
+    "nodejs",
+    "nextjs",
+    "vite",
+    "express",
+    "ai-generated",
+    "vibe-coding",
+    "dossier"
+  ],
+  "license": "MIT",
+  "author": "deltaXmodules",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deltaxmodules/codetacvibe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deltaxmodules/codetacvibe/issues"
+  },
+  "homepage": "https://github.com/deltaxmodules/codetacvibe#readme",
+  "type": "module",
+  "bin": {
+    "codetac": "src/cli.mjs"
+  },
+  "files": [
+    "src/"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:stacks": "node scripts/validate-stacks.mjs",
+    "check": "node --check src/register.mjs && node --check src/transform.mjs && node --check src/runtime.mjs && node --check src/boundaries.mjs && node --check src/store.mjs && node --check src/panel.mjs && node --check src/page.mjs && node --check src/origins.mjs && node --check src/action-view.mjs && node --check src/browser/bar.js && node --check src/digest.mjs && node --check src/sentences.mjs && node --check src/ai.mjs && node --check src/cli.mjs && node --check src/detect.mjs && node --check src/recording.mjs && node --check src/diagnose.mjs",
+    "test:performance": "node scripts/benchmark-functions.mjs",
+    "panel": "node src/panel.mjs",
+    "test:browser": "node scripts/accept-browser.mjs docs/aceitacao-browser-exemplo.json",
+    "codetac": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "acorn": "^8.18.0",
+    "acorn-walk": "^8.3.5",
+    "magic-string": "^1.4.1"
+  },
+  "devDependencies": {
+    "express": "^5.2.1",
+    "next": "^16.3.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^8.3.0"
+  }
+}
