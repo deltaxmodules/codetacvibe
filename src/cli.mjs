@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { detectProject, describeStart, foreignRuntime } from './detect.mjs';
 import { MINIMUM, commandFor, describePythonFolder, environmentOf, interpreters, moveTo, probe, proxyOf, pythonPort, versionBelow } from './detect-python.mjs';
 import { createSummary, follow } from './recording.mjs';
+import { describeFailure, ownError, readTraceback } from './failure.mjs';
 
 import { dataDirectory, install as workspace } from './home.mjs';
 
@@ -188,7 +189,7 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
         if (CRASHED.test(plain)) child.crashed = true;
         // A Python app that fails while importing, under a reloader (uvicorn --reload,
         // fastapi dev, flask --debug): the reloader stays, waiting for changes.
-        if (child.part?.language === 'python' && /^\s*Traceback \(most recent call last\):/.test(plain)) child.tracebackAt ??= Date.now();
+        if (child.part?.language === 'python') readTraceback(child, plain);
         const busy = plain.match(BUSY);
         if (busy) state.busy = Number(busy[1] ?? busy[2] ?? busy[3]);
       }
@@ -591,7 +592,7 @@ async function main() {
     // Before it is ready, any part that stops (or crashes in a watch mode) is a failed start.
     // A traceback before the app answers is a failed start once nothing answers for 5 s.
     const failed = () => app.children.filter(child => child.exitCode !== null || child.signalCode !== null || child.crashed
-      || (child.tracebackAt && Date.now() - child.tracebackAt > 5000));
+      || (child.traceback && Date.now() - child.traceback.at > 5000));
     while (!found && Date.now() < deadline) {
       await wait(500);
       recording.poll();
@@ -673,7 +674,16 @@ async function main() {
       cleanup();
       process.exit(1);
     }
-    const codes = stopped.map(child => `${child.part.part}: ${child.crashed ? 'failed' : `code ${child.exitCode ?? child.signalCode}`}`).join(', ');
+    const codes = stopped.map(child => describeFailure({ ...child, part: child.part.part }, parts.length > 1)).join(', ');
+    // A Python error raised by the app's own code: minimal mode would fail the same way.
+    const own = !minimal && stopped.map(child => ({ child, where: ownError(child.traceback, child.part.folder) })).find(item => item.where);
+    if (own) {
+      say(`✗ The app itself failed while starting: ${describeFailure({ ...own.child, part: own.child.part.part }, parts.length > 1)}`);
+      say(`  Raised in ${own.where.file}:${own.where.line}, in the app's code (the full error is above). Running without CodeTAC would fail the same way.`);
+      say('  Tip: this is often configuration: a folder, key or service in .env that does not exist on this computer.');
+      cleanup();
+      process.exit(1);
+    }
     if (minimal) {
       say(`✗ The app failed in minimal mode too (${codes}).`);
       say('  The problem seems to be in the app itself, not in the capture. Last lines:');

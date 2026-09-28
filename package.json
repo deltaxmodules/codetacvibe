@@ -1,6 +1,6 @@
 {
   "name": "codetac",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "codeTAC — see what your Node or Python app's code does, one action at a time: from the browser click to the server functions, database and external services.",
   "keywords": [
     "debug",
@@ -42,7 +42,7 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:stacks": "node scripts/validate-stacks.mjs",
-    "check": "node --check src/register.mjs && node --check src/transform.mjs && node --check src/runtime.mjs && node --check src/boundaries.mjs && node --check src/store.mjs && node --check src/panel.mjs && node --check src/page.mjs && node --check src/origins.mjs && node --check src/action-view.mjs && node --check src/browser/bar.js && node --check src/digest.mjs && node --check src/sentences.mjs && node --check src/ai.mjs && node --check src/cli.mjs && node --check src/detect.mjs && node --check src/detect-python.mjs && node --check src/recording.mjs && node --check src/diagnose.mjs",
+    "check": "node --check src/register.mjs && node --check src/transform.mjs && node --check src/runtime.mjs && node --check src/boundaries.mjs && node --check src/store.mjs && node --check src/panel.mjs && node --check src/page.mjs && node --check src/origins.mjs && node --check src/action-view.mjs && node --check src/browser/bar.js && node --check src/digest.mjs && node --check src/sentences.mjs && node --check src/ai.mjs && node --check src/cli.mjs && node --check src/detect.mjs && node --check src/detect-python.mjs && node --check src/recording.mjs && node --check src/diagnose.mjs && node --check src/failure.mjs",
     "test:performance": "node scripts/benchmark-functions.mjs",
     "panel": "node src/panel.mjs",
     "test:browser": "node scripts/accept-browser.mjs scripts/ensaios/browser-exemplo.json",

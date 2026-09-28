@@ -171,6 +171,7 @@ Each line starts with **✓** (works), **!** (warning) or **✗** (problem), wit
 | “I found a Python project, but not the app…” | codeTAC did not find `FastAPI(...)` or `Flask(...)`. Give the start command: `codetac -- uvicorn main:app` or `codetac -- flask --app app run` |
 | “This project uses Django…” | Django is not supported yet (FastAPI and Flask only) |
 | “Port 3000 is already taken by another program…” | Close the other program, for example another app open in another Terminal window. For an app with a single part, codeTAC moves to another port by itself |
+| “The app itself failed while starting: …” | The error comes from the app's own code, at the file and line shown, and would happen without codeTAC too. Often it is configuration: a folder, key or service in `.env` that does not exist on this computer (for example a production path such as `/var/lib/…`) |
 | “The app failed in minimal mode too” | The problem is in the app itself. Often the keys in the `.env` file are missing (Supabase, Firebase…). Check the `.env.example` or the project's instructions |
 | “The home page answered with error 500” | The app started, but fails. The dossier of that page load shows where |
 | “…taken by the macOS AirPlay Receiver” | Flask's port 5000 belongs to AirPlay on macOS. codeTAC starts the app on another port; to use 5000, turn off “AirPlay Receiver” in System Settings › General › AirDrop & Handoff |

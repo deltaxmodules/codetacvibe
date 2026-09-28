@@ -159,3 +159,66 @@ http.createServer((request, response) => { response.setHeader('content-type', 't
   assert.match(start.reason, /failed to start with the full instrumentation/);
   rmSync(dir, { recursive: true });
 });
+
+// 0.3.1: a Python app whose own code fails while importing is not retried in
+// minimal mode, and the error is named instead of an exit code.
+test('arranque falhado: o erro da própria app Python, sem repetir em modo mínimo', async () => {
+  const { readTraceback, ownError, describeFailure } = await import('../src/failure.mjs');
+  const folder = '/p/backend';
+  const read = lines => { const state = {}; for (const line of lines) readTraceback(state, line); return state; };
+  const app = read([
+    'INFO:     Started reloader process [25946] using WatchFiles',
+    'Process SpawnProcess-1:',
+    'Traceback (most recent call last):',
+    '  File "/opt/homebrew/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap',
+    '  File "/p/backend/.venv/lib/python3.12/site-packages/uvicorn/server.py", line 76, in _serve',
+    '  File "/usr/lib/node_modules/codetac/src/python/codetac_py/servers.py", line 431, in codetac_load',
+    '    load(self, *args, **kwargs)',
+    '  File "/p/backend/app/main.py", line 1838, in <module>',
+    "    app.mount(settings.uploads_url_prefix, StaticFiles(directory=settings.uploads_dir), name='uploads')",
+    '                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^',
+    '  File "/p/backend/.venv/lib/python3.12/site-packages/starlette/staticfiles.py", line 56, in __init__',
+    `RuntimeError: Directory '/var/lib/transcapiart/uploads' does not exist`,
+    'INFO:     Stopping reloader process [25946]',
+  ]);
+  assert.equal(app.traceback.error, `RuntimeError: Directory '/var/lib/transcapiart/uploads' does not exist`);
+  assert.deepEqual(ownError(app.traceback, folder), { file: 'app/main.py', line: 1838 });
+  assert.equal(describeFailure({ ...app, part: '.' }, false), `RuntimeError: Directory '/var/lib/transcapiart/uploads' does not exist`);
+  assert.equal(describeFailure({ ...app, part: 'api' }, true), `[api] RuntimeError: Directory '/var/lib/transcapiart/uploads' does not exist`);
+  // Raised inside CodeTAC's captor, below the app's code: the capture's fault, retried.
+  const captor = read(['Traceback (most recent call last):', '  File "/p/backend/app/main.py", line 3, in <module>',
+    '  File "/x/codetac/src/python/codetac_py/hooks.py", line 25, in exec_module', 'TypeError: boom']);
+  assert.equal(ownError(captor.traceback, folder), null);
+  // Only libraries: not the app's code.
+  const library = read(['Traceback (most recent call last):', '  File "/p/backend/.venv/lib/python3.12/site-packages/uvicorn/main.py", line 4, in main', 'ImportError: x']);
+  assert.equal(ownError(library.traceback, folder), null);
+  // Chained exceptions: the last one counts. No traceback: the exit code.
+  const chained = read(['Traceback (most recent call last):', '  File "/p/backend/a.py", line 1, in <module>', 'KeyError: 1', '',
+    'During handling of the above exception, another exception occurred:', '', 'Traceback (most recent call last):', '  File "/p/backend/b.py", line 2, in <module>', 'ValueError: 2']);
+  assert.equal(chained.traceback.error, 'ValueError: 2');
+  assert.equal(describeFailure({ exitCode: 3, part: '.' }, false), 'exit code 3');
+  assert.equal(describeFailure({ crashed: true, part: 'web' }, true), '[web] crashed');
+});
+
+test('arranque falhado: traceback do Rich (fastapi dev), com caminhos partidos e com espaços', async () => {
+  const { readTraceback, ownError } = await import('../src/failure.mjs');
+  const state = {};
+  for (const line of [
+    '╭───────────────────── Traceback (most recent call last) ──────────────────────╮',
+    '│ /p/Projectos 2026/backend/.venv/lib/python3.12/sit │',
+    '│ e-packages/fastapi_cli/cli.py:404 in dev                                     │',
+    '│ in exec_module:999                                                           │',
+    '│ /p/Projectos 2026/backend/app/ma │',
+    '│ in.py:48 in <module>   │',
+    '│   45 async def forecast(city: str):                                          │',
+    '│ /p/Projectos 2026/backend/.venv/lib/python3.12/site-packages/starlette/staticfiles.py:57 in __init__ │',
+    '╰──────────────────────────────────────────────────────────────────────────────╯',
+    "RuntimeError: Directory '/var/lib/x/uploads' does not exist",
+  ]) readTraceback(state, line);
+  assert.deepEqual(state.traceback.frames.map(frame => `${frame.file}:${frame.line}`), [
+    '/p/Projectos 2026/backend/.venv/lib/python3.12/site-packages/fastapi_cli/cli.py:404',
+    '/p/Projectos 2026/backend/app/main.py:48',
+    '/p/Projectos 2026/backend/.venv/lib/python3.12/site-packages/starlette/staticfiles.py:57']);
+  assert.equal(state.traceback.error, "RuntimeError: Directory '/var/lib/x/uploads' does not exist");
+  assert.deepEqual(ownError(state.traceback, '/p/Projectos 2026/backend'), { file: 'app/main.py', line: 48 });
+});
