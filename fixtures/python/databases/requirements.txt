@@ -1,0 +1,8 @@
+fastapi[standard]>=0.115
+sqlalchemy[asyncio]>=2.0
+sqlmodel>=0.0.22
+psycopg[binary]>=3.2
+psycopg2-binary>=2.9
+pymysql>=1.1
+cryptography>=42
+asyncpg>=0.30

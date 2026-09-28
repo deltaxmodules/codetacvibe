@@ -1,0 +1,15 @@
+{
+  "descricao": "Onde entra a barra numa resposta HTML completa (src/page.mjs tagPosition e src/python/codetac_py/page.py insert_tag). «posicao»: índice onde a etiqueta entra; -1: fica intacta (fragmento).",
+  "vetores": [
+    { "html": "<!doctype html><html><head><title>t</title></head><body>x</body></html>", "posicao": 27 },
+    { "html": "<html><HEAD lang=\"pt\"><title>t</title></HEAD></html>", "posicao": 22 },
+    { "html": "<html><body class=\"a\">x</body></html>", "posicao": 6 },
+    { "html": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>", "posicao": 30 },
+    { "html": "<!-- gerado -->\n<!DOCTYPE html>\n<title>Sem html</title><p>x</p>", "posicao": 31 },
+    { "html": "  <html><p>sem head nem body</p></html>", "posicao": 8 },
+    { "html": "<li>item</li>", "posicao": -1 },
+    { "html": "<div><p>texto com <html> no meio</p></div>", "posicao": -1 },
+    { "html": "<header>não é head</header><p>x</p>", "posicao": -1 },
+    { "html": "", "posicao": -1 }
+  ]
+}

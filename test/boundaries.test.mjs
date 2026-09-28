@@ -192,7 +192,7 @@ const server = http.createServer((req, res) => {
   assert.equal(ends[0].model, 'gpt-teste');
   assert.equal(ends[0].promptExcerpt, 'Resume a fatura do cliente a***@e***');
   assert.deepEqual([ends[1].usage, ends[1].answerExcerpt, ends[1].model], [{ input: 7, output: 2 }, 'Olá mundo', 'llama-local']);
-  assert.equal(calls[1].provider, 'modelo local');
+  assert.equal(calls[1].provider, 'local model');
   assert.ok(!JSON.stringify(events).includes('segredo123456'));
 });
 

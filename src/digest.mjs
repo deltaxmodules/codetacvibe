@@ -2,7 +2,7 @@
 // uma frase de finalidade por função e por fronteira, e o resumo dos efeitos
 // permanentes. Tudo deriva dos factos gravados; nada é removido, só agrupado
 // (cada grupo guarda os passos originais para a expansão).
-import { boundarySentence, duration, names, texts } from './sentences.mjs';
+import { boundarySentence, duration, label, names, texts } from './sentences.mjs';
 
 const STRUCTURE = new Set(['CREATE', 'DROP', 'ALTER', 'TRUNCATE']);
 const WRITES = new Set(['INSERT', 'UPDATE', 'DELETE', 'UPSERT', 'REPLACE', 'MERGE']);
@@ -46,14 +46,14 @@ function generated(node, root) {
   return within.split('/').slice(0, -1).some(part => part.startsWith('.'));
 }
 function trivial(node) {
-  return node.type === 'function' && !node.children.length && !node.error && !node.detail && node.finished !== false
+  return node.type === 'function' && !node.opaque && !node.children.length && !node.error && !node.detail && node.finished !== false
     && (node.durationMs ?? 0) < TRIVIAL_MS && (node.endLine == null || node.endLine - node.line <= TRIVIAL_LINES);
 }
 const sum = (nodes, key = 'durationMs') => nodes.reduce((total, node) => total + (node[key] ?? 0), 0);
 
 // Groups consecutive siblings; the order of the sequence is kept.
 function group(children, parent, ctx) {
-  const t = texts(ctx.lang);
+  const t = texts();
   const out = [];
   let index = 0;
   while (index < children.length) {
@@ -123,7 +123,7 @@ function group(children, parent, ctx) {
 // The same sequence of 2 to 6 steps repeated in a row (a loop over records):
 // one line, with every step kept in order for the expansion.
 function blocks(nodes, ctx) {
-  const t = texts(ctx.lang);
+  const t = texts();
   const out = [];
   let index = 0;
   while (index < nodes.length) {
@@ -154,10 +154,16 @@ function blocks(nodes, ctx) {
 }
 
 // What a function did, from the boundaries in its subtree and the functions it called.
+// Code compiled from a template (Jinja, and any engine whose functions keep
+// the template's file): what it does is produce HTML.
+const TEMPLATE_FILE = /\.(html?|jinja2?|j2|njk|twig|hbs|ejs|mustache|liquid)$/i;
+
 function functionSentence(node, ctx) {
-  const t = texts(ctx.lang);
+  const t = texts();
   const facts = collect(node);
   const parts = [];
+  const template = TEMPLATE_FILE.test(node.file ?? '');
+  if (template && !node.opaque) parts.push(t.templatePart(node.file.split('/').pop()));
   const db = facts.boundaries.filter(item => item.kind === 'base-de-dados');
   const structure = db.filter(item => STRUCTURE.has(item.operation));
   if (structure.length) parts.push(t.dbSetupPart(structure.length));
@@ -182,12 +188,14 @@ function functionSentence(node, ctx) {
   if (mail) parts.push(t.emailPart(mail));
   const pay = [...new Set(kinds('pagamento').map(item => item.provider))];
   if (pay.length) parts.push(t.paymentPart(names(pay, t.and)));
-  const files = [...new Set(kinds('ficheiros').map(item => item.operation))];
+  const files = [...new Set(kinds('ficheiros').map(item => label(item.operation)))];
   if (files.length) parts.push(t.filePart(names(files, t.and)));
   const auth = [...new Set(kinds('autenticação').map(item => item.provider ?? item.library))];
   if (auth.length) parts.push(t.authPart(names(auth, t.and)));
   const callees = [...new Set(node.children.filter(item => item.type === 'function' && !generated(item, ctx.root)).map(item => item.function))];
-  if (!facts.boundaries.length) parts.push(t.noBoundary);
+  // An opaque step (compiled code, an unmapped template): only what it is.
+  if (node.opaque) parts.push(t.opaque);
+  else if (!facts.boundaries.length && !template) parts.push(t.noBoundary);
   if (callees.length) parts.push(t.calls(names(callees, t.and)));
   if (node.error) parts.push(t.error);
   else if (node.finished === false) parts.push(t.unfinished);
@@ -197,7 +205,7 @@ function functionSentence(node, ctx) {
 
 function annotate(node, ctx) {
   for (const child of node.children) annotate(child, ctx);
-  node.purpose = { text: node.type === 'function' ? functionSentence(node, ctx) : boundarySentence(node, ctx.lang), source: 'factos' };
+  node.purpose = { text: node.type === 'function' ? functionSentence(node, ctx) : boundarySentence(node), source: 'factos' };
   node.children = group(node.children, node, ctx);
   return node;
 }
@@ -222,8 +230,8 @@ function counts(nodes) {
 }
 
 // Lasting effects of the steps of one or more requests.
-export function effects(dossiers, lang, { cookies = [] } = {}) {
-  const t = texts(lang).effects;
+export function effects(dossiers, { cookies = [] } = {}) {
+  const t = texts().effects;
   const items = [];
   const add = (key, category, make, amount = 1) => {
     let found = items.find(item => item.key === key);
@@ -254,10 +262,10 @@ export function effects(dossiers, lang, { cookies = [] } = {}) {
       }
     } else if (step.kind === 'email') add(`mail:${step.id}`, 'email', () => t.email(step.to ?? [], step.subject, failed));
     else if (step.kind === 'mensagem') add(`msg:${step.id}`, 'email', () => t.message(step.provider ?? step.library, failed));
-    else if (step.kind === 'pagamento' && !failed) add(`pay:${step.id}`, 'pagamento', () => t.payment(step.provider, step.operation, step.mode));
+    else if (step.kind === 'pagamento' && !failed) add(`pay:${step.id}`, 'pagamento', () => t.payment(step.provider, step.operation, label(step.mode)));
     else if (step.kind === 'ficheiros' && !failed && !['leitura', 'verificação', 'GET', 'HEAD'].includes(step.operation)) {
       const where = step.bucket ? `${step.provider} ${step.bucket}` : step.path ?? step.provider;
-      add(`file:${step.operation}:${where}`, 'ficheiros', () => t.file(step.operation, where));
+      add(`file:${step.operation}:${where}`, 'ficheiros', () => t.file(label(step.operation), where));
     } else if (step.kind === 'ia') add(`ia:${step.id}`, 'custo', () => t.ai(step.provider, r.model ?? step.model, r.usage, step.costUsd));
     else if (step.kind === 'http' && !step.local && !failed) {
       add(`http:${step.method}:${step.host}`, step.method === 'GET' || step.method === 'HEAD' ? 'leitura-externa' : 'externo',
@@ -275,25 +283,25 @@ export function effects(dossiers, lang, { cookies = [] } = {}) {
 }
 
 // The grouped view of one request dossier.
-export function digestRequest(dossier, { lang = 'pt-PT' } = {}) {
-  const ctx = { lang, root: dossier.root };
+export function digestRequest(dossier) {
+  const ctx = { root: dossier.root };
   const roots = tree(dossier.steps ?? []);
   const pseudo = { type: 'request', children: roots };
   for (const node of roots) annotate(node, ctx);
   const nodes = group(roots, pseudo, ctx);
-  return { nodes, lines: counts(nodes), effects: effects([dossier], lang, { cookies: dossier.request?.cookies ?? [] }),
-    duration: duration(dossier.request?.durationMs, lang) };
+  return { nodes, lines: counts(nodes), effects: effects([dossier], { cookies: dossier.request?.cookies ?? [] }),
+    duration: duration(dossier.request?.durationMs) };
 }
 
 // A whole action: every server dossier grouped, development-tool requests
 // grouped (M8), a one-line summary and the effects of all its requests.
-export function digestAction(dossier, { lang = 'pt-PT' } = {}) {
-  const t = texts(lang);
+export function digestAction(dossier) {
+  const t = texts();
   const servers = [];
   const timeline = [];
   for (const item of dossier.timeline) {
     for (const server of item.server ?? []) {
-      server.digest = digestRequest(server, { lang });
+      server.digest = digestRequest(server);
       servers.push(server);
     }
     const dev = item.type === 'request' && isDevToolRequest(item.browser?.path);
@@ -307,11 +315,17 @@ export function digestAction(dossier, { lang = 'pt-PT' } = {}) {
   const trigger = dossier.timeline.find(item => item.type === 'trigger')?.trigger;
   const a = t.action;
   const opening = !trigger ? a.continuation : trigger.event === 'submit' ? a.submit(dossier.label) : trigger.event === 'change' ? a.change(dossier.label) : a.click(dossier.label);
-  const requests = timeline.filter(item => item.type === 'request' && item.browser?.sameOrigin).map(item => a.request(item.browser.method, item.browser.path, item.browser.status));
+  // Requests of the page (fetch, XHR) and those of a full navigation (a form
+  // that loads the next page): the server parts of each new document.
+  // Requests to another origin (an API on another port without a proxy, an
+  // outside service) are requests too: named with their host.
+  const requests = timeline.flatMap(item => item.type === 'request' && item.browser ? [a.request(item.browser.method,
+      item.browser.sameOrigin || !item.browser.host ? item.browser.path : `${item.browser.host}${item.browser.path}`, item.browser.status)]
+    : item.type === 'document' ? (item.server ?? []).map(part => a.request(part.request.method, part.request.path, part.request.status)) : []);
   const navigations = timeline.filter(item => item.type === 'navigation' || item.type === 'document').map(item => a.navigates(item.path ?? item.page?.path));
   const screens = dossier.timeline.filter(item => item.type === 'screen');
   const changed = screens.some(item => { const s = item.screen ?? {}; return s.added || s.removed || s.text || s.attributes || s.title || s.stateChanged?.length; });
-  const all = effects(servers, lang, { cookies: servers.flatMap(server => server.request?.cookies ?? []) });
+  const all = effects(servers, { cookies: servers.flatMap(server => server.request?.cookies ?? []) });
   const summary = [opening, requests.length ? requests.join(', ') : a.noServer, ...new Set(navigations), changed ? a.screen : a.noScreen].join(' → ');
   return { timeline, summary, effects: all, lines: servers.reduce((total, server) => total + server.digest.lines.visible, 0) };
 }

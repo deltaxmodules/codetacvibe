@@ -1,0 +1,6 @@
+fastapi[standard]>=0.115
+openai>=1.40
+anthropic>=0.40
+requests>=2.32
+aiohttp>=3.10
+boto3>=1.35

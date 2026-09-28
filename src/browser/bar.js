@@ -112,7 +112,7 @@
       if (!owner) { owner = fiber.return; while (owner && !isComposite(owner)) owner = owner.return; }
       // An inline function takes the name of the prop it was written in.
       const name = handlerName(props[prop]);
-      return { element, handler: { name: name === prop ? '(função escrita no próprio elemento)' : name, prop, source: 'react' },
+      return { element, handler: { name: name === prop ? '(inline function)' : name, prop, source: 'react' },
         component: componentOf(fiber, owner) };
     }
     return null;
@@ -130,7 +130,7 @@
   }
   function handlerName(fn) {
     const name = String(fn && fn.name || '').replace(/^bound /, '');
-    return name || '(função anónima)';
+    return name || '(anonymous function)';
   }
   // Listeners added with addEventListener are remembered by element and type,
   // only their names, so a non-React page can still name the handler.
@@ -152,7 +152,7 @@
       // are not the handler of the element that was clicked.
       if (element === document.body || element._reactRootContainer || reactKey(element, '__reactContainer$')) break;
       const inline = kind === 'click' ? element.onclick : element.onsubmit;
-      if (typeof inline === 'function') return { element, handler: { name: element.hasAttribute('on' + kind) ? '(atributo on' + kind + ')' : handlerName(inline), source: 'dom' } };
+      if (typeof inline === 'function') return { element, handler: { name: element.hasAttribute('on' + kind) ? '(on' + kind + ' attribute)' : handlerName(inline), source: 'dom' } };
       const found = (listeners.get(element) || []).find(item => item.type === kind);
       if (found) return { element, handler: { name: found.name, source: 'dom' } };
     }
@@ -179,9 +179,9 @@
   }
   function check(action) {
     if (action.closed) return;
-    if (now() - action.start > MAX_MS) return close(action, 'tempo máximo');
+    if (now() - action.start > MAX_MS) return close(action, 'time limit');
     if (action.pending > 0 || now() - action.last < QUIET_MS) return schedule(action);
-    close(action, 'sem atividade');
+    close(action, 'idle');
   }
   function listOf(map) {
     return [...map.values()].slice(0, 40).map(item => ({ name: item.name, count: item.count, frames: item.frames }));
@@ -218,7 +218,9 @@
       if (leaving && navigator.sendBeacon) navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'text/plain' }));
       else originalFetch.call(window, ENDPOINT, { method: 'POST', body, keepalive: body.length < 60000, headers: { 'content-type': 'text/plain' } }).catch(() => {});
     } catch {}
-    if (action.trigger || action.requests.length) {
+    // A continuation on a new page counts too: in server-rendered apps (a form
+    // that loads the next page) it is how the bar shows what brought you here.
+    if (action.trigger || action.requests.length || action.segment > 1) {
       recorded.push({ id: action.id, label: labelOf(action), requests: action.requests.length, closedBy });
       if (recorded.length > 30) recorded.shift();
       updateBar(true);
@@ -226,11 +228,11 @@
   }
   function labelOf(action) {
     const element = action.trigger && action.trigger.element;
-    if (!element) return action.continues ? action.continues + ' (continuação)' : 'continuação após navegação';
-    const kinds = { a: 'ligação', button: 'botão', input: 'campo', select: 'lista', textarea: 'texto', label: 'etiqueta', summary: 'secção', form: 'formulário' };
-    const kind = element.role === 'button' || (element.tag === 'input' && /submit|button/.test(element.type || '')) ? 'botão' : kinds[element.tag] || element.tag;
+    if (!element) return action.continues ? action.continues + ' (continued)' : 'continuation after navigation';
+    const kinds = { a: 'link', button: 'button', input: 'field', select: 'list', textarea: 'text box', label: 'label', summary: 'section', form: 'form' };
+    const kind = element.role === 'button' || (element.tag === 'input' && /submit|button/.test(element.type || '')) ? 'button' : kinds[element.tag] || element.tag;
     const text = element.text || element.label || element.name || element.id;
-    return kind + (text ? ' «' + text + '»' : '');
+    return kind + (text ? ' “' + text + '”' : '');
   }
   // Navigations that load a new document carry the action in a short cookie;
   // the new page continues the same action until it is quiet.
@@ -243,7 +245,7 @@
     let segment = 2;
     try { segment = Number(sessionStorage.getItem('codetac:segment:' + match[1]) || 1) + 1; sessionStorage.setItem('codetac:segment:' + match[1], String(segment)); } catch {}
     const action = newAction(match[1], segment, null);
-    action.navigations.push({ kind: 'documento', to: location.pathname + location.search, atMs: 0 });
+    action.navigations.push({ kind: 'document', to: location.pathname + location.search, atMs: 0 });
     try { action.continues = sessionStorage.getItem('codetac:label:' + match[1]); } catch {}
   }
 
@@ -292,7 +294,7 @@
     if (kind === 'change') {
       const fiber = reactKey(element, '__reactFiber$');
       const props = (fiber && fiber.memoizedProps) || {};
-      if (typeof props.onChange === 'function') trigger.handler = { name: handlerName(props.onChange) === 'onChange' ? '(função escrita no próprio elemento)' : handlerName(props.onChange), prop: 'onChange', source: 'react' };
+      if (typeof props.onChange === 'function') trigger.handler = { name: handlerName(props.onChange) === 'onChange' ? '(inline function)' : handlerName(props.onChange), prop: 'onChange', source: 'react' };
     }
     if (!trigger.component) {
       const fiber = reactKey(element, '__reactFiber$');
@@ -315,8 +317,8 @@
   addEventListener.call(window, 'change', onUserEvent, true);
   addEventListener.call(window, 'pagehide', () => {
     for (const action of [...open]) {
-      action.navigations.push({ kind: 'saída da página', to: location.pathname, atMs: Math.round(now() - action.start) });
-      close(action, 'navegação', true);
+      action.navigations.push({ kind: 'page exit', to: location.pathname, atMs: Math.round(now() - action.start) });
+      close(action, 'navigation', true);
     }
   });
 
@@ -479,7 +481,7 @@
       try {
         const action = current;
         if (action && !action.closed) {
-          action.navigations.push({ kind: name === 'pushState' ? 'endereço mudou' : 'endereço substituído', to: location.pathname + location.search, atMs: Math.round(now() - action.start) });
+          action.navigations.push({ kind: name === 'pushState' ? 'address changed' : 'address replaced', to: location.pathname + location.search, atMs: Math.round(now() - action.start) });
           touch(action);
         }
       } catch {}
@@ -488,7 +490,7 @@
   }
   addEventListener.call(window, 'popstate', () => {
     if (!current || current.closed) return;
-    // A link to a fragment (#secção, or a hash router) also fires popstate:
+    // A link to a fragment (#section, or a hash router) also fires popstate:
     // it is not the back/forward buttons. Only short, plain fragments are
     // shown (an access token can travel in the fragment).
     // The same when the code of the click changes location.hash: the back
@@ -497,7 +499,7 @@
     const anchor = current.element && current.element.closest && current.element.closest('a[href]');
     const byPage = now() - current.start < 1000;
     const hash = byPage && /^#[\w\/-]{1,40}$/.test(location.hash) ? location.hash : '';
-    const kind = !byPage ? 'recuar/avançar' : anchor && anchor.hash ? 'ligação interna' : 'endereço mudou';
+    const kind = !byPage ? 'back/forward' : anchor && anchor.hash ? 'in-page link' : 'address changed';
     current.navigations.push({ kind, to: location.pathname + location.search + hash, atMs: Math.round(now() - current.start) });
   });
 
@@ -521,7 +523,7 @@
       '.top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#18181b;color:#f4f4f5}.top b{margin-right:auto}' +
       '.top button,.top a{all:unset;cursor:pointer;padding:2px 8px;border-radius:5px;color:#e4e4e7}.top button:hover,.top a:hover{background:#3f3f46}' +
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}</style>' +
-      '<button class="pill" part="pill" title="CodeTAC: carregue para ver o dossier da última ação"><span class="dot"></span><span class="label">CodeTAC</span></button>';
+      '<button class="pill" part="pill" title="CodeTAC: click to see the dossier of the last action"><span class="dot"></span><span class="label">CodeTAC</span></button>';
     shadow.querySelector('.pill').addEventListener('click', () => toggleSheet());
     document.documentElement.appendChild(host);
     updateBar(false);
@@ -531,7 +533,7 @@
     const pill = shadow.querySelector('.pill');
     const last = recorded[recorded.length - 1];
     shadow.querySelector('.dot').classList.toggle('on', Boolean(last));
-    shadow.querySelector('.label').textContent = last ? 'Gravada: ' + last.label : 'CodeTAC';
+    shadow.querySelector('.label').textContent = last ? 'Recorded: ' + last.label : 'CodeTAC';
     if (flash) { pill.classList.remove('flash'); void pill.offsetWidth; pill.classList.add('flash'); }
     if (shown && flash) showAction(recorded.length - 1);
   }
@@ -543,9 +545,9 @@
     shown = document.createElement('div');
     shown.className = 'sheet';
     shown.style.height = 'auto';
-    shown.innerHTML = '<div class="top"><b>CodeTAC</b><a target="_blank" rel="noopener">painel ↗</a><button data-close title="Fechar">✕</button></div>' +
-      '<div class="msg">Ainda não há ações gravadas nesta página. Carregue num botão, envie um formulário ou siga uma ligação da aplicação: ' +
-      'a ação aparece aqui. As ações de outras páginas estão no painel.</div>';
+    shown.innerHTML = '<div class="top"><b>CodeTAC</b><a target="_blank" rel="noopener">panel ↗</a><button data-close title="Close">✕</button></div>' +
+      '<div class="msg">No actions recorded on this page yet. Click a button, submit a form or follow a link in the app: ' +
+      'the action shows up here. Actions from other pages are in the panel.</div>';
     shown.querySelector('a').href = panel + '/';
     shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
     shadow.appendChild(shown);
@@ -560,9 +562,9 @@
       shown.className = 'sheet';
       shadow.appendChild(shown);
     }
-    shown.innerHTML = '<div class="top"><b></b><button data-go="-1" title="Ação anterior">◀</button><button data-go="1" title="Ação seguinte">▶</button>' +
-      '<a target="_blank" rel="noopener" title="Abrir no painel">painel ↗</a><button data-close title="Fechar">✕</button></div>' +
-      '<iframe title="Dossier da ação"></iframe>';
+    shown.innerHTML = '<div class="top"><b></b><button data-go="-1" title="Previous action">◀</button><button data-go="1" title="Next action">▶</button>' +
+      '<a target="_blank" rel="noopener" title="Open in the panel">panel ↗</a><button data-close title="Close">✕</button></div>' +
+      '<iframe title="Action dossier"></iframe>';
     shown.querySelector('b').textContent = (index + 1) + '/' + recorded.length + ' · ' + item.label;
     shown.querySelector('a').href = panel + '/?action=' + encodeURIComponent(item.id);
     shown.querySelector('iframe').src = url;
@@ -576,7 +578,7 @@
       const frame = shown.querySelector('iframe');
       const message = document.createElement('div');
       message.className = 'msg';
-      message.textContent = 'O painel do CodeTAC não está a correr. Na pasta do CodeTAC: npm run panel';
+      message.textContent = 'The CodeTAC panel is not running. Stop the app (Ctrl+C) and run codetac again.';
       frame.replaceWith(message);
     });
   }

@@ -5,6 +5,7 @@ import { resolve, join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { openStore, actionLabel } from '../src/store.mjs';
+import { tagPosition } from '../src/page.mjs';
 
 // Runs a server script inside a temporary project; the script makes its own
 // requests and prints JSON results. Returns the output and the recorded events.
@@ -93,7 +94,7 @@ async function run(base, results) {
   await get(base + '/api/save', { 'x-codetac-action': 'abc123xyz.1' }, 'POST');
   await get(base + '/dashboard', { 'sec-fetch-mode': 'navigate', cookie: 'a=1; codetac_action=abc123xyz' });
   await get(base + '/other', { cookie: 'codetac_action=abc123xyz' });
-  const event = { actionId: 'abc123xyz', segment: 1, origin: base, page: '/form?email=ana@example.com', startedAt: Date.now(), durationMs: 800, closedBy: 'sem atividade',
+  const event = { actionId: 'abc123xyz', segment: 1, origin: base, page: '/form?email=ana@example.com', startedAt: Date.now(), durationMs: 800, closedBy: 'idle',
     trigger: { event: 'click', element: { tag: 'button', text: 'Guardar', id: 'save' }, handler: { name: 'handleSave', prop: 'onClick', source: 'react' },
       component: { name: 'InvoiceForm', frames: [{ url: base + '/app.js', line: 3, column: 9 }] } },
     requests: [{ n: 1, kind: 'fetch', method: 'POST', url: base + '/api/save?token=segredo123456', sameOrigin: true, startMs: 5, durationMs: 40, status: 200,
@@ -127,7 +128,7 @@ async function run(base, results) {
   store.ingest();
   const listed = store.listActions({ run: 'gravacao' });
   assert.equal(listed.length, 1);
-  assert.equal(listed[0].label, 'botão «Guardar»');
+  assert.equal(listed[0].label, 'button “Guardar”');
   assert.equal(listed[0].serverRequests, 2);
   const dossier = store.actionDossier('abc123xyz');
   assert.deepEqual(dossier.timeline.map(item => item.type), ['trigger', 'request', 'screen', 'unmatched']);
@@ -138,9 +139,16 @@ async function run(base, results) {
 });
 
 test('nome da ação a partir do elemento', () => {
-  assert.equal(actionLabel({ event: 'click', element: { tag: 'a', text: 'Início' } }), 'ligação «Início»');
-  assert.equal(actionLabel({ event: 'click', element: { tag: 'input', type: 'submit', text: 'Entrar' } }), 'botão «Entrar»');
-  assert.equal(actionLabel({ event: 'submit', element: { tag: 'form', name: 'login' } }), 'formulário «login»');
-  assert.equal(actionLabel({ event: 'click', element: { tag: 'div', role: 'button', label: 'Fechar' } }), 'botão «Fechar»');
-  assert.equal(actionLabel(null), 'continuação após navegação');
+  assert.equal(actionLabel({ event: 'click', element: { tag: 'a', text: 'Home' } }), 'link “Home”');
+  assert.equal(actionLabel({ event: 'click', element: { tag: 'input', type: 'submit', text: 'Sign in' } }), 'button “Sign in”');
+  assert.equal(actionLabel({ event: 'submit', element: { tag: 'form', name: 'login' } }), 'form “login”');
+  assert.equal(actionLabel({ event: 'click', element: { tag: 'div', role: 'button', label: 'Close' } }), 'button “Close”');
+  assert.equal(actionLabel({ event: 'change', element: { tag: 'input', type: 'file', label: 'Photo' } }), 'field “Photo” (file chosen)');
+  assert.equal(actionLabel(null), 'continuation after navigation');
+});
+
+test('vetores de página partilhados com o captor Python (lado Node)', () => {
+  const { vetores } = JSON.parse(readFileSync(resolve('test/vetores-pagina.json'), 'utf8'));
+  for (const { html, posicao } of vetores) assert.equal(tagPosition(Buffer.from(html).toString('latin1'), true), posicao, html);
+  assert.equal(tagPosition('<!doctype html><html><he', false), null);
 });

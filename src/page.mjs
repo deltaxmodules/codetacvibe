@@ -55,7 +55,7 @@ export function handleOwnRoute(request, response, runtime, options) {
     try { sameOrigin = sameOrigin || new URL(origin).host === request.headers.host; } catch {}
     if (!sameOrigin) {
       response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-      response.end('CodeTAC: origem recusada.');
+      response.end('CodeTAC: origin refused.');
       return true;
     }
     let size = 0;
@@ -156,6 +156,22 @@ function withoutLength(headers) {
   return Object.fromEntries(Object.entries(headers).filter(([key]) => !DROP.has(key.toLowerCase())));
 }
 
+// Where the tag goes: after <head ...>; in a whole document without a head,
+// before <body>, or else after <html ...> or <!doctype html> (error pages such
+// as werkzeug's have neither head nor body). Fragments (partial HTML
+// responses) are left intact: -1. null while more of the body is needed.
+// The same rule is in src/python/codetac_py/page.py.
+export function tagPosition(view, final) {
+  const head = view.match(/<head(?:\s[^>]*)?>/i);
+  if (head) return head.index + head[0].length;
+  if (!final) return null;
+  const body = view.search(/<body[\s>]/i);
+  if (body >= 0) return body;
+  const opening = view.match(/^(?:\s|<!--[\s\S]*?-->)*(?:<!doctype html[^>]*>(?:\s|<!--[\s\S]*?-->)*)?<html(?:\s[^>]*)?>/i)
+    ?? view.match(/^(?:\s|<!--[\s\S]*?-->)*<!doctype html[^>]*>/i);
+  return opening ? opening[0].length : -1;
+}
+
 export function injectScript(request, response) {
   delete request.headers['accept-encoding'];
   let mode = null; // null: undecided; 'pass'; 'buffer'; 'done'
@@ -181,15 +197,11 @@ export function injectScript(request, response) {
   const decide = self => { if (mode === null && !self.headersSent) self.writeHead(self.statusCode); if (mode === null) mode = 'pass'; };
   const toBuffer = (chunk, encoding) => Buffer.isBuffer(chunk) ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk)
     : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : 'utf8');
-  // Inserts the tag after <head ...>, or before <body> when there is no head.
-  // Fragments (no head/body, as in partial HTML responses) are left intact.
   function take(final) {
     const all = Buffer.concat(chunks);
-    const view = all.toString('latin1');
-    const head = view.match(/<head(?:\s[^>]*)?>/i);
-    let at = head ? head.index + head[0].length : -1;
-    if (at < 0 && (final || all.length > MAX_BUFFER)) at = view.search(/<body[\s>]/i);
-    if (at < 0) return final || all.length > MAX_BUFFER ? all : null;
+    const at = tagPosition(all.toString('latin1'), final || all.length > MAX_BUFFER);
+    if (at === null) return null;
+    if (at < 0) return all;
     return Buffer.concat([all.subarray(0, at), Buffer.from(TAG), all.subarray(at)]);
   }
 

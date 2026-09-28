@@ -8,8 +8,13 @@ import { randomUUID } from 'node:crypto';
 import { transform } from '../src/transform.mjs';
 import { createRedactor } from '../src/redact.mjs';
 
+// Letters only: a UUID in a recorded path can hold a run of digits and dashes
+// that the redaction takes for a phone number (M30), and the path no longer
+// matches; the tests failed now and then because of it.
+const testId = () => randomUUID().replace(/-/g, '').replace(/\d/g, digit => 'ghijklmnop'[digit]);
+
 function execute(source, extension = 'mjs', extra = {}, files = {}) {
-  const label = `test-${randomUUID()}`;
+  const label = `test-${testId()}`;
   const dir = resolve('.codetac', `${label}-input`);
   mkdirSync(dir, { recursive: true });
   for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
@@ -133,7 +138,7 @@ console.log(JSON.stringify([object(2), nested(2)(3), expression(3)]));`);
 });
 
 function fakeProject() {
-  const project = resolve('.codetac', `test-${randomUUID()}-project`);
+  const project = resolve('.codetac', `test-${testId()}-project`);
   mkdirSync(project, { recursive: true });
   writeFileSync(join(project, 'app.ts'), '');
   return project;
@@ -175,7 +180,7 @@ test('source map ilegível conserva o módulo e declara a limitação', () => {
 });
 
 function spawnCaptured(source, extra = {}) {
-  const label = `test-${randomUUID()}`;
+  const label = `test-${testId()}`;
   const dir = resolve('.codetac', `${label}-input`);
   mkdirSync(dir, { recursive: true });
   const entry = join(dir, 'entry.mjs');
@@ -267,7 +272,7 @@ console.log(a.service() * b.helper());`;
   assert.equal(result.count, 1);
   // Invólucros cujo eval é código mapeado já tratado não são lacunas do projeto.
   assert.deepEqual(result.diagnostics, []);
-  const label = `test-${randomUUID()}`;
+  const label = `test-${testId()}`;
   writeFileSync(join(project, 'bundle.cjs'), source);
   const run = spawnSync(process.execPath, ['--import', resolve('src/register.mjs'), join(project, 'bundle.cjs')], {
     encoding: 'utf8', env: { ...process.env, CODETAC_ROOT: project, CODETAC_RUN: label } });

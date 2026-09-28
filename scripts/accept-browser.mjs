@@ -7,6 +7,8 @@
 //   - a barra não altera a disposição da página nem acrescenta erros na consola.
 // Procura ainda segredos conhecidos nas gravações e confirma que o projeto não
 // foi alterado (git status igual antes e depois).
+// Com "python" (o interpretador, por exemplo "{root}/.venv/bin/python"), a app
+// é Python e a captura entra pelo captor Python (src/python/codetac_py).
 //   node scripts/accept-browser.mjs <config.json>
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -17,6 +19,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { launchChrome } from './lib/chrome.mjs';
 import { openStore } from '../src/store.mjs';
 import { createActionView } from '../src/action-view.mjs';
+import { digestAction } from '../src/digest.mjs';
 
 const workspace = resolve(import.meta.dirname, '..');
 const config = JSON.parse(readFileSync(resolve(process.argv[2] ?? ''), 'utf8'));
@@ -44,8 +47,8 @@ function gitStatus() {
 }
 
 // Starts a process in its own group; stop() ends the whole group.
-function start(args, env, cwd = root) {
-  const child = spawn(process.execPath, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+function start(args, env, cwd = root, command = process.execPath) {
+  const child = spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', data => { output = (output + data).slice(-64000); });
   child.stderr.on('data', data => { output = (output + data).slice(-64000); });
@@ -60,28 +63,52 @@ function start(args, env, cwd = root) {
   };
 }
 
+// One process of the scenario, with or without capture: the app itself, or a
+// companion (for example the Python API next to a Vite frontend). `ports`
+// holds every port of the scenario: {port} is the app's, {<name>} a companion's.
+async function startProcess(spec, directory, capture, ports, own) {
+  const fill = value => Object.entries(ports).reduce((text, [name, number]) => text.replaceAll(`{${name}}`, String(number)), substitute(String(value)));
+  const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1', PORT: String(ports[own]) };
+  for (const key of Object.keys(env)) if (key.startsWith('CODETAC_') || key === 'PYTHONPATH') delete env[key];
+  delete env.NODE_OPTIONS;
+  // A companion with "capture": false runs unobserved (for example, an API
+  // started without CodeTAC).
+  if (capture && spec.capture !== false) Object.assign(env, { CODETAC_ROOT: directory, CODETAC_RUN: label, CODETAC_PANEL_PORT: String(panelPort) },
+    spec.python ? { PYTHONPATH: join(workspace, 'src/python/codetac_py'), PYTHONDONTWRITEBYTECODE: '1' }
+      : { NODE_OPTIONS: `--import=${pathToFileURL(join(workspace, 'src/register.mjs')).href}` });
+  for (const [key, value] of Object.entries(spec.env ?? {})) env[key] = fill(value);
+  const app = start(spec.args.map(fill), env, directory, spec.python ? substitute(spec.python) : process.execPath);
+  const origin = fill(spec.origin ?? 'http://localhost:{port}');
+  const began = performance.now();
+  while (true) {
+    if (performance.now() - began > 240000) throw new Error('servidor não ficou pronto em 240 s');
+    if (app.child.exitCode !== null) throw new Error(`servidor terminou (${app.child.exitCode})\n${app.output().slice(-2000)}`);
+    try { await fetch(`${origin}${spec.readyPath ?? '/'}`, { redirect: 'manual', signal: AbortSignal.timeout(90000) }); break; }
+    catch { await delay(300); }
+  }
+  return { ...app, origin };
+}
+
 async function startApp(capture) {
   // Optional preparation before each run (for example, resetting a test database).
   for (const command of config.prepare ?? []) {
     const result = spawnSync(process.execPath, command.map(substitute), { cwd: root, encoding: 'utf8', env: process.env });
     if (result.status !== 0) throw new Error(`preparação falhou: ${result.stderr.slice(-500)}`);
   }
-  const port = await freePort();
-  const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1', PORT: String(port) };
-  delete env.NODE_OPTIONS;
-  if (capture) Object.assign(env, { CODETAC_ROOT: root, CODETAC_RUN: label, CODETAC_PANEL_PORT: String(panelPort),
-    NODE_OPTIONS: `--import=${pathToFileURL(join(workspace, 'src/register.mjs')).href}` });
-  for (const [key, value] of Object.entries(config.env ?? {})) env[key] = substitute(String(value)).replaceAll('{port}', String(port));
-  const app = start(config.args.map(arg => substitute(arg).replaceAll('{port}', String(port))), env);
-  const origin = (config.origin ?? 'http://localhost:{port}').replaceAll('{port}', String(port));
-  const began = performance.now();
-  while (true) {
-    if (performance.now() - began > 240000) throw new Error('servidor não ficou pronto em 240 s');
-    if (app.child.exitCode !== null) throw new Error(`servidor terminou (${app.child.exitCode})\n${app.output().slice(-2000)}`);
-    try { await fetch(`${origin}${config.readyPath ?? '/'}`, { redirect: 'manual', signal: AbortSignal.timeout(90000) }); break; }
-    catch { await delay(300); }
+  const ports = { port: await freePort() };
+  for (const companion of config.companions ?? []) ports[companion.name] = await freePort();
+  const companions = [];
+  try {
+    for (const companion of config.companions ?? []) {
+      companions.push(await startProcess({ ...companion, origin: companion.origin ?? `http://127.0.0.1:{${companion.name}}` },
+        resolve(substitute(companion.root)), capture, ports, companion.name));
+    }
+    const app = await startProcess(config, root, capture, ports, 'port');
+    return { ...app, port: ports.port, async stop() { await app.stop(); for (const companion of companions) await companion.stop(); } };
+  } catch (error) {
+    for (const companion of companions) await companion.stop();
+    throw error;
   }
-  return { ...app, origin, port };
 }
 
 // One pass through the scenario. With capture, each "action" step records the
@@ -112,6 +139,12 @@ async function scenario(page, app, capture, store) {
         }
       }
       if (step.type) await page.type(step.type[0], substitute(step.type[1]));
+      // Replaces the whole text of a field, as a person would (select all, then type).
+      if (step.replace) {
+        await page.click(step.replace[0]);
+        await page.evaluate(`document.querySelector(${JSON.stringify(step.replace[0])}).select()`);
+        await page.call('Input.insertText', { text: substitute(step.replace[1]) });
+      }
       if (step.click) await page.click(step.click);
       if (step.after) await page.waitFor(step.after, step.timeout ?? 30000);
       if (step.settle) await delay(step.settle);
@@ -207,6 +240,29 @@ function checkAction(dossier, expect) {
     if (checks.detail.some(item => !item.lines)) failed.push('detalhe sem linhas executadas');
   }
   if (expect.noDetail && checks.detail.length) failed.push('detalhe antes de ser pedido');
+  // Functions of the project that must be in the server part, and the text
+  // expected on the line each one is shown at (templates: the .html line).
+  const steps = serverParts.flatMap(part => part.steps.filter(step => step.type === 'function'));
+  checks.functions = [...new Set(steps.map(step => step.function))];
+  for (const name of expect.functions ?? []) if (!checks.functions.includes(name)) failed.push(`função ${name}`);
+  checks.lines = {};
+  for (const [name, text] of Object.entries(expect.lines ?? {})) {
+    const step = steps.find(item => item.function === name);
+    const line = step?.line ? readFileSync(step.file, 'utf8').split('\n')[step.line - 1] : undefined;
+    checks.lines[name] = step ? `${step.file.slice(root.length + 1)}:${step.line} ${line?.trim() ?? '(sem linha)'}` : null;
+    if (!line?.includes(text)) failed.push(`linha de ${name}`);
+  }
+  // DP3: requests to another origin linked as probable, with their server part.
+  const cross = browserRequests.filter(item => !item.browser.sameOrigin);
+  checks.probable = cross.map(item => ({ path: item.browser.path, host: item.browser.host, probable: Boolean(item.probable), requests: item.server.length }));
+  if (expect.probable && !(cross.length && cross.every(item => item.probable && item.server.length))) failed.push('ligação provável');
+  if (expect.unlinked && !(cross.length && cross.every(item => !item.probable && !item.server.length))) failed.push('sem ligação');
+  // Lasting effects that must be in the action's summary (all its requests,
+  // work after the response included).
+  checks.effects = digestAction(dossier).effects.items.map(item => item.text);
+  for (const text of expect.effects ?? []) if (!checks.effects.includes(text)) failed.push(`efeito «${text}»`);
+  checks.afterResponse = steps.filter(step => step.afterResponse).map(step => step.function);
+  for (const name of expect.afterResponse ?? []) if (!checks.afterResponse.includes(name)) failed.push(`depois da resposta: ${name}`);
   const handlers = [trigger?.trigger.handler, trigger?.trigger.submit?.handler].filter(Boolean).map(handler => handler.name);
   checks.handlers = handlers;
   if (expect.handler && !handlers.includes(expect.handler)) failed.push(`handler=${expect.handler}`);
@@ -231,7 +287,7 @@ function outline(dossier) {
       for (const h of [item.trigger.handler, item.trigger.submit?.handler].filter(Boolean)) lines.push(`    handler ${h.name} (${h.prop ?? h.source})`);
     } else if (item.type === 'request') {
       const b = item.browser;
-      lines.push(`  [browser→${b.sameOrigin ? 'servidor' : b.host}] ${b.method} ${b.path} → ${b.status ?? '—'}${b.chain?.length ? `  ← ${b.chain.map(f => `${f.fn} ${f.short}:${f.line}`).join(' → ')}` : ''}`);
+      lines.push(`  [browser→${b.sameOrigin ? 'servidor' : b.host}${item.probable ? ', ligação provável' : ''}] ${b.method} ${b.path} → ${b.status ?? '—'}${b.chain?.length ? `  ← ${b.chain.map(f => `${f.fn} ${f.short}:${f.line}`).join(' → ')}` : ''}`);
       for (const part of item.server) partLines(part);
     } else if (item.type === 'document') {
       lines.push(`  [nova página] ${item.page?.path}`);

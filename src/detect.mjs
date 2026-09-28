@@ -3,6 +3,7 @@
 // fica em `missing`, para o comando perguntar ao utilizador.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
+import { describePythonFolder, hasPythonSignals } from './detect-python.mjs';
 
 // Ordem de preferência dos scripts de desenvolvimento.
 const SCRIPTS = ['dev', 'start:dev', 'develop', 'serve', 'dev:server', 'server', 'start'];
@@ -26,7 +27,8 @@ const STACKS = [
 ];
 const ENTRIES = ['server.js', 'server.mjs', 'server.ts', 'index.js', 'index.mjs', 'index.ts', 'app.js', 'app.ts',
   'src/server.ts', 'src/server.js', 'src/index.ts', 'src/index.js', 'src/main.ts', 'src/app.ts', 'server/index.ts', 'server/index.js'];
-const SKIP_FOLDERS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', 'public', 'docs', 'test', 'tests', 'e2e', 'scripts']);
+const SKIP_FOLDERS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', 'public', 'docs', 'test', 'tests', 'e2e', 'scripts',
+  'venv', 'env', '__pycache__', 'site-packages']);
 
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
@@ -97,7 +99,7 @@ export function portOf(root, script, stack) {
       ?? text.match(/\bport\s*[:=]\s*(\d{4,5})\b/);
     if (match) return { value: Number(match[1]), source: name };
   }
-  if (stack?.port) return { value: stack.port, source: `omissão de ${stack.name}` };
+  if (stack?.port) return { value: stack.port, source: `${stack.name} default` };
   return null;
 }
 
@@ -138,7 +140,8 @@ function childFolders(root) {
       if (name.startsWith('.') || SKIP_FOLDERS.has(name)) continue;
       const path = join(folder, name);
       try { if (!statSync(path).isDirectory()) continue; } catch { continue; }
-      if (existsSync(join(path, 'package.json'))) found.push(path);
+      // A folder with its own package.json, or a Python project (api/, backend/…).
+      if (existsSync(join(path, 'package.json')) || hasPythonSignals(path)) found.push(path);
       else if (depth < 1) visit(path, depth + 1);
       if (depth < 1 && ['apps', 'packages'].includes(name)) visit(path, depth + 1);
     }
@@ -175,15 +178,23 @@ function plainEntry(root) {
 // package.json whose script already starts everything is enough on its own;
 // otherwise the parts with their own scripts are offered (client + server…).
 export function detectProject(root) {
-  const top = describeFolder(root) ?? plainEntry(root);
-  const parts = childFolders(root).map(folder => describeFolder(folder, root)).filter(part => part?.command);
+  const node = describeFolder(root);
+  // A package.json that starts nothing (only tooling) does not hide a Python app in the same folder.
+  const top = (node?.command ? node : null) ?? describePythonFolder(root) ?? node ?? plainEntry(root);
+  const parts = childFolders(root).map(folder => describeFolder(folder, root) ?? describePythonFolder(folder, root)).filter(part => part?.command);
   let start = [];
   // Without a "dev" script, several "dev:*" scripts (dev:server + dev:client…)
   // are started together: that is how such projects run in development.
   const pieces = top ? devPieces(top) : [];
   if (pieces.length > 1) start = pieces;
-  else if (top?.command) start = [top];
+  // A frontend at the top and a Python API in a subfolder (backend/, api/): both run,
+  // unless the top script already starts Python itself.
+  else if (top?.command && top.language !== 'python' && !/^(python3?|uvicorn)$/.test(top.foreign ?? '') && parts.some(part => part.language === 'python')) {
+    start = [top, ...parts.filter(part => part.language === 'python')];
+  } else if (top?.command) start = [top];
   else if (parts.length === 1) start = parts;
+  // A frontend and a Python API (web/ + api/): both run in development.
+  else if (!top?.command && parts.some(part => part.language === 'python') && parts.some(part => part.language !== 'python')) start = parts;
   const missing = [];
   if (!top && !parts.length) missing.push('package');
   else if (!start.length && parts.length > 1) missing.push('part');
@@ -193,6 +204,10 @@ export function detectProject(root) {
 
 // The sentence the command shows before starting.
 export function describeStart(part) {
-  const what = part.script ? `${part.command.join(' ')}  (script «${part.script.name}»: ${part.script.command})` : part.command.join(' ');
+  const shown = part.language === 'python' && part.python.interpreter
+    ? part.command.map(token => token === part.python.interpreter ? relative(part.folder, token) || token : token) : part.command;
+  const what = part.language === 'python'
+    ? `${shown.join(' ')}${part.python.declared ? `  (from ${part.python.declaredSource})` : ''}${part.python.version ? `  · Python ${part.python.version}` : ''}`
+    : part.script ? `${part.command.join(' ')}  (script “${part.script.name}”: ${part.script.command})` : part.command.join(' ');
   return `${part.part === '.' ? '' : `[${part.part}] `}${part.stack ? `${part.stack} · ` : ''}${what}`;
 }

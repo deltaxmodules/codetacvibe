@@ -1,23 +1,25 @@
-// `codetac diagnostico` (Fase 5): o que está e o que não está a funcionar,
+// `codetac diagnose` (Fase 5): o que está e o que não está a funcionar,
 // em linguagem simples, a partir do projeto, do painel e da última gravação.
 import { registerHooks } from 'node:module';
 import http from 'node:http';
 import { join, relative } from 'node:path';
 import { dataDirectory } from './home.mjs';
 import { detectProject, describeStart } from './detect.mjs';
+import { MINIMUM, versionBelow } from './detect-python.mjs';
 import { recordingsOf, summarize } from './recording.mjs';
 import { describeConfig, loadConfig } from './ai.mjs';
 
 const directory = dataDirectory();
 
 const REASONS = {
-  'module-transform-failed': 'ficheiros que não foi possível preparar',
-  'source-map-unreadable': 'ficheiros com source map ilegível',
-  'eval-code-transform-failed': 'blocos de código do bundler que não foi possível preparar',
-  'constructor-skipped': 'construtores de classes (correm, mas não aparecem)',
-  'generator-skipped': 'generators (correm, mas não aparecem)',
-  'parameter-redeclaration-skipped': 'funções que redeclaram um parâmetro (correm, mas não aparecem)',
-  'direct-eval-skipped': 'funções com eval direto (correm, mas não aparecem)',
+  'module-transform-failed': 'files that could not be prepared',
+  'source-map-unreadable': 'files with an unreadable source map',
+  'eval-code-transform-failed': 'bundler code blocks that could not be prepared',
+  'constructor-skipped': 'class constructors (they run, but are not shown)',
+  'generator-skipped': 'generators (they run, but are not shown)',
+  'parameter-redeclaration-skipped': 'functions that redeclare a parameter (they run, but are not shown)',
+  'direct-eval-skipped': 'functions with a direct eval (they run, but are not shown)',
+  'template-lines-unmapped': 'templates not linked to the lines of the file (shown as a single step)',
 };
 
 function ping(port) {
@@ -41,63 +43,91 @@ function panelConfig(port) {
   });
 }
 
+// A Python part: interpreter, version, dependencies, server and start (Etapa 12 Python).
+function pythonPart(part, { ok, bad, note }) {
+  const label = part.part === '.' ? '' : `[${part.part}] `;
+  const { python } = part;
+  if (!python.interpreter) bad(`${label}No Python environment (.venv).`, 'codetac creates it and installs the dependencies (it asks first; --yes answers yes).');
+  else if (!python.version) bad(`${label}The environment's Python (${relative(part.folder, python.interpreter)}) did not answer.`, 'The environment may be broken: delete the .venv and run codetac again.');
+  else if (versionBelow(python.version)) note(`${label}Python ${python.version} (${relative(part.folder, python.interpreter)}): minimal mode only (requests, boundaries and browser, without the functions).`,
+    `Create the environment with Python ${MINIMUM.join('.')} or newer.`);
+  else ok(`${label}Python ${python.version} (${relative(part.folder, python.interpreter) || python.interpreter}): can follow the project's functions.`);
+  if (python.interpreter && python.missing.length) bad(`${label}Missing dependencies: ${python.missing.slice(0, 8).join(', ')}${python.missing.length > 8 ? '…' : ''}.`, 'codetac installs them (it asks first).');
+  ok(`Start: ${describeStart(part)}`);
+  if (part.server) ok(`${label}Server: ${part.server}.`);
+  if (part.port) ok(`${label}Likely port: ${part.port.value} (${part.port.source}). If it is taken, the command picks another.`);
+  // The version note is already the first line.
+  for (const text of (part.notes ?? []).filter(text => !text.startsWith("The project's Python"))) note(`${label}${text}`);
+}
+
 export async function diagnose(root, { panelPort = 4000, out = text => process.stdout.write(`${text}\n`) } = {}) {
   let problems = 0;
   const ok = text => out(`  ✓ ${text}`);
   const bad = (text, fix) => { problems++; out(`  ✗ ${text}`); if (fix) out(`      → ${fix}`); };
   const note = (text, fix) => { out(`  ! ${text}`); if (fix) out(`      → ${fix}`); };
 
-  out(`Diagnóstico do CodeTAC · ${root}\n`);
-  out('Este computador');
+  out(`CodeTAC diagnosis · ${root}\n`);
+  out('This computer');
   const [major] = process.versions.node.split('.').map(Number);
-  if (major >= 24 && typeof registerHooks === 'function') ok(`Node ${process.version}: consegue seguir as funções do projeto.`);
-  else if (typeof registerHooks === 'function') note(`Node ${process.version}: funciona, mas o CodeTAC foi verificado no Node 24 ou superior.`, 'Instale o Node 24 ou mais recente.');
-  else bad(`Node ${process.version}: não permite seguir as funções; só o modo mínimo (pedidos e fronteiras).`, 'Instale o Node 24 ou mais recente.');
+  if (major >= 24 && typeof registerHooks === 'function') ok(`Node ${process.version}: can follow the project's functions.`);
+  else if (typeof registerHooks === 'function') note(`Node ${process.version}: works, but CodeTAC was checked on Node 24 or newer.`, 'Install Node 24 or newer.');
+  else bad(`Node ${process.version}: cannot follow the functions; minimal mode only (requests and boundaries).`, 'Install Node 24 or newer.');
 
-  out('\nO projeto');
+  out('\nThe project');
   const project = detectProject(root);
-  if (project.missing.includes('package')) bad('Não há package.json nem ficheiro de servidor (server.js, index.js…) nesta pasta.', 'Corra o comando na pasta da app, ou indique o arranque: codetac . -- node server.js');
-  else if (project.missing.includes('part')) note(`Tem várias partes: ${project.parts.map(part => part.part).join(', ')}. O comando pergunta quais arrancar.`);
-  else if (project.missing.includes('command')) bad('O package.json não tem um script de arranque (dev, start…).', 'Indique o comando: codetac . -- <comando>');
+  if (project.missing.includes('package')) bad('No package.json or server file (server.js, index.js…) in this folder.', 'Run the command in the app\'s folder, or give the start command: codetac . -- node server.js');
+  else if (project.missing.includes('part')) note(`It has several parts: ${project.parts.map(part => part.part).join(', ')}. The command asks which to start.`);
+  else if (project.missing.includes('command') && project.top?.language === 'python') {
+    if (project.top.python.django) bad('Django project: CodeTAC does not support it yet (FastAPI and Flask only).');
+    else bad('Python project, but I did not find the app (FastAPI(...) or Flask(...)) or a command in the Procfile, Makefile or README.', 'Give the command: codetac . -- uvicorn main:app --reload');
+  } else if (project.missing.includes('command')) bad('The package.json has no start script (dev, start…).', 'Give the command: codetac . -- <command>');
   for (const part of project.start.length ? project.start : project.parts) {
-    ok(`Arranque: ${describeStart(part)}`);
-    if (part.port) ok(`Porta provável: ${part.port.value} (${part.port.source}). A porta real é lida quando a app arranca.`);
-    if (!part.installed) bad(`As dependências de ${part.part === '.' ? 'o projeto' : part.part} não estão instaladas.`, `${part.manager === 'bun' ? 'npm' : part.manager} install (ou codetac --sim, que instala)`);
-    if (part.foreign) note(`O script usa ${part.foreign}, que não é o Node: essa parte corre, mas não é observada por dentro.`);
+    if (part.language === 'python') { pythonPart(part, { ok, bad, note }); continue; }
+    ok(`Start: ${describeStart(part)}`);
+    if (part.port) ok(`Likely port: ${part.port.value} (${part.port.source}). The real port is read when the app starts.`);
+    if (!part.installed) bad(`The dependencies of ${part.part === '.' ? 'the project' : part.part} are not installed.`, `${part.manager === 'bun' ? 'npm' : part.manager} install (or codetac --yes, which installs them)`);
+    if (part.foreign) note(`The script uses ${part.foreign}, which is not Node: that part runs, but is not observed inside.`);
   }
 
-  out('\nO painel');
+  out('\nThe panel');
   const panelOn = await ping(panelPort);
-  if (panelOn) ok(`Está a correr em http://127.0.0.1:${panelPort}.`);
-  else note(`Não está a correr na porta ${panelPort}.`, 'O comando codetac arranca-o; sozinho: npm run panel, na pasta do CodeTAC.');
+  if (panelOn) ok(`Running at http://127.0.0.1:${panelPort}.`);
+  else note(`Not running on port ${panelPort}.`, 'The codetac command starts it.');
   try {
     // The running panel's own configuration, else the one it would load.
     const config = (panelOn && await panelConfig(panelPort)) || describeConfig(await loadConfig({ directory }));
-    ok(`Frases de finalidade: ${config.active ? `${config.model} (${config.provider}${config.local ? ', local: nada sai da máquina' : ', excertos redigidos são enviados'})`
-      : `fixas, geradas dos factos (${config.problem ?? 'sem modelo de IA configurado'})`}.`);
+    ok(`Purpose sentences: ${config.active ? `${config.model} (${config.provider}${config.local ? ', local: nothing leaves this computer' : ', redacted excerpts are sent'})`
+      : `fixed, built from the facts (${config.problem ?? 'no AI model configured'})`}.`);
   } catch {}
 
-  out('\nA última gravação deste projeto');
+  out('\nThe latest recording of this project');
   const [last] = recordingsOf(directory, root);
   if (!last) {
-    note('Ainda não há gravações deste projeto.', 'Arranque com: codetac (na pasta do projeto). Depois volte a correr o diagnóstico.');
-    out(problems ? `\n${problems} problema(s) a resolver.` : '\nNada impede o arranque.');
+    note('No recordings of this project yet.', 'Start it with: codetac (in the project folder). Then run the diagnosis again.');
+    out(problems ? `\n${problems} problem(s) to fix.` : '\nNothing prevents the start.');
     return problems ? 1 : 0;
   }
   const summary = summarize(last.folder);
-  ok(`${last.name} (${new Date(last.changed).toLocaleString('pt-PT')}), ${summary.processes.size} processo(s) Node observados.`);
+  // Processes by runtime; a supervisor (reloader) serves nothing and is left out.
+  const serving = summary.starts.filter(start => !summary.supervisors.has(start.process));
+  const pythons = [...new Set(serving.filter(start => start.python).map(start => start.python))];
+  const nodes = serving.filter(start => !start.python).length;
+  const runtimes = [nodes && `${nodes} Node`, pythons.length && `${serving.length - nodes} Python ${pythons.join(', ')}`].filter(Boolean).join(', ');
+  ok(`${last.name} (${new Date(last.changed).toLocaleString('en-GB')}), ${serving.length} process(es) observed${runtimes ? ` (${runtimes})` : ''}.`);
+  if (summary.supervisors.size) ok(`${summary.supervisors.size} reloader supervisor process(es) (they only watch the files; not counted).`);
+  if (summary.servers.size) ok(`Server: ${[...summary.servers].join(', ')}.`);
   const minimal = summary.starts.find(start => start.level === 'minimo');
-  if (minimal) note(`Modo mínimo: as funções do projeto não foram seguidas (${minimal.reason ?? 'sem motivo registado'}). Pedidos, fronteiras e browser sim.`,
-    'Se a app arranca sem o CodeTAC mas não com ele, envie estas linhas e as mensagens do arranque.');
-  if (summary.ports.size) ok(`Portas abertas pela app: ${[...summary.ports].join(', ')}.`);
-  else if (!summary.requests) bad('A captura não viu a app abrir nenhuma porta.', 'A app arrancou? Se o servidor não for Node (bun, deno…), não é observado.');
+  if (minimal) note(`Minimal mode: the project's functions were not followed (${minimal.reason ?? 'no reason recorded'}). Requests, boundaries and browser were.`,
+    'If the app starts without CodeTAC but not with it, send these lines and the start messages.');
+  if (summary.ports.size) ok(`Ports opened by the app: ${[...summary.ports].join(', ')}.`);
+  else if (!summary.requests) bad('The capture did not see the app open any port.', 'Did the app start? If the server is neither Node nor Python (bun, deno…), it is not observed.');
   if (!minimal) {
-    if (summary.files) ok(`Ficheiros do projeto preparados: ${summary.files} (${summary.functions} funções).`);
-    else if (summary.requests) bad('Nenhum ficheiro do projeto passou pelo CodeTAC.',
-      'O servidor pode estar a correr código já empacotado sem source map, ou fora da pasta do projeto. Os dossiers mostram só pedidos e fronteiras.');
+    if (summary.files) ok(`Project files prepared: ${summary.files} (${summary.functions} functions).`);
+    else if (summary.requests) bad('No project file went through CodeTAC.',
+      'The server may be running code already bundled without a source map, or outside the project folder. The dossiers show only requests and boundaries.');
     const failed = summary.failed.length;
     if (failed) {
-      note(`${failed} ficheiro(s) correm sem ser seguidos (não foi possível prepará-los):`);
+      note(`${failed} file(s) run without being followed (they could not be prepared):`);
       for (const item of summary.failed.slice(0, 5)) out(`      - ${relative(root, item.file ?? '') || item.file}${item.detail ? `: ${item.detail}` : ''}`);
     }
     for (const [reason, count] of summary.limitations) {
@@ -106,16 +136,16 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
     }
   }
   if (summary.requests) {
-    ok(`Pedidos gravados: ${summary.requests}. Com funções do projeto: ${summary.withFunctions.size}. Com fronteiras: ${summary.withBoundaries.size}.`);
-    if (!minimal && summary.files && !summary.withFunctions.size) note('Nenhum pedido passou por funções do projeto até agora.',
-      'Normal numa app só de frontend (Vite, páginas estáticas): o servidor só entrega ficheiros; o que interessa está no browser.');
-  } else note('Ainda não chegou nenhum pedido.', 'Abra a app no browser e use-a.');
-  if (summary.pages) ok(`Páginas servidas com a barra do CodeTAC: ${summary.pages}.`);
-  else if (summary.requests && !summary.actions.size) note('Nenhuma página HTML passou pelo servidor observado: a barra não foi injetada.',
-    'Se a página vem de outro servidor (outro processo, não Node), abra-a através do servidor Node da app.');
-  if (summary.actions.size) ok(`Ações do browser gravadas: ${summary.actions.size}.`);
-  else if (summary.pages) note('A barra está na página, mas ainda não chegou nenhuma ação.', 'Clique em algo na app. Se nada aparecer, veja a consola do browser (erros de CSP?).');
+    ok(`Requests recorded: ${summary.requests}. With project functions: ${summary.withFunctions.size}. With boundaries: ${summary.withBoundaries.size}.`);
+    if (!minimal && summary.files && !summary.withFunctions.size) note('No request has gone through project functions so far.',
+      'Normal in a frontend-only app (Vite, static pages): the server only delivers files; what matters is in the browser.');
+  } else note('No request has arrived yet.', 'Open the app in the browser and use it.');
+  if (summary.pages) ok(`Pages served with the CodeTAC bar: ${summary.pages}.`);
+  else if (summary.requests && !summary.actions.size) note('No HTML page went through the observed server: the bar was not injected.',
+    'If the page comes from another server (a process CodeTAC does not observe), open it through the app\'s observed server.');
+  if (summary.actions.size) ok(`Browser actions recorded: ${summary.actions.size}.`);
+  else if (summary.pages) note('The bar is on the page, but no action has arrived yet.', 'Click something in the app. If nothing shows up, check the browser console (CSP errors?).');
 
-  out(problems ? `\n${problems} problema(s) a resolver.` : '\nTudo o que foi possível verificar está a funcionar.');
+  out(problems ? `\n${problems} problem(s) to fix.` : '\nEverything that could be checked is working.');
   return problems ? 1 : 0;
 }

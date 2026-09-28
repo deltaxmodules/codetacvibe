@@ -10,7 +10,7 @@ import { dataDirectory, install as workspace } from './home.mjs';
 const root = realpathSync(resolve(process.env.CODETAC_ROOT || process.cwd()));
 // Output goes to CodeTAC's data folder (home.mjs), never into the observed app.
 const label = process.env.CODETAC_RUN || 'manual';
-if (!/^[a-zA-Z0-9_-]{1,80}$/.test(label)) throw new Error('CODETAC_RUN: use apenas letras, números, _ ou - (máximo 80).');
+if (!/^[a-zA-Z0-9_-]{1,80}$/.test(label)) throw new Error('CODETAC_RUN: use only letters, digits, _ or - (at most 80).');
 const runtime = createRuntime(join(dataDirectory(), label));
 globalThis[Symbol.for(runtimeKey)] = runtime;
 // Minimal mode (Phase 5): requests, boundaries and the page bar, without
@@ -18,8 +18,8 @@ globalThis[Symbol.for(runtimeKey)] = runtime;
 // when the application does not start with the fine instrumentation; it is
 // also used when this Node cannot register module hooks.
 const minimal = process.env.CODETAC_LEVEL === 'minimo' || typeof registerHooks !== 'function';
-const reason = process.env.CODETAC_LEVEL === 'minimo' ? (process.env.CODETAC_MINIMO_MOTIVO || 'pedido no arranque')
-  : minimal ? `o Node ${process.version} não permite registar hooks de módulos` : undefined;
+const reason = process.env.CODETAC_LEVEL === 'minimo' ? (process.env.CODETAC_MINIMO_MOTIVO || 'requested at startup')
+  : minimal ? `Node ${process.version} cannot register module hooks` : undefined;
 runtime.emit({ type: 'capture-start', root, node: process.version, level: minimal ? 'minimo' : 'normal', reason });
 // The page script is injected into HTML pages unless CODETAC_PAGE=0.
 installBoundaries(runtime, root, { panel: panelUrl(), run: label, inject: process.env.CODETAC_PAGE !== '0' });

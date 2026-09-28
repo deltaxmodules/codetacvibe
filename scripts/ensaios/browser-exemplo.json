@@ -1,0 +1,17 @@
+{
+  "name": "browser-exemplo",
+  "root": "{codetac}/fixtures/browser",
+  "readyPath": "/",
+  "origin": "http://127.0.0.1:{port}",
+  "args": ["{root}/server.mjs"],
+  "env": { "PORT": "{port}" },
+  "steps": [
+    { "name": "abrir", "goto": "/", "waitFor": "document.querySelector('#guardar')", "snapshot": "inicio" },
+    { "name": "Guardar nota (dois pedidos)", "click": "#guardar", "after": "document.querySelector('#estado').textContent === 'guardada'",
+      "expect": { "server": true, "requestsMin": 2, "handler": "saveNote", "chain": ["saveNote@app.js:10", "reloadList@app.js:4"] }, "snapshot": "guardada" },
+    { "name": "Mostrar detalhes (só frontend)", "click": "#alternar", "after": "!document.querySelector('#detalhes').hidden",
+      "expect": { "frontendOnly": true, "handler": "toggleDetails" } },
+    { "name": "Outra página (navegação completa)", "click": "#outra", "after": "location.pathname === '/outra'", "settle": 1500,
+      "expect": { "server": true, "requestsMin": 2, "segments": 2 }, "snapshot": "outra", "openBar": true }
+  ]
+}

@@ -2,40 +2,44 @@
 // Comando `codetac` (Fase 5): numa pasta de projeto, descobre como arrancá-lo,
 // arranca o painel e a app com a captura e diz onde abrir. Se a app não
 // arrancar com a instrumentação fina, arranca-a de novo em modo mínimo.
-//   codetac [pasta] [opções] [-- comando de arranque]
-//   codetac diagnostico [pasta]
+//   codetac [folder] [options] [-- start command]
+//   codetac diagnose [folder]
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, homedir, release } from 'node:os';
 import http from 'node:http';
 import { basename, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { detectProject, describeStart, foreignRuntime } from './detect.mjs';
+import { MINIMUM, commandFor, describePythonFolder, environmentOf, interpreters, moveTo, probe, proxyOf, pythonPort, versionBelow } from './detect-python.mjs';
 import { createSummary, follow } from './recording.mjs';
 
 import { dataDirectory, install as workspace } from './home.mjs';
 
 const recordings = dataDirectory();
 const register = pathToFileURL(join(workspace, 'src', 'register.mjs')).href;
+// The Python captor: its sitecustomize.py runs in every Python process of the app.
+const captor = join(workspace, 'src', 'python', 'codetac_py');
 const started = Date.now();
 const seconds = () => `${Math.round((Date.now() - started) / 1000)} s`;
 const say = text => process.stdout.write(`${text}\n`);
-const HELP = `Uso:
-  codetac [pasta] [opções] [-- comando]   arranca a app da pasta (por omissão, a atual) com o CodeTAC
-  codetac diagnostico [pasta]              explica o que está e o que não está a funcionar
-  codetac relatorio [pasta]                guarda o diagnóstico num ficheiro para enviar com uma incidência
-  codetac --version                        versão instalada
+const HELP = `Usage:
+  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)
+  codetac diagnose [folder]                  explains what is and what is not working
+  codetac report [folder]                    saves the diagnosis to a file to attach to an issue
+  codetac help                               this help
+  codetac --version                          installed version
 
-Opções:
-  --script <nome>      script do package.json a usar (por omissão: dev, start…)
-  --parte <pasta>      num projeto com várias partes, qual arrancar (pode repetir)
-  --porta <n>          porta da app, se não for descoberta sozinha
-  --painel <n>         porta do painel (por omissão 4000)
-  --minimo             não seguir as funções do projeto (só pedidos e fronteiras)
-  --sim                responder «sim» às perguntas (instalar dependências…)
-  --nao-abrir          não abrir o browser
-  -- <comando>         comando de arranque, quando não for descoberto (ex.: -- node server.js)`;
+Options:
+  --script <name>      package.json script to use (default: dev, start…)
+  --part <folder>      in a project with several parts, which one to start (can repeat)
+  --port <n>           the app's port, if it is not found automatically
+  --panel-port <n>     the panel's port (default 4000)
+  --minimal            do not follow the project's functions (requests and boundaries only)
+  --yes                answer "yes" to the questions (install dependencies, create the .venv…)
+  --no-open            do not open the browser
+  -- <command>         the start command, when it is not found (e.g. -- node server.js)`;
 
 function parseArgs(argv) {
   const options = { parts: [], command: null, folder: null, sub: null };
@@ -44,18 +48,18 @@ function parseArgs(argv) {
     const value = () => argv[++index];
     if (arg === '--') { options.command = argv.slice(index + 1); break; }
     else if (arg === '--script') options.script = value();
-    else if (arg === '--parte') options.parts.push(value());
-    else if (arg === '--porta') options.port = Number(value());
-    else if (arg === '--painel') options.panelPort = Number(value());
-    else if (arg === '--minimo') options.minimal = true;
-    else if (arg === '--sim') options.yes = true;
-    else if (arg === '--nao-abrir') options.noOpen = true;
-    else if (arg === '-h' || arg === '--help' || arg === 'ajuda') options.sub = 'ajuda';
-    else if (!options.sub && !options.folder && ['diagnostico', 'diagnóstico'].includes(arg)) options.sub = 'diagnostico';
-    else if (!options.sub && !options.folder && ['relatorio', 'relatório'].includes(arg)) options.sub = 'relatorio';
-    else if (arg === '-v' || arg === '--version' || arg === 'versao') options.sub = 'versao';
+    else if (arg === '--part') options.parts.push(value());
+    else if (arg === '--port') options.port = Number(value());
+    else if (arg === '--panel-port') options.panelPort = Number(value());
+    else if (arg === '--minimal') options.minimal = true;
+    else if (arg === '--yes' || arg === '-y') options.yes = true;
+    else if (arg === '--no-open') options.noOpen = true;
+    else if (arg === '-h' || arg === '--help' || (arg === 'help' && !options.sub && !options.folder)) options.sub = 'help';
+    else if (!options.sub && !options.folder && arg === 'diagnose') options.sub = 'diagnose';
+    else if (!options.sub && !options.folder && arg === 'report') options.sub = 'report';
+    else if (arg === '-v' || arg === '--version') options.sub = 'version';
     else if (!options.folder && !arg.startsWith('-')) options.folder = arg;
-    else { say(`Opção desconhecida: ${arg}\n\n${HELP}`); process.exit(2); }
+    else { say(`Unknown option: ${arg}\n\n${HELP}`); process.exit(2); }
   }
   return options;
 }
@@ -75,7 +79,7 @@ async function ask(question, choices) {
 }
 async function confirm(question, options) {
   if (options.yes) return true;
-  const answer = await ask(`${question} [S/n]`);
+  const answer = await ask(`${question} [Y/n]`);
   if (answer === null) return null;
   return !/^n/i.test(answer);
 }
@@ -124,13 +128,13 @@ async function ensurePanel(port, avoid) {
     }
     child.kill();
     if (/EADDRINUSE/.test(first)) continue;
-    throw new Error(`O painel não arrancou: ${first.trim().split('\n').slice(-3).join(' ')}`);
+    throw new Error(`The panel did not start: ${first.trim().split('\n').slice(-3).join(' ')}`);
   }
-  throw new Error('Não encontrei uma porta livre para o painel.');
+  throw new Error('No free port found for the panel.');
 }
 
 function recordingName(name) {
-  const slug = String(name).toLowerCase().replace(/^@[^/]+\//, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projeto';
+  const slug = String(name).toLowerCase().replace(/^@[^/]+\//, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'project';
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
   return `${slug}-${stamp}`;
 }
@@ -156,14 +160,20 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
   const env = {
     ...process.env, CODETAC_ROOT: root, CODETAC_RUN: run, CODETAC_PANEL_PORT: String(panelPort),
     NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${register}`].filter(Boolean).join(' '),
+    PYTHONPATH: [captor, process.env.PYTHONPATH].filter(Boolean).join(process.platform === 'win32' ? ';' : ':'),
   };
+  // Python writes to a pipe in blocks: without this, the app's prints would show late.
+  env.PYTHONUNBUFFERED ??= '1';
+  // Python's bytecode (__pycache__) goes to CodeTAC's folder, not into the project:
+  // some projects even keep .pyc files in Git.
+  env.PYTHONPYCACHEPREFIX ??= join(recordings, 'pycache');
   // The application's output goes through a pipe: its colours stay when the terminal has them.
   if (process.stdout.isTTY && env.FORCE_COLOR === undefined) env.FORCE_COLOR = '1';
   Object.assign(env, extraEnv);
   if (minimal) Object.assign(env, { CODETAC_LEVEL: 'minimo', CODETAC_MINIMO_MOTIVO: reason });
   for (const part of parts) {
     const [bin, ...args] = runnable(part.command);
-    const child = spawn(bin, args, { cwd: part.folder, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32',
+    const child = spawn(bin, args, { cwd: part.folder, env: { ...env, ...part.env, ...(part.language === 'python' ? environmentOf(part) : {}) }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32',
       shell: process.platform === 'win32' });
     const label = parts.length > 1 ? `[${part.part}] ` : '';
     const show = chunk => {
@@ -176,6 +186,9 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
         for (const match of plain.matchAll(URL_IN_OUTPUT)) if (match[1]) ports.push(Number(match[1]));
         // Watch modes (node --watch, nodemon, tsx watch) keep running after a crash.
         if (CRASHED.test(plain)) child.crashed = true;
+        // A Python app that fails while importing, under a reloader (uvicorn --reload,
+        // fastapi dev, flask --debug): the reloader stays, waiting for changes.
+        if (child.part?.language === 'python' && /^\s*Traceback \(most recent call last\):/.test(plain)) child.tracebackAt ??= Date.now();
         const busy = plain.match(BUSY);
         if (busy) state.busy = Number(busy[1] ?? busy[2] ?? busy[3]);
       }
@@ -199,9 +212,11 @@ function freePort() {
   });
 }
 
-function stopAll(children, signal = 'SIGTERM') {
+function stopAll(children, force = null) {
   for (const child of children) {
     if (child.exitCode !== null || child.signalCode !== null) continue;
+    // Python apps stop as with Ctrl+C: SIGTERM makes some of them warn (leaked semaphores).
+    const signal = force ?? (child.part?.language === 'python' ? 'SIGINT' : 'SIGTERM');
     try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch {} }
   }
 }
@@ -250,8 +265,9 @@ async function findApp(candidates, panelPort, { children, addresses, warn }) {
       if (others.length) {
         // Reach the application by the exact address it bound.
         const bound = addresses.get(port) ?? (mine[0].names.find(name => /^127\.0\.0\.1:|^\[::1\]:/.test(name)) ?? mine[0].names[0] ?? '').replace(/:\d+$/, '');
-        host = /^\[?::1\]?$/.test(bound) ? '::1' : '127.0.0.1';
-        warn(port, others[0].command ?? 'outro programa', host);
+        // '::' (every IPv6 address) too: the other program holds the IPv4 one.
+        host = /^\[?::1?\]?$/.test(bound) ? '::1' : '127.0.0.1';
+        warn(port, others[0].command ?? 'another program', host);
       }
     }
     // The internal header keeps these probes out of the recording.
@@ -268,14 +284,139 @@ async function findApp(candidates, panelPort, { children, addresses, warn }) {
   return api;
 }
 
+// DP5: a Python project without an environment, or without its dependencies.
+// Always asked first (--sim answers yes); the environment is .venv in the project.
+function requirementFiles(folder) {
+  let names = [];
+  try { names = readdirSync(folder); } catch {}
+  const files = names.filter(name => /^requirements.*\.txt$/.test(name) && !/(dev|test|lint|doc)/.test(name));
+  return files.includes('requirements.txt') ? ['requirements.txt'] : files.slice(0, 1);
+}
+function pythonSteps(part, { create, skip = [] }) {
+  const { folder, python } = part;
+  const uv = hasBinary('uv');
+  const venvPython = python.interpreter ?? join(folder, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const steps = [];
+  let chosen = null;
+  if (part.manager === 'uv' && uv) return { steps: [['uv', ['sync']]], chosen, env: {} };
+  if (part.manager === 'poetry' || part.manager === 'pipenv') {
+    const tool = part.manager;
+    if (!hasBinary(tool)) return { problem: `The project uses ${tool}, which is not installed on this computer. Install it (for example, pipx install ${tool}) and run the command again.` };
+    // Both keep the environment in the project when asked to: the .venv of DP5.
+    const env = tool === 'poetry' ? { POETRY_VIRTUALENVS_IN_PROJECT: 'true' } : { PIPENV_VENV_IN_PROJECT: '1' };
+    return { steps: [tool === 'poetry' ? ['poetry', ['install', '--no-root']] : ['pipenv', ['install', '--dev']]], chosen, env };
+  }
+  if (create) {
+    const found = interpreters();
+    chosen = found.find(item => !versionBelow(item.version) && !skip.includes(item.executable)) ?? null;
+    // uv fetches a Python 3.12 when there is none on the computer.
+    if (uv) steps.push(['uv', ['venv', '--python', chosen?.executable ?? MINIMUM.join('.'), '.venv']]);
+    else {
+      chosen ??= found[0] ?? null;
+      if (!chosen) return { problem: 'No Python found on this computer. Install Python 3.12 or newer (python.org or brew install python) and run the command again.' };
+      steps.push([chosen.executable, ['-m', 'venv', '.venv']]);
+    }
+  }
+  const files = requirementFiles(folder);
+  const install = uv ? ['uv', ['pip', 'install', '--python', venvPython]] : [venvPython, ['-m', 'pip', 'install']];
+  if (files.length) steps.push([install[0], [...install[1], '-r', files[0]]]);
+  else if (existsSync(join(folder, 'pyproject.toml'))) {
+    if (uv) steps.push([install[0], [...install[1], '-r', 'pyproject.toml']]);
+    else steps.push({ pyproject: true, install });
+  }
+  return { steps, chosen, env: {} };
+}
+// A command as the user would type it in the project's folder.
+const shown = ([bin, args], folder) => [bin, ...args].map(token => token.startsWith(`${folder}/`) ? token.slice(folder.length + 1) : token)
+  .map(token => token.includes(' ') ? `"${token}"` : token).join(' ');
+
+async function preparePython(part, root, options, skip = []) {
+  const label = part.part === '.' ? 'The project' : `The part ${part.part}`;
+  const create = !part.python.interpreter;
+  const plan = pythonSteps(part, { create, skip });
+  if (plan.problem) { say(`✗ ${label} has no Python environment. ${plan.problem}`); process.exit(2); }
+  const lines = plan.steps.map(step => step.pyproject ? `${shown(step.install, part.folder)} <pyproject.toml dependencies>` : shown(step, part.folder));
+  const why = create
+    ? `${label} has no Python environment (.venv).`
+    : `Dependencies are missing in the ${part.python.source} environment (${part.python.missing.slice(0, 6).join(', ')}${part.python.missing.length > 6 ? '…' : ''}).`;
+  say(`${why} To start, this must run in the folder ${part.folder}:`);
+  for (const line of lines) say(`    ${line}`);
+  if (create && plan.chosen) say(`  (with Python ${plan.chosen.version}${skip.length ? '' : ', the newest on this computer'})`);
+  else if (create && hasBinary('uv') && part.manager !== 'uv') say(`  (uv downloads Python ${MINIMUM.join('.')}: there is no ${MINIMUM.join('.')} or newer on this computer)`);
+  if (!lines.length) return part;
+  // A retry with an older Python was already agreed to.
+  const yes = skip.length ? true : await confirm(create ? 'Create the .venv and install the dependencies now?' : 'Install now?', options);
+  if (yes === null) { say('Run those commands, or use --yes for CodeTAC to run them.'); process.exit(2); }
+  if (!yes) { say('Without the dependencies, the app does not start. Run those commands and run codetac again.'); process.exit(2); }
+  for (const step of plan.steps) {
+    let command = step;
+    if (step.pyproject) {
+      const venvPython = join(part.folder, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+      const declared = probe(existsSync(venvPython) ? venvPython : step.install[0], part.folder)?.pyproject ?? [];
+      if (!declared.length) continue;
+      command = [step.install[0], [...step.install[1], ...declared]];
+    }
+    say(`  Running: ${shown(command, part.folder)}`);
+    // Not the environment of whoever runs codetac: the project's.
+    const env = { ...process.env, ...plan.env };
+    delete env.VIRTUAL_ENV;
+    const result = spawnSync(command[0], command[1], { cwd: part.folder, stdio: 'inherit', env });
+    if (result.status !== 0) {
+      // Pinned dependencies may not exist yet for the newest Python (no wheel, and the
+      // build fails): the new .venv is made again with the next older Python ≥ the minimum.
+      const older = create && plan.chosen ? interpreters().find(item => !versionBelow(item.version) && item.executable !== plan.chosen.executable
+        && ![...skip, plan.chosen.executable].includes(item.executable) && item.version.split('.').slice(0, 2).join('.') !== plan.chosen.version.split('.').slice(0, 2).join('.')) : null;
+      if (older) {
+        say(`! The installation failed with Python ${plan.chosen.version} (some pinned dependencies do not exist for it yet). Trying with Python ${older.version}.`);
+        rmSync(join(part.folder, '.venv'), { recursive: true, force: true });
+        return preparePython(part, root, options, [...skip, plan.chosen.executable]);
+      }
+      say(`✗ Failed (code ${result.status}). See the messages above.`);
+      process.exit(1);
+    }
+  }
+  if (create && existsSync(join(part.folder, '.venv'))) {
+    const inGit = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: part.folder, encoding: 'utf8' }).stdout?.trim() === 'true';
+    // Git shows the .venv (as untracked) only when nothing ignores it; uv puts a .gitignore inside it.
+    if (inGit && spawnSync('git', ['status', '--porcelain', '--', '.venv'], { cwd: part.folder, encoding: 'utf8' }).stdout.trim()) {
+      say('! The .venv is not in .gitignore. Add the line ".venv/" to .gitignore, so it is not sent to the repository.');
+    }
+  }
+  const again = describePythonFolder(part.folder, root);
+  if (!again?.command) { say('✗ After the installation, I still do not know how to start the app.'); process.exit(1); }
+  if (again.python.missing.length) say(`! Still missing: ${again.python.missing.join(', ')}. Trying to start anyway.`);
+  return { ...again, part: part.part };
+}
+
+// A command given by the user. In a Python project it runs with the project's
+// environment (uvicorn, flask… as python -m with its interpreter).
+function manualPart(project, root, command) {
+  const top = project.top?.language === 'python' && project.top.folder === root ? project.top : null;
+  if (!top) return { folder: root, part: '.', name: project.name, command, script: null, stack: null, port: null, installed: true, foreign: foreignRuntime(command.join(' ')) };
+  const text = command.join(' ');
+  const part = { ...top, installed: true, notes: [], python: { ...top.python, declared: text, declaredSource: 'the given command' },
+    script: { name: 'the given command', command: text } };
+  part.port = pythonPort(root, { command: text, app: top.python.app });
+  part.command = commandFor(part, part.port?.value ?? 8000);
+  return part;
+}
+
+// The macOS AirPlay Receiver listens on 5000 (and 7000): Flask's default port.
+function portTakenBy(port, who) {
+  if (process.platform === 'darwin' && port === 5000 && /ControlCe|AirPlay/i.test(who ?? '')) {
+    return 'by the macOS AirPlay Receiver (ControlCenter). To use 5000 again, turn off "AirPlay Receiver" in System Settings › General › AirDrop & Handoff';
+  }
+  return `by another program (${who ?? 'unknown'})`;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (options.sub === 'ajuda') { say(HELP); return; }
-  if (options.sub === 'versao') { say(JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version); return; }
+  if (options.sub === 'help') { say(HELP); return; }
+  if (options.sub === 'version') { say(JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version); return; }
   const folder = resolve(options.folder ?? process.cwd());
-  if (!existsSync(folder)) { say(`A pasta ${folder} não existe.`); process.exit(2); }
+  if (!existsSync(folder)) { say(`The folder ${folder} does not exist.`); process.exit(2); }
   const root = realpathSync(folder);
-  if (options.sub === 'relatorio') {
+  if (options.sub === 'report') {
     // The diagnosis in a file to send with an incident: no code, no values;
     // the home folder is shortened to ~.
     const { diagnose } = await import('./diagnose.mjs');
@@ -285,68 +426,124 @@ async function main() {
     await diagnose(root, { panelPort: options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000), out: text => lines.push(text) });
     const text = lines.join('\n').split(homedir()).join('~') + '\n';
     mkdirSync(recordings, { recursive: true });
-    const file = join(recordings, `relatorio-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
+    const file = join(recordings, `report-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
     writeFileSync(file, text);
     say(text);
-    say(`Relatório guardado em ${file.split(homedir()).join('~')}`);
-    say('Não contém código nem valores da app: só o que está acima. Envie-o com a descrição do problema em');
+    say(`Report saved to ${file.split(homedir()).join('~')}`);
+    say('It contains no code or values from the app: only what is above. Send it with a description of the problem at');
     say('  https://github.com/deltaxmodules/codetacvibe/issues/new');
     return;
   }
-  if (options.sub === 'diagnostico') {
+  if (options.sub === 'diagnose') {
     const { diagnose } = await import('./diagnose.mjs');
     process.exitCode = await diagnose(root, { panelPort: options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000) });
     return;
   }
 
   const [major] = process.versions.node.split('.').map(Number);
-  if (major < 24) say(`! Este Node é o ${process.version}; o CodeTAC foi feito para o Node 24 ou superior. Vou tentar na mesma.`);
+  if (major < 24) say(`! This Node is ${process.version}; CodeTAC was made for Node 24 or newer. Trying anyway.`);
 
   // 1. How to start the project.
   const project = detectProject(root);
   let parts = project.start;
   if (options.command?.length) {
-    parts = [{ folder: root, part: '.', name: project.name, command: options.command, script: null, stack: null, port: null, installed: true, foreign: foreignRuntime(options.command.join(' ')) }];
+    parts = [manualPart(project, root, options.command)];
   } else if (options.parts.length) {
     parts = options.parts.map(name => project.parts.find(part => part.part === name || basename(part.folder) === name) ?? (name === '.' ? project.top : null)).filter(Boolean);
-    if (!parts.length) { say(`Não encontrei a parte ${options.parts.join(', ')}. Partes: ${project.parts.map(part => part.part).join(', ') || 'nenhuma'}.`); process.exit(2); }
+    if (!parts.length) { say(`Part not found: ${options.parts.join(', ')}. Parts: ${project.parts.map(part => part.part).join(', ') || 'none'}.`); process.exit(2); }
   } else if (options.script) {
     const base = project.top ?? project.start[0];
-    if (!base) { say('Não há package.json nesta pasta para escolher um script.'); process.exit(2); }
+    if (!base) { say('There is no package.json in this folder to choose a script from.'); process.exit(2); }
     parts = [{ ...base, script: { name: options.script, command: '' }, command: [base.runner, 'run', options.script] }];
   }
   say(`CodeTAC · ${project.name} (${root})`);
   if (!parts.length && project.missing.includes('part')) {
-    say('Este projeto tem várias partes que se podem arrancar:');
-    const answer = await ask('Quais arranco? (números separados por vírgulas, ou Enter para todas)', project.parts.map(describeStart));
+    say('This project has several parts that can be started:');
+    const answer = await ask('Which ones should I start? (numbers separated by commas, or Enter for all)', project.parts.map(describeStart));
     if (answer === null) parts = project.parts;
     else parts = answer ? answer.split(/[\s,]+/).map(n => project.parts[Number(n) - 1]).filter(Boolean) : project.parts;
   }
-  if (!parts.length) {
-    say(project.missing.includes('package')
-      ? 'Não encontrei um package.json nem um ficheiro de servidor (server.js, index.js…) nesta pasta.'
-      : 'Não encontrei um script de arranque (dev, start…) no package.json.');
-    const answer = await ask('Que comando arranca a app? (ex.: node server.js, ou Enter para sair)');
-    if (!answer) { say('Indique o comando depois de --, por exemplo: codetac . -- node server.js'); process.exit(2); }
-    parts = [{ folder: root, part: '.', name: project.name, command: answer.split(/\s+/), script: null, stack: null, port: null, installed: true, foreign: foreignRuntime(answer) }];
+  if (!parts.length && project.top?.language === 'python') {
+    say(project.top.python.django
+      ? 'This project uses Django, which CodeTAC does not support yet (FastAPI and Flask only).'
+      : 'I found a Python project, but not the app: I looked for FastAPI(...) and Flask(...) in the .py files and for commands in the Procfile, Makefile and README.');
   }
-  for (const part of parts) say(`  Arranque: ${describeStart(part)}`);
+  if (!parts.length) {
+    const python = project.top?.language === 'python';
+    if (!python) say(project.missing.includes('package')
+      ? 'I did not find a package.json or a server file (server.js, index.js…) in this folder.'
+      : 'I did not find a start script (dev, start…) in the package.json.');
+    const example = python ? 'uvicorn main:app --reload' : 'node server.js';
+    const answer = await ask(`Which command starts the app? (e.g. ${example}, or Enter to quit)`);
+    if (!answer) { say(`Give the command after --, for example: codetac . -- ${example}`); process.exit(2); }
+    parts = [manualPart(project, root, answer.split(/\s+/))];
+  }
   for (const part of parts.filter(part => part.foreign)) {
-    say(`! [${part.part}] O script usa ${part.foreign}, que não é o Node: essa parte corre, mas o CodeTAC não a consegue observar por dentro.`);
+    // Python started from a Node script inherits the Python captor (PYTHONPATH).
+    if (/^(python3?|uvicorn)$/.test(part.foreign)) say(`! [${part.part}] The script starts Python: CodeTAC observes it if that Python is ${MINIMUM.join('.')} or newer.`);
+    else say(`! [${part.part}] The script uses ${part.foreign}, which is not Node: that part runs, but CodeTAC cannot observe it inside.`);
   }
 
-  // 2. Dependencies.
-  for (const part of parts.filter(part => !part.installed)) {
+  // 2. Dependencies. Python (DP5): an environment in the project, always asked first.
+  for (const [index, part] of parts.entries()) {
+    if (part.language === 'python' && !part.installed) parts[index] = await preparePython(part, root, options);
+  }
+  for (const part of parts) say(`  Start: ${describeStart(part)}`);
+  for (const part of parts) for (const note of part.notes ?? []) say(`! ${parts.length > 1 ? `[${part.part}] ` : ''}${note}`);
+  for (const part of parts.filter(part => part.language !== 'python' && !part.installed)) {
     const manager = part.manager === 'bun' ? 'npm' : part.manager;
     const where = part.installFolder ?? (part.manager === 'pnpm' || part.workspaces ? root : part.folder);
-    const yes = await confirm(`As dependências de ${part.part === '.' ? 'o projeto' : part.part} não estão instaladas. Instalar agora com «${manager} install»?`, options);
-    if (yes === null) { say(`As dependências não estão instaladas. Corra «${manager} install» na pasta ou use --sim.`); process.exit(2); }
+    // npm: the project's files stay as they are. With a lockfile, `npm ci` installs exactly it;
+    // without one (or when it is out of date), `npm install --no-package-lock` writes none.
+    const locked = manager === 'npm' && existsSync(join(where, 'package-lock.json'));
+    const commands = manager !== 'npm' ? [[manager, 'install']] : locked ? [['npm', 'ci'], ['npm', 'install', '--no-package-lock']] : [['npm', 'install', '--no-package-lock']];
+    const yes = await confirm(`The dependencies of ${part.part === '.' ? 'the project' : part.part} are not installed. Install them now with "${commands[0].join(' ')}"?`, options);
+    if (yes === null) { say(`The dependencies are not installed. Run "${commands[0].join(' ')}" in the folder or use --yes.`); process.exit(2); }
     if (!yes) continue;
-    const [bin, ...args] = runnable([manager, 'install']);
-    say(`  A instalar (${bin} ${args.join(' ')})…`);
-    const result = spawnSync(bin, args, { cwd: where, stdio: 'inherit', shell: process.platform === 'win32' });
-    if (result.status !== 0) { say(`✗ A instalação falhou (código ${result.status}). Veja as mensagens acima.`); process.exit(1); }
+    let result = null;
+    for (const [index, command] of commands.entries()) {
+      const [bin, ...args] = runnable(command);
+      if (index) say(`! "${commands[index - 1].join(' ')}" failed (does the package-lock.json not match the package.json?). Trying without the lockfile, without changing it.`);
+      say(`  Installing (${bin} ${args.join(' ')})…`);
+      result = spawnSync(bin, args, { cwd: where, stdio: 'inherit', shell: process.platform === 'win32' });
+      if (result.status === 0) break;
+    }
+    if (result.status !== 0) { say(`✗ The installation failed (code ${result.status}). See the messages above.`); process.exit(1); }
     for (const other of parts) if ((other.installFolder ?? other.folder) === where || (where === root && !other.installFolder)) other.installed = true;
+  }
+
+  // A Python app gets its port on the command line: a port another program
+  // holds (AirPlay on 5000, another API on 8000) is replaced before starting.
+  // A Vite proxy that reads the API's port from a variable follows it.
+  const extraEnv = {};
+  for (const [index, part] of parts.entries()) {
+    const old = part.port?.value;
+    if (part.language !== 'python' || !old || options.command?.length) continue;
+    const owners = listeners(old);
+    if (!owners?.length) continue;
+    const who = owners[0].command;
+    const proxies = parts.filter(other => other.language !== 'python').map(other => ({ other, proxy: proxyOf(other.folder, other.script?.command) })).filter(item => item.proxy);
+    const fixed = proxies.find(item => item.proxy.literal.includes(old) && !item.proxy.variables.some(variable => variable.port === old));
+    if (fixed) {
+      say(`✗ Port ${old}, the API's, is already taken ${portTakenBy(old, who)}.`);
+      say(`  The Vite proxy in ${fixed.other.part} sends requests to that port, written in vite.config: if I moved the API to another port, the requests would go to that program.`);
+      say('  Close that program, or change the port in vite.config and in the API start command, and run the command again.');
+      process.exit(1);
+    }
+    const port = await freePort();
+    const variable = proxies.flatMap(item => item.proxy.variables).find(item => item.port === old);
+    parts[index] = moveTo(part, port);
+    if (variable) extraEnv[variable.variable] = String(port);
+    say(`! Port ${old} is already taken ${portTakenBy(old, who)}.`);
+    say(`  Starting ${parts.length > 1 ? `the part ${part.part}` : 'the app'} on port ${port}${variable ? `, and the Vite proxy follows it (variable ${variable.variable})` : ''}.`);
+    say(`  Start: ${describeStart(parts[index])}`);
+  }
+  // Frontend and Python API without a proxy: requests go to another origin (DP3).
+  if (parts.some(part => part.language === 'python')) {
+    for (const part of parts.filter(part => part.stack === 'Vite' && !proxyOf(part.folder, part.script?.command))) {
+      say(`! [${part.part}] Vite has no proxy for the API: the browser's requests to the API go to another origin, and CodeTAC links them by approximation ("probable link").`);
+      say('  For an exact link, set server.proxy in vite.config.');
+    }
   }
 
   // 3. The panel, on a port the application does not use.
@@ -354,12 +551,12 @@ async function main() {
   if (options.port) predicted.add(options.port);
   const panel = await ensurePanel(options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000), predicted);
   const panelUrl = `http://127.0.0.1:${panel.port}`;
-  say(panel.reused ? `  Painel: ${panelUrl} (já estava a correr)` : `  Painel: ${panelUrl}${panel.line ? ` · ${panel.line}` : ''}`);
+  say(panel.reused ? `  Panel: ${panelUrl} (already running)` : `  Panel: ${panelUrl}${panel.line ? ` · ${panel.line}` : ''}`);
 
   // 4. The application, with the fine capture; minimal mode if it does not start.
   let minimal = Boolean(options.minimal);
-  let reason = minimal ? 'pedido com --minimo' : null;
-  let run = recordingName(project.name) + (minimal ? '-minimo' : '');
+  let reason = minimal ? 'requested with --minimal' : null;
+  let run = recordingName(project.name) + (minimal ? '-minimal' : '');
   let app = null;
   let found = null;
   const cleanup = () => { stopAll(app?.children ?? []); panel.child?.kill(); };
@@ -367,7 +564,7 @@ async function main() {
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    say('\nA terminar a app e o painel…');
+    say('\nStopping the app and the panel…');
     cleanup();
     setTimeout(() => { stopAll(app?.children ?? [], 'SIGKILL'); process.exit(0); }, 4000).unref();
     const check = setInterval(() => { if (!running(app?.children ?? []).length) { clearInterval(check); panel.child?.kill(); process.exit(0); } }, 200);
@@ -375,17 +572,16 @@ async function main() {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  const extraEnv = {};
   const busyTried = new Set();
   const warnedShared = new Set();
   const sharedWarning = (port, command, host) => {
     if (warnedShared.has(port)) return;
     warnedShared.add(port);
-    say(`! A porta ${port} também está a ser usada por outro programa (${command}). Para não o abrir por engano, uso o endereço ${host === '::1' ? '[::1]' : host}.`);
+    say(`! Port ${port} is also used by another program (${command}). To avoid opening it by mistake, I use the address ${host === '::1' ? '[::1]' : host}.`);
   };
   for (let attempt = 0; attempt < 4 && !found; attempt++) {
-    say(`  Gravação: ${run}${minimal ? ' (modo mínimo)' : ''}`);
-    say('  A arrancar a app…');
+    say(`  Recording: ${run}${minimal ? ' (minimal mode)' : ''}`);
+    say('  Starting the app…');
     app = startApp(parts, { run, panelPort: panel.port, minimal, reason, root, extraEnv });
     const summary = createSummary();
     const recording = follow(join(recordings, run), summary.add);
@@ -393,7 +589,9 @@ async function main() {
     let warned = false;
     let api = null;
     // Before it is ready, any part that stops (or crashes in a watch mode) is a failed start.
-    const failed = () => app.children.filter(child => child.exitCode !== null || child.signalCode !== null || child.crashed);
+    // A traceback before the app answers is a failed start once nothing answers for 5 s.
+    const failed = () => app.children.filter(child => child.exitCode !== null || child.signalCode !== null || child.crashed
+      || (child.tracebackAt && Date.now() - child.tracebackAt > 5000));
     while (!found && Date.now() < deadline) {
       await wait(500);
       recording.poll();
@@ -408,7 +606,7 @@ async function main() {
       else if (answer) api ??= { ...answer, at: Date.now() };
       // An API without pages is accepted when nothing else serves pages for a while.
       // Right away only for a known API stack; otherwise pages may still come (Vite after the API…).
-      if (!found && api && (Date.now() - api.at > 20_000 || (parts.length === 1 && /^(Express|Fastify|Koa|Hono|NestJS)$/.test(parts[0].stack ?? '')))) found = api;
+      if (!found && api && (Date.now() - api.at > 20_000 || (parts.length === 1 && /^(Express|Fastify|Koa|Hono|NestJS|FastAPI)$/.test(parts[0].stack ?? '')))) found = api;
       if (found) {
         // The other parts may still be failing (a port taken…): a moment to see it.
         await wait(2000);
@@ -420,7 +618,7 @@ async function main() {
       if (failed().length) break;
       if (!warned && Date.now() - started > 60_000) {
         warned = true;
-        say(`  … a app ainda não respondeu (${seconds()}). Algumas demoram na primeira vez.`);
+        say(`  … the app has not answered yet (${seconds()}). Some take a while the first time.`);
       }
     }
     if (found) { app.recording = recording; app.summary = summary; break; }
@@ -443,8 +641,8 @@ async function main() {
     // part is moved.
     if (busy && parts.length > 1) {
       const who = holder(busy);
-      say(`✗ A porta ${busy} já está ocupada${who ? ` por outro programa (${who})` : ''}, e uma parte da app precisa dela.`);
-      say('  Não a mudo sozinho: as outras partes da app contam com essa porta. Feche esse programa e volte a correr o comando.');
+      say(`✗ Port ${busy} is already taken${who ? ` by another program (${who})` : ''}, and a part of the app needs it.`);
+      say('  I do not change it myself: the other parts of the app rely on that port. Close that program and run the command again.');
       cleanup();
       process.exit(1);
     }
@@ -452,54 +650,75 @@ async function main() {
       busyTried.add(busy);
       const who = holder(busy);
       const port = await freePort();
-      extraEnv.PORT = String(port);
       predicted.add(port);
-      say(`! A porta ${busy} já está ocupada${who ? ` por outro programa (${who})` : ''}. Vou arrancar a app na porta ${port} (variável PORT).`);
-      run = recordingName(project.name) + (minimal ? '-minimo' : '');
+      if (parts[0].language === 'python') {
+        parts[0] = moveTo(parts[0], port);
+        say(`! Port ${busy} is already taken ${portTakenBy(busy, who)}. Starting the app on port ${port}.`);
+      } else {
+        extraEnv.PORT = String(port);
+        say(`! Port ${busy} is already taken${who ? ` by another program (${who})` : ''}. Starting the app on port ${port} (PORT variable).`);
+      }
+      run = recordingName(project.name) + (minimal ? '-minimal' : '');
       continue;
     }
     if (busy) {
-      say(`✗ A porta ${busy} continua ocupada${holder(busy) ? ` (${holder(busy)})` : ''} e a app não aceita outra pela variável PORT.`);
-      say('  Feche o programa que usa essa porta e volte a correr o comando.');
+      say(`✗ Port ${busy} is still taken${holder(busy) ? ` (${holder(busy)})` : ''} and the app does not accept another through the PORT variable.`);
+      say('  Close the program using that port and run the command again.');
       cleanup();
       process.exit(1);
     }
     if (!stopped.length) {
-      say(`✗ A app não abriu nenhuma porta em ${seconds()}.`);
-      say('  Se a app usa uma porta que não escreve no terminal, indique-a: codetac . --porta <n>');
+      say(`✗ The app did not open any port in ${seconds()}.`);
+      say('  If the app uses a port it does not print in the terminal, give it: codetac . --port <n>');
       cleanup();
       process.exit(1);
     }
-    const codes = stopped.map(child => `${child.part.part}: ${child.crashed ? 'falhou' : `código ${child.exitCode ?? child.signalCode}`}`).join(', ');
+    const codes = stopped.map(child => `${child.part.part}: ${child.crashed ? 'failed' : `code ${child.exitCode ?? child.signalCode}`}`).join(', ');
     if (minimal) {
-      say(`✗ A app falhou também em modo mínimo (${codes}).`);
-      say('  O problema parece ser da própria app, não da captura. Últimas linhas:');
+      say(`✗ The app failed in minimal mode too (${codes}).`);
+      say('  The problem seems to be in the app itself, not in the capture. Last lines:');
       for (const line of app.tail.slice(-12)) say(`    ${line}`);
-      say('  Dica: faltam dependências ou variáveis de ambiente (.env)? «codetac diagnostico» ajuda a ver.');
+      say('  Tip: missing dependencies or environment variables (.env)? "codetac diagnose" helps to find out.');
       cleanup();
       process.exit(1);
     }
     minimal = true;
-    reason = `a app falhou ao arrancar com a instrumentação fina (${codes})`;
-    run = `${run}-minimo`;
-    say(`! A app falhou durante o arranque com a captura completa (${codes}).`);
-    say('  Vou arrancá-la de novo em modo mínimo: pedidos, fronteiras e browser, sem seguir as funções do projeto.');
+    reason = `the app failed to start with the full instrumentation (${codes})`;
+    run = `${run}-minimal`;
+    say(`! The app failed while starting with the full capture (${codes}).`);
+    say('  Starting it again in minimal mode: requests, boundaries and browser, without following the project\'s functions.');
   }
-  if (!found) { say('✗ Não foi possível arrancar a app.'); cleanup(); process.exit(1); }
+  if (!found) { say('✗ The app could not be started.'); cleanup(); process.exit(1); }
 
   // 5. Ready: where to go, and the first dossier.
   const appUrl = found.url ?? `http://localhost:${found.port}/`;
   say('');
-  say(`✓ App pronta em ${appUrl} (${seconds()})${minimal ? ' · modo mínimo' : ''}`);
-  if (found.status >= 500) say(`! A página inicial respondeu com erro ${found.status}. Veja as mensagens da app acima (faltam variáveis de ambiente?). O dossier desse pedido mostra onde falhou.`);
-  if (found.page) {
-    say('  Abra-a no browser e use-a: a barra do CodeTAC aparece no canto inferior direito.');
-    say('  Cada ação (clique, formulário…) fica com um dossier; a barra abre-o.');
-    if (!options.noOpen && interactive) openBrowser(appUrl);
-  } else {
-    say('  Esta app responde sem páginas HTML (uma API). Faça pedidos como de costume; cada pedido fica com um dossier no painel.');
+  say(`✓ App ready at ${appUrl} (${seconds()})${minimal ? ' · minimal mode' : ''}`);
+  // The capture may have chosen the minimal mode by itself (Python below the minimum…).
+  // (Unless it was announced before starting: a Python below the minimum.)
+  if (!minimal && !parts.some(part => part.python?.version && versionBelow(part.python.version))) {
+    const own = app.summary.starts.find(start => start.level === 'minimo');
+    if (own) say(`! Minimal mode: ${own.reason}. The dossiers show requests, boundaries and browser, without the project's functions.`);
   }
-  say(`  Painel: ${panelUrl}  ·  Terminar: Ctrl+C`);
+  if (found.status >= 500) say(`! The home page answered with error ${found.status}. See the app's messages above (missing environment variables?). That request's dossier shows where it failed.`);
+  if (found.page) {
+    say('  Open it in the browser and use it: the CodeTAC bar shows up in the bottom right corner.');
+    say('  Each action (click, form…) gets a dossier; the bar opens it.');
+    if (!options.noOpen && interactive) openBrowser(appUrl);
+  } else if (found.status === 404 && parts.some(part => /Vite|Next|Nuxt|Astro|Svelte|Remix|React|Angular/.test(part.stack ?? ''))) {
+    // A frontend that answers 404 on its home page is not an API: it did not find its page.
+    say(`! The home page answered 404. The frontend did not find the page (is index.html missing, or does the root in vite.config point to another folder?).`);
+    say('  That request\'s dossier shows it. Requests to the API are still recorded.');
+  } else if (parts.length === 1 && parts[0].stack === 'FastAPI') {
+    // The interactive documentation is a page: the bar appears there, and each «Try it out» is an action.
+    const docs = `${appUrl}docs`;
+    say('  This app is an API. Each request gets a dossier in the panel.');
+    say(`  To try it in the browser, with the CodeTAC bar: ${docs} ("Try it out" on each route).`);
+    if (!options.noOpen && interactive) openBrowser(docs);
+  } else {
+    say('  This app answers without HTML pages (an API). Make requests as usual; each request gets a dossier in the panel.');
+  }
+  say(`  Panel: ${panelUrl}  ·  Stop: Ctrl+C`);
   say('');
   let firstShown = false;
   let silentWarned = false;
@@ -511,24 +730,24 @@ async function main() {
       if (seenActions.has(id)) continue;
       seenActions.add(id);
       const link = `${panelUrl}/?action=${encodeURIComponent(id)}`;
-      if (!firstShown) { firstShown = true; say(`✓ Primeiro dossier (${seconds()} desde o comando): ${link}`); }
-      else say(`• Ação gravada: ${link}`);
+      if (!firstShown) { firstShown = true; say(`✓ First dossier (${seconds()} since the command): ${link}`); }
+      else say(`• Action recorded: ${link}`);
     }
     // A page that loads but where nothing is clicked yet (or that fails to
     // render): the dossier of its own load.
     if (!firstShown && summary.firstPage && Date.now() - summary.firstPage.seenAt > 8000) {
       firstShown = true;
-      say(`✓ Primeiro dossier (${seconds()} desde o comando), o do carregamento da página: ${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}`);
-      say('  Cada clique na app terá o seu próprio dossier.');
+      say(`✓ First dossier (${seconds()} since the command), the one of the page load: ${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}`);
+      say('  Each click in the app will get its own dossier.');
     }
     if (!firstShown && summary.firstRequest && !found.page) {
       firstShown = true;
-      say(`✓ Primeiro dossier (${seconds()} desde o comando): ${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}`);
+      say(`✓ First dossier (${seconds()} since the command): ${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}`);
     }
     if (!silentWarned && !minimal && summary.requests >= 3 && !summary.withFunctions.size && summary.functions === 0) {
       silentWarned = true;
-      say('! Já chegaram pedidos, mas nenhuma função do projeto foi observada. Os dossiers mostram pedidos e fronteiras.');
-      say('  «codetac diagnostico» explica porquê.');
+      say('! Requests have arrived, but no project function was observed. The dossiers show requests and boundaries.');
+      say('  "codetac diagnose" explains why.');
     }
     // A part that fails later with a taken port: its requests could reach the
     // other program (a proxy to that port). Everything stops.
@@ -536,14 +755,14 @@ async function main() {
     if (app.state.busy && down.length && parts.length > 1 && !stopping) {
       clearInterval(watcher);
       const who = holder(app.state.busy);
-      say(`✗ Uma parte da app falhou: a porta ${app.state.busy} está ocupada${who ? ` por outro programa (${who})` : ''}.`);
-      say('  Paro a app, para que os pedidos dela não cheguem a esse programa. Feche-o e volte a correr o comando.');
+      say(`✗ A part of the app failed: port ${app.state.busy} is taken${who ? ` by another program (${who})` : ''}.`);
+      say('  Stopping the app, so its requests do not reach that program. Close it and run the command again.');
       stop();
       return;
     }
     if (!running(app.children).length && !stopping) {
       clearInterval(watcher);
-      say('A app terminou.');
+      say('The app has stopped.');
       panel.child?.kill();
       process.exit(0);
     }

@@ -1,7 +1,7 @@
 {
   "name": "codetac",
-  "version": "0.1.1",
-  "description": "codeTAC — perceber o que o código da sua app Node faz, ação a ação: do clique no browser às funções do servidor, base de dados e serviços externos.",
+  "version": "0.3.0",
+  "description": "codeTAC — see what your Node or Python app's code does, one action at a time: from the browser click to the server functions, database and external services.",
   "keywords": [
     "debug",
     "trace",
@@ -10,6 +10,9 @@
     "nextjs",
     "vite",
     "express",
+    "python",
+    "fastapi",
+    "flask",
     "ai-generated",
     "vibe-coding",
     "dossier"
@@ -29,7 +32,9 @@
     "codetac": "src/cli.mjs"
   },
   "files": [
-    "src/"
+    "src/",
+    "!**/__pycache__/",
+    "!**/*.pyc"
   ],
   "engines": {
     "node": ">=24.0.0"
@@ -37,10 +42,10 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:stacks": "node scripts/validate-stacks.mjs",
-    "check": "node --check src/register.mjs && node --check src/transform.mjs && node --check src/runtime.mjs && node --check src/boundaries.mjs && node --check src/store.mjs && node --check src/panel.mjs && node --check src/page.mjs && node --check src/origins.mjs && node --check src/action-view.mjs && node --check src/browser/bar.js && node --check src/digest.mjs && node --check src/sentences.mjs && node --check src/ai.mjs && node --check src/cli.mjs && node --check src/detect.mjs && node --check src/recording.mjs && node --check src/diagnose.mjs",
+    "check": "node --check src/register.mjs && node --check src/transform.mjs && node --check src/runtime.mjs && node --check src/boundaries.mjs && node --check src/store.mjs && node --check src/panel.mjs && node --check src/page.mjs && node --check src/origins.mjs && node --check src/action-view.mjs && node --check src/browser/bar.js && node --check src/digest.mjs && node --check src/sentences.mjs && node --check src/ai.mjs && node --check src/cli.mjs && node --check src/detect.mjs && node --check src/detect-python.mjs && node --check src/recording.mjs && node --check src/diagnose.mjs",
     "test:performance": "node scripts/benchmark-functions.mjs",
     "panel": "node src/panel.mjs",
-    "test:browser": "node scripts/accept-browser.mjs docs/aceitacao-browser-exemplo.json",
+    "test:browser": "node scripts/accept-browser.mjs scripts/ensaios/browser-exemplo.json",
     "codetac": "node src/cli.mjs"
   },
   "dependencies": {

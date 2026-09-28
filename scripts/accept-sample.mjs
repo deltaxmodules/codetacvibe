@@ -1,11 +1,15 @@
 // Ensaio da Fase 5: para cada projeto da amostra, corre o comando `codetac`
-// sem ajuda (--sim --nao-abrir), abre a app no Chrome, clica num elemento e
+// sem ajuda (--yes --no-open), abre a app no Chrome, clica num elemento e
 // mede o tempo do comando ao primeiro dossier. Verifica que o dossier existe e
 // que nada diz «não suportado». Uso:
 //   node scripts/accept-sample.mjs <config.json> [nome…]
 // A configuração: { "painel": 4100, "projetos": [{ "nome", "pasta", "ferramenta",
-//   "stack", "clicar"?: seletor, "args"?: [], "env"?: {} }] }
-import { spawn } from 'node:child_process';
+//   "stack", "clicar"?: seletor, "pagina"?: caminho, "pedidos"?: [caminhos], "explicacao"?: expressão, "args"?: [], "env"?: {} }] }
+// Com "explicacao", o comando pode parar sem dossier se disser isso (a especificação aceita
+// «dossier ou uma explicação clara»): o resultado fica marcado como explicação.
+// Com "pedidos" (uma API: o clique no /docs não chama rotas), esses GET são feitos
+// antes do diagnóstico, e o ensaio exige pedidos com funções do projeto.
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { join, resolve } from 'node:path';
@@ -54,9 +58,12 @@ const CANDIDATES = `(() => {
 async function runProject(chrome, project) {
   const result = { nome: project.nome, ferramenta: project.ferramenta, stack: project.stack, pasta: project.pasta };
   const lines = [];
+  // The project must stay as it was (untracked files the project ignores, like .venv, do not count).
+  const gitStatus = () => spawnSync('git', ['status', '--porcelain'], { cwd: resolve(workspace, project.pasta), encoding: 'utf8' }).stdout ?? '';
+  const gitBefore = gitStatus();
   const started = Date.now();
-  const child = spawn(cli[0], [...cli.slice(1), project.pasta, '--sim', '--nao-abrir', '--painel', String(panelPort), ...(project.args ?? [])],
-    { cwd: workspace, env: { ...process.env, CODETAC_AI_PROVIDER: 'nenhum', ...project.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(cli[0], [...cli.slice(1), project.pasta, '--yes', '--no-open', '--panel-port', String(panelPort), ...(project.args ?? [])],
+    { cwd: workspace, env: { ...process.env, CODETAC_AI_PROVIDER: 'none', ...project.env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let buffered = '';
   const onData = chunk => {
     buffered += chunk;
@@ -78,14 +85,14 @@ async function runProject(chrome, project) {
     return null;
   };
   try {
-    const ready = await waitLine(/^✓ App pronta em (\S+)/, LIMIT_MS);
+    const ready = await waitLine(/^✓ App ready at (\S+)/, LIMIT_MS);
     if (!ready) throw new Error(`A app não ficou pronta: ${lines.slice(-6).map(entry => entry.line).join(' / ')}`);
     result.prontaMs = ready.ms;
-    result.url = ready.line.match(/em (\S+)/)[1];
-    result.modo = /modo mínimo/.test(ready.line) ? 'mínimo' : 'normal';
+    result.url = ready.line.match(/at (\S+)/)[1];
+    result.modo = /minimal mode/.test(ready.line) ? 'mínimo' : 'normal';
     result.instalacaoMs = (() => {
-      const from = find(/A instalar/);
-      const to = find(/Painel:/);
+      const from = find(/Installing/);
+      const to = find(/Panel:/);
       return from && to ? to.ms - from.ms : 0;
     })();
     const page = await chrome.newPage();
@@ -99,7 +106,7 @@ async function runProject(chrome, project) {
     for (const item of order.slice(0, 4)) {
       try { await page.click(item.selector); } catch { continue; }
       result.clicado = item.text;
-      const first = await waitLine(/^✓ Primeiro dossier \((\d+) s.*action=/, 20000);
+      const first = await waitLine(/^✓ First dossier \((\d+) s.*action=/, 20000);
       if (first) {
         result.primeiroDossieMs = first.ms;
         result.link = first.line.match(/(http\S+)$/)[1];
@@ -113,7 +120,7 @@ async function runProject(chrome, project) {
     // No click produced an action (a page that fails, or nothing clickable):
     // the dossier of the page load, which the command also announces.
     if (!result.link) {
-      const load = await waitLine(/^✓ Primeiro dossier \((\d+) s.*request=/, 20000);
+      const load = await waitLine(/^✓ First dossier \((\d+) s.*request=/, 20000);
       if (load) {
         result.primeiroDossieMs = load.ms;
         result.link = load.line.match(/(http\S+)$/)[1];
@@ -147,9 +154,16 @@ async function runProject(chrome, project) {
   } catch (error) {
     result.erro = error.message;
   }
+  if (project.pedidos?.length && result.url) {
+    result.pedidos = [];
+    for (const path of project.pedidos) {
+      try { result.pedidos.push(`${path} ${(await fetch(new URL(path, result.url))).status}`); } catch { result.pedidos.push(`${path} erro`); }
+    }
+    await delay(1500);
+  }
   // Diagnosis while the application still runs.
   result.diagnostico = await new Promise(done => {
-    const diag = spawn(cli[0], [...cli.slice(1), 'diagnostico', project.pasta, '--painel', String(panelPort)], { cwd: workspace });
+    const diag = spawn(cli[0], [...cli.slice(1), 'diagnose', project.pasta, '--panel-port', String(panelPort)], { cwd: workspace });
     let text = '';
     diag.stdout.on('data', chunk => { text += chunk; });
     diag.on('exit', () => done(text));
@@ -160,8 +174,12 @@ async function runProject(chrome, project) {
   result.saida = lines.map(entry => entry.line).filter(line => !/^\s+│/.test(line));
   // CodeTAC's own messages: not the application's (│) nor the installer's (npm warn…).
   result.naoSuportadoNaSaida = lines.some(entry => UNSUPPORTED.test(entry.line) && !/^\s+│|^npm (warn|WARN)/.test(entry.line));
-  result.aceite = Boolean(result.link && result.dossie?.estado === 200 && !result.dossie.naoSuportado && !result.naoSuportadoNaSaida
-    && result.primeiroDossieMs < LIMIT_MS);
+  result.projetoInalterado = gitStatus() === gitBefore;
+  result.comFuncoes = Number(result.diagnostico.match(/With project functions: (\d+)/)?.[1] ?? 0);
+  result.explicado = Boolean(project.explicacao && !result.link && new RegExp(project.explicacao).test(result.saida.join('\n')));
+  if (result.explicado) result.tipoDossie = 'explicação';
+  result.aceite = (result.explicado && result.projetoInalterado && !result.naoSuportadoNaSaida) || Boolean(result.link && result.dossie?.estado === 200 && !result.dossie.naoSuportado && !result.naoSuportadoNaSaida
+    && result.primeiroDossieMs < LIMIT_MS && (!project.pedidos?.length || result.comFuncoes > 0) && result.projetoInalterado);
   return result;
 }
 
@@ -174,7 +192,7 @@ try {
     const result = await runProject(chrome, project);
     results.push(result);
     process.stdout.write(`${result.aceite ? 'ACEITE' : 'FALHOU'} · pronta ${Math.round((result.prontaMs ?? 0) / 1000)} s · primeiro dossier ${result.primeiroDossieMs ? Math.round(result.primeiroDossieMs / 1000) + ' s' : '—'}` +
-      ` · modo ${result.modo ?? '?'} · clique ${result.clicado ?? '—'}${result.erro ? ` · erro: ${result.erro}` : ''}\n`);
+      ` · modo ${result.modo ?? '?'} · clique ${result.clicado ?? '—'} · projeto ${result.projetoInalterado ? 'inalterado' : 'ALTERADO'}${result.erro ? ` · erro: ${result.erro}` : ''}\n`);
     if (result.dossie) process.stdout.write(`  dossier: ${JSON.stringify(result.dossie)}\n`);
   }
 } finally {

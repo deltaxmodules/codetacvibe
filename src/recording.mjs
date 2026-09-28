@@ -47,14 +47,26 @@ export function createSummary() {
   const summary = {
     starts: [], ports: new Set(), addresses: new Map(), pages: 0, requests: 0, withFunctions: new Set(), withBoundaries: new Set(),
     actions: new Set(), files: 0, functions: 0, emptyFiles: 0, failed: [], limitations: new Map(), processes: new Set(),
-    firstAction: null, firstRequest: null, firstPage: null, pagePath: null,
+    firstAction: null, firstRequest: null, firstPage: null, pagePath: null, servers: new Set(), supervisors: new Set(),
   };
+  // Modules per process: a supervisor (the reloader of flask run --debug, fastapi dev)
+  // imports the app too, and its modules would count twice.
+  const modules = new Map();
   summary.add = event => {
     if (event.process) summary.processes.add(event.process);
     switch (event.type) {
-      case 'capture-start': summary.starts.push({ level: event.level, reason: event.reason, root: event.root, node: event.node }); break;
+      case 'capture-start': summary.starts.push({ level: event.level, reason: event.reason, root: event.root, node: event.node, python: event.python, process: event.process }); break;
       case 'listening':
         if (event.port) { summary.ports.add(event.port); summary.addresses.set(event.port, event.address); }
+        if (event.server) summary.servers.add(event.server);
+        break;
+      case 'process':
+        if (event.role === 'supervisor' && !summary.supervisors.has(event.process)) {
+          summary.supervisors.add(event.process);
+          const own = modules.get(event.process);
+          if (own) { summary.files -= own.files; summary.functions -= own.functions; summary.emptyFiles -= own.empty; }
+          if (event.server) summary.servers.add(event.server);
+        }
         break;
       case 'page': summary.pages++; summary.pagePath = event.path; break;
       case 'request':
@@ -67,12 +79,18 @@ export function createSummary() {
         if (!summary.actions.has(event.actionId)) summary.firstAction ??= event;
         summary.actions.add(event.actionId);
         break;
-      case 'module':
-        if (event.cached || isLibraryFile(event.file ?? '')) break;
+      case 'module': {
+        if (event.cached || isLibraryFile(event.file ?? '') || summary.supervisors.has(event.process)) break;
         summary.files++;
         summary.functions += event.functions ?? 0;
         if (!event.functions) summary.emptyFiles++;
+        const own = modules.get(event.process) ?? { files: 0, functions: 0, empty: 0 };
+        own.files++;
+        own.functions += event.functions ?? 0;
+        if (!event.functions) own.empty++;
+        modules.set(event.process, own);
         break;
+      }
       case 'limitation':
         summary.limitations.set(event.reason, (summary.limitations.get(event.reason) ?? 0) + 1);
         if (event.reason === 'module-transform-failed' || event.reason === 'source-map-unreadable') summary.failed.push({ file: event.file, detail: event.detail });

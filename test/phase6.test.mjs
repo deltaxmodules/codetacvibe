@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -33,8 +33,20 @@ test('comando: versão e relatório sem a pasta pessoal', () => {
   const version = spawnSync(process.execPath, ['src/cli.mjs', '--version'], { encoding: 'utf8' });
   assert.equal(version.stdout.trim(), JSON.parse(spawnSync('cat', ['package.json'], { encoding: 'utf8' }).stdout).version);
   const home = join(tmpdir(), `codetac-report-${randomUUID()}`);
-  const report = spawnSync(process.execPath, ['src/cli.mjs', 'relatorio', '.', '--painel', '4197'], { encoding: 'utf8', env: { ...process.env, CODETAC_HOME: home } });
-  assert.match(report.stdout, /Relatório guardado em/);
+  const report = spawnSync(process.execPath, ['src/cli.mjs', 'report', '.', '--panel-port', '4197'], { encoding: 'utf8', env: { ...process.env, CODETAC_HOME: home } });
+  assert.match(report.stdout, /Report saved to/);
   assert.doesNotMatch(report.stdout, new RegExp(homedir().replace(/[/\\]/g, '\\$&') + '/'));
   rmSync(home, { recursive: true, force: true });
+});
+
+// The panel's page is a template literal: an escape that is valid there can
+// break the script it produces (\' becomes '). Checked without importing
+// panel.mjs, which would start a server.
+test('painel: o script da página é JavaScript válido', () => {
+  const source = readFileSync(join(install, 'src', 'panel.mjs'), 'utf8');
+  const literal = source.slice(source.indexOf('const page = `') + 'const page = '.length, source.lastIndexOf('`;') + 1);
+  const LABELS = {};
+  const page = new Function('LABELS', `return ${literal};`)(LABELS);
+  const script = page.slice(page.indexOf('<script>') + '<script>'.length, page.indexOf('</script>'));
+  assert.doesNotThrow(() => new Function(script));
 });

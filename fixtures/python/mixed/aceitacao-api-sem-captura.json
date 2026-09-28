@@ -1,0 +1,76 @@
+{
+  "name": "py-misto-api-sem-captura",
+  "root": "{codetac}/fixtures/python/mixed/web",
+  "args": [
+    "{codetac}/node_modules/vite/bin/vite.js",
+    "--port",
+    "{port}",
+    "--strictPort",
+    "--host",
+    "127.0.0.1"
+  ],
+  "origin": "http://127.0.0.1:{port}",
+  "readyPath": "/",
+  "env": {
+    "SEM_PROXY": "1",
+    "VITE_API_URL": "http://127.0.0.1:{api}"
+  },
+  "companions": [
+    {
+      "name": "api",
+      "root": "{codetac}/fixtures/python/mixed/api",
+      "python": "{codetac}/fixtures/python/mixed/api/.venv/bin/python",
+      "args": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--port",
+        "{api}"
+      ],
+      "env": {
+        "APP_DATABASE": "{out}/tasks.sqlite",
+        "FRONTEND_ORIGIN": "http://127.0.0.1:{port}"
+      },
+      "readyPath": "/api/tasks",
+      "capture": false
+    }
+  ],
+  "prepare": [
+    [
+      "-e",
+      "require('fs').rmSync(process.argv[1], { force: true })",
+      "{out}/tasks.sqlite"
+    ]
+  ],
+  "extraSecrets": [
+    "Tarefa secreta de ensaio"
+  ],
+  "steps": [
+    {
+      "name": "abrir",
+      "goto": "/",
+      "waitFor": "document.querySelector('#adicionar')",
+      "settle": 800,
+      "snapshot": "inicio"
+    },
+    {
+      "type": [
+        "#titulo",
+        "Tarefa secreta de ensaio"
+      ]
+    },
+    {
+      "name": "Adicionar tarefa (sem proxy, API sem captura)",
+      "click": "#adicionar",
+      "after": "document.querySelectorAll('li').length === 1",
+      "settle": 800,
+      "expect": {
+        "unlinked": true,
+        "component": true,
+        "handler": "submitTask"
+      },
+      "snapshot": "adicionada",
+      "openBar": true
+    }
+  ]
+}

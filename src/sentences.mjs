@@ -1,99 +1,28 @@
 // Frases fixas, geradas só dos factos gravados (modo sem IA e base de
-// comparação para as frases da IA). Idioma: CODETAC_LANG (pt-PT por omissão).
+// comparação para as frases da IA), em inglês.
 // Nenhuma frase interpreta o nome de uma função: diz o que se observou.
 
-export const LANGUAGES = ['pt-PT', 'en'];
-export function language(value = process.env.CODETAC_LANG) {
-  const text = String(value ?? '').toLowerCase();
-  return text.startsWith('en') ? 'en' : 'pt-PT';
-}
+// The recordings keep their values in Portuguese (kinds, operations, modes):
+// they are translated only when shown.
+export const LABELS = {
+  'base-de-dados': 'database', ia: 'AI', mensagem: 'message', pagamento: 'payment', ficheiros: 'files', 'autenticação': 'authentication',
+  leitura: 'read', escrita: 'write', 'remoção': 'delete', 'cópia': 'copy', 'mudança de nome': 'rename', 'criação de pasta': 'create folder',
+  'verificação': 'check', 'verificação de sessão': 'session check', teste: 'test', 'produção': 'live', desconhecido: 'unknown',
+  'SMTP/transporte': 'SMTP/transport', presente: 'present', ausente: 'absent', '(descritor)': '(descriptor)',
+  minimo: 'minimal', 'modelo local': 'local model',
+  // Recorded by the page bar before 0.3.0.
+  'saída da página': 'page exit', 'endereço mudou': 'address changed', 'endereço substituído': 'address replaced',
+  'recuar/avançar': 'back/forward', 'ligação interna': 'in-page link', 'tempo máximo': 'time limit', 'sem atividade': 'idle', 'navegação': 'navigation',
+};
+export function label(value) { return LABELS[value] ?? value; }
 
 const list = (items, and) => items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`;
 const names = (items, and, max = 4) => items.length > max ? `${items.slice(0, max).join(', ')} (+${items.length - max})` : list(items, and);
 
-function duration(ms, lang) {
+function duration(ms) {
   if (ms == null) return '';
-  const text = ms < 1 ? ms.toFixed(2) + ' ms' : ms < 1000 ? ms.toFixed(1) + ' ms' : (ms / 1000).toFixed(2) + ' s';
-  return lang === 'en' ? text : text.replace('.', ',');
+  return ms < 1 ? ms.toFixed(2) + ' ms' : ms < 1000 ? ms.toFixed(1) + ' ms' : (ms / 1000).toFixed(2) + ' s';
 }
-
-const PT = {
-  and: 'e',
-  rows: n => `${n} ${n === 1 ? 'linha' : 'linhas'}`,
-  read: (tables, rows) => `Lê ${tables || 'a base de dados'}${rows != null ? ` (${PT.rows(rows)})` : ''}`,
-  insert: (tables, n) => `Acrescenta ${n == null ? 'linhas' : PT.rows(n)} a ${tables || 'uma tabela'}`,
-  update: (tables, n) => n === 0 ? `Tenta alterar ${tables || 'uma tabela'}; nenhuma linha alterada` : `Altera ${n == null ? 'linhas' : PT.rows(n)} em ${tables || 'uma tabela'}`,
-  delete: (tables, n) => n === 0 ? `Tenta apagar em ${tables || 'uma tabela'}; nenhuma linha apagada` : `Apaga ${n == null ? 'linhas' : PT.rows(n)} em ${tables || 'uma tabela'}`,
-  create: (tables, ifNot) => `Cria a tabela ${tables || ''}${ifNot ? ' se ainda não existir' : ''}`.trim(),
-  alter: tables => `Altera a estrutura de ${tables || 'uma tabela'}`,
-  drop: tables => `Remove ${tables || 'uma tabela'}`,
-  otherDb: (op, tables) => `Comando ${op} na base de dados${tables ? ` (${tables})` : ''}`,
-  failed: 'falhou',
-  http: (method, host, path, status) => `Chama ${host}: ${method} ${path}${status != null ? ` (estado ${status})` : ''}`,
-  ai: (provider, model, usage) => `Pede uma resposta a ${provider}${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}`,
-  email: (to, subject) => `Envia um email${to.length ? ` para ${to.join(', ')}` : ''}${subject ? ` «${subject}»` : ''}`,
-  message: (to, provider) => `Envia uma mensagem por ${provider}${to.length ? ` para ${to.join(', ')}` : ''}`,
-  payment: (provider, operation, mode) => `Pagamento em ${provider}: ${operation} (modo ${mode})`,
-  fileRead: (where, bytes) => `Lê o ficheiro ${where}${bytes ? ` (${bytes} bytes)` : ''}`,
-  fileWrite: (op, where, bytes) => `${op[0].toUpperCase() + op.slice(1)} de ficheiro: ${where}${bytes ? ` (${bytes} bytes)` : ''}`,
-  auth: (provider, operation) => `Autenticação em ${provider}${operation ? `: ${operation}` : ''}`,
-  // Funções
-  calls: items => `chama ${items}`,
-  noBoundary: 'Trabalho interno: nenhuma fronteira observada',
-  error: 'terminou com erro',
-  unfinished: 'não terminou durante a gravação',
-  dbSetupPart: n => `executa ${n} comandos de estrutura da base de dados`,
-  readPart: tables => `lê ${tables}`,
-  writePart: (verb, tables) => `${verb} ${tables}`,
-  writeVerbs: { INSERT: 'acrescenta a', UPDATE: 'altera', DELETE: 'apaga em', REPLACE: 'substitui em', UPSERT: 'acrescenta ou altera', MERGE: 'junta em' },
-  idleWritePart: tables => `tenta escrever em ${tables} sem alterar linhas`,
-  httpPart: hosts => `chama ${hosts}`,
-  aiPart: providers => `pede respostas a ${providers}`,
-  emailPart: n => n === 1 ? 'envia um email' : `envia ${n} emails`,
-  paymentPart: providers => `faz pagamentos em ${providers}`,
-  filePart: ops => `ficheiros: ${ops}`,
-  authPart: providers => `autenticação em ${providers}`,
-  // Grupos
-  dbSetup: (n, counts, tables, failed, changed, parentOk) => `Preparação da base de dados: ${n} comandos (${counts}) em ${tables} ${tables === 1 ? 'tabela' : 'tabelas'}` +
-    (failed ? ` · ${failed} falharam${parentOk ? ' sem interromper a função' : ''}` : '') +
-    (changed ? ` · inclui escritas que alteraram ${PT.rows(changed)}` : ''),
-  repeated: (sentence, n) => `${sentence} — ${n} vezes seguidas`,
-  block: (times, size, what) => `O mesmo conjunto de ${size} passos repetido ${times} vezes${what ? `: ${what}` : ''}`,
-  helpers: (n, fns) => `${n} funções auxiliares sem fronteiras: ${fns}`,
-  generated: n => `${n} funções de código gerado pelo bundler`,
-  devTools: n => `${n} ${n === 1 ? 'pedido' : 'pedidos'} da ferramenta de desenvolvimento (recompilação, hot reload)`,
-  // Efeitos
-  effects: {
-    added: (n, table) => `${n == null ? 'Linhas acrescentadas' : `${PT.rows(n)} ${n === 1 ? 'acrescentada' : 'acrescentadas'}`} em ${table}`,
-    changed: (n, table) => `${n == null ? 'Linhas alteradas' : `${PT.rows(n)} ${n === 1 ? 'alterada' : 'alteradas'}`} em ${table}`,
-    deleted: (n, table) => `${n == null ? 'Linhas apagadas' : `${PT.rows(n)} ${n === 1 ? 'apagada' : 'apagadas'}`} em ${table}`,
-    otherWrite: (op, table) => `${op} em ${table}`,
-    noChange: (op, table, n) => `${op} em ${table} sem linhas alteradas${n > 1 ? ` (${n} vezes)` : ''}`,
-    structure: (ok, failed) => `${ok + failed} comandos de estrutura da base de dados (${ok} sem erro${failed ? `, ${failed} falharam` : ''}); a gravação não indica se alteraram a base`,
-    email: (to, subject, failed) => `${failed ? 'Tentativa de email falhada' : 'Email enviado'}${to.length ? ` para ${to.join(', ')}` : ''}${subject ? ` «${subject}»` : ''}`,
-    message: (provider, failed) => `${failed ? 'Tentativa de mensagem falhada' : 'Mensagem enviada'} por ${provider}`,
-    payment: (provider, operation, mode) => `Pagamento em ${provider}: ${operation} (modo ${mode})`,
-    file: (op, where) => `Ficheiro: ${op} em ${where}`,
-    cookieSet: names => `Cookies guardados no browser: ${names}`,
-    cookieCleared: names => `Cookies apagados no browser: ${names}`,
-    ai: (provider, model, usage, cost) => `Chamada de IA a ${provider}${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}${cost != null ? ` · ~US$ ${cost.toFixed(4)}` : ''}`,
-    external: (method, host, n) => `Chamada externa ${method} a ${host}${n > 1 ? ` (${n} vezes)` : ''}`,
-    none: 'Nenhum efeito permanente observado.',
-    unseen: 'Não observado: armazenamento local do browser e efeitos em serviços não reconhecidos.',
-  },
-  // Ação
-  action: {
-    click: label => `Clique em ${label}`,
-    submit: label => `Envio de ${label}`,
-    change: label => `Alteração em ${label}`,
-    continuation: 'Continuação após navegação',
-    request: (method, path, status) => `${method} ${path}${status != null ? ` (estado ${status})` : ''}`,
-    noServer: 'sem pedidos ao servidor',
-    screen: 'altera o ecrã',
-    noScreen: 'sem alteração visível no ecrã',
-    navigates: path => `muda para ${path}`,
-  },
-};
 
 const EN = {
   and: 'and',
@@ -117,6 +46,8 @@ const EN = {
   auth: (provider, operation) => `Authentication with ${provider}${operation ? `: ${operation}` : ''}`,
   calls: items => `calls ${items}`,
   noBoundary: 'Internal work: no boundary observed',
+  opaque: 'Not observable: runs in compiled or generated code that CodeTAC cannot see into',
+  templatePart: file => `renders HTML from ${file}`,
   error: 'ended with an error',
   unfinished: 'did not finish during the recording',
   dbSetupPart: n => `runs ${n} database structure commands`,
@@ -169,12 +100,12 @@ const EN = {
   },
 };
 
-export function texts(lang) { return lang === 'en' ? EN : PT; }
+export function texts() { return EN; }
 export { duration, names, list };
 
 // The sentence of one boundary, from its recorded facts.
-export function boundarySentence(step, lang) {
-  const t = texts(lang);
+export function boundarySentence(step) {
+  const t = texts();
   const r = step.result ?? {};
   const failed = step.error || r.error;
   const tables = (step.tables ?? []).join(', ');
@@ -196,14 +127,14 @@ export function boundarySentence(step, lang) {
     case 'ia': text = t.ai(step.provider, r.model ?? step.model, r.usage); break;
     case 'email': text = t.email(step.to ?? [], step.subject); break;
     case 'mensagem': text = t.message(step.to ?? [], step.provider ?? step.library); break;
-    case 'pagamento': text = t.payment(step.provider, step.operation, step.mode); break;
+    case 'pagamento': text = t.payment(step.provider, step.operation, label(step.mode)); break;
     case 'ficheiros': {
       const where = step.bucket ? `${step.provider} ${step.bucket}` : step.path ?? step.provider;
-      text = step.operation === 'leitura' || step.operation === 'verificação' ? t.fileRead(where, r.bytes) : t.fileWrite(step.operation ?? '?', where, step.bytes);
+      text = step.operation === 'leitura' || step.operation === 'verificação' ? t.fileRead(where, r.bytes) : t.fileWrite(label(step.operation ?? '?'), where, step.bytes);
       break;
     }
-    case 'autenticação': text = t.auth(step.provider ?? step.library, step.operation); break;
-    default: text = `${step.kind}${step.operation ? `: ${step.operation}` : ''}`;
+    case 'autenticação': text = t.auth(step.provider ?? step.library, label(step.operation)); break;
+    default: text = `${label(step.kind)}${step.operation ? `: ${label(step.operation)}` : ''}`;
   }
   return failed ? `${text} — ${t.failed}` : text;
 }

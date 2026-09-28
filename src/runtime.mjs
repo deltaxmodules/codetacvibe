@@ -53,7 +53,7 @@ export function createRuntime(directory, { flushBytes = FLUSH_BYTES, flushMs = F
       appendFileSync(file, chunk, { mode: 0o600 });
     } catch {
       disabled = true;
-      process.stderr.write('[CodeTAC] Gravação indisponível; a aplicação continua sem captura.\n');
+      process.stderr.write('[CodeTAC] Recording unavailable; the app keeps running without capture.\n');
     }
   }
   function write(line) {
@@ -195,8 +195,11 @@ export function createRuntime(directory, { flushBytes = FLUSH_BYTES, flushMs = F
     const parent = context.getStore();
     const requestId = `${processId}:r${++requests}`;
     const { path, queryKeys } = splitUrl(req.url ?? '/');
+    // A page of another origin calling this server (no proxy): origin and host
+    // (scheme, name and port only) let the store make a probable link.
+    const cross = crossOrigin(req.headers?.origin, req.headers?.host);
     emit({ type: 'request', requestId, parentId: current().parentId, method: req.method, path, queryKeys, at: Date.now(),
-      action: action?.action, actionRequest: action?.actionRequest ?? undefined });
+      action: action?.action, actionRequest: action?.actionRequest ?? undefined, origin: cross?.origin, host: cross?.host });
     const start = process.hrtime.bigint();
     let done = false;
     // Cookies the response sets or deletes: names only, never values. Headers
@@ -268,6 +271,15 @@ export function cookieNames(header, written) {
   return [...result.values()];
 }
 
+// Same rule as cross_origin in src/python/codetac_py/servers.py.
+export function crossOrigin(origin, host) {
+  if (typeof origin !== 'string' || typeof host !== 'string' || origin === 'null') return null;
+  let url;
+  try { url = new URL(origin); } catch { return null; }
+  if (!['http:', 'https:'].includes(url.protocol) || !url.host || url.host === host) return null;
+  return { origin: `${url.protocol}//${url.host}`, host };
+}
+
 // A readable copy of a value for the detail view: plain JSON, bounded in
 // depth, length and size. Getters are not called (they could change state);
 // class instances keep their class name. Redaction happens when it is emitted.
@@ -280,41 +292,41 @@ export function preview(value) {
     if (item === null || typeof item === 'boolean') return item;
     if (typeof item === 'number') return Number.isFinite(item) ? item : String(item);
     if (typeof item === 'string') return item.length > LIMITS.text ? `${item.slice(0, LIMITS.text)}[TRUNCATED ${item.length}]` : item;
-    if (item === undefined) return { $tipo: 'undefined' };
+    if (item === undefined) return { $type: 'undefined' };
     if (typeof item === 'bigint') return `${item}n`;
-    if (typeof item === 'symbol') return { $tipo: 'symbol', descricao: item.description ?? '' };
-    if (typeof item === 'function') return { $tipo: 'função', nome: item.name || '(anónima)' };
-    if (seen.has(item)) return { $tipo: 'circular' };
-    if (depth >= LIMITS.depth) return { $tipo: Array.isArray(item) ? `lista (${item.length})` : className(item) ?? 'objeto', $resumido: true };
+    if (typeof item === 'symbol') return { $type: 'symbol', description: item.description ?? '' };
+    if (typeof item === 'function') return { $type: 'function', name: item.name || '(anonymous)' };
+    if (seen.has(item)) return { $type: 'circular' };
+    if (depth >= LIMITS.depth) return { $type: Array.isArray(item) ? `list (${item.length})` : className(item) ?? 'object', $summarised: true };
     seen.add(item);
     try {
-      if (item instanceof Error) return { $tipo: 'erro', nome: item.name, mensagem: String(item.message ?? '') };
-      if (item instanceof Date) return { $tipo: 'data', valor: Number.isNaN(item.getTime()) ? 'inválida' : item.toISOString() };
-      if (item instanceof Promise) return { $tipo: 'promessa' };
+      if (item instanceof Error) return { $type: 'error', name: item.name, message: String(item.message ?? '') };
+      if (item instanceof Date) return { $type: 'date', value: Number.isNaN(item.getTime()) ? 'invalid' : item.toISOString() };
+      if (item instanceof Promise) return { $type: 'promise' };
       const known = summary(item);
       if (known) return known;
-      if (ArrayBuffer.isView(item) || item instanceof ArrayBuffer) return { $tipo: className(item) ?? 'bytes', bytes: item.byteLength };
-      if (item instanceof Map) return { $tipo: 'Map', tamanho: item.size, entradas: [...item].slice(0, LIMITS.items).map(([key, entry]) => [walk(key, depth + 1), walk(entry, depth + 1)]) };
-      if (item instanceof Set) return { $tipo: 'Set', tamanho: item.size, valores: [...item].slice(0, LIMITS.items).map(entry => walk(entry, depth + 1)) };
+      if (ArrayBuffer.isView(item) || item instanceof ArrayBuffer) return { $type: className(item) ?? 'bytes', bytes: item.byteLength };
+      if (item instanceof Map) return { $type: 'Map', size: item.size, entries: [...item].slice(0, LIMITS.items).map(([key, entry]) => [walk(key, depth + 1), walk(entry, depth + 1)]) };
+      if (item instanceof Set) return { $type: 'Set', size: item.size, values: [...item].slice(0, LIMITS.items).map(entry => walk(entry, depth + 1)) };
       if (Array.isArray(item)) {
         const out = item.slice(0, LIMITS.items).map(entry => walk(entry, depth + 1));
-        if (item.length > LIMITS.items) out.push({ $mais: item.length - LIMITS.items });
+        if (item.length > LIMITS.items) out.push({ $more: item.length - LIMITS.items });
         return out;
       }
       const out = {};
       const name = className(item);
-      if (name) out.$classe = name;
+      if (name) out.$class = name;
       // Fields starting with "_" of class instances are internals (streams,
       // emitters, frameworks), not the application's data.
       const keys = Object.keys(item).filter(key => !(name && key.startsWith('_')));
       for (const key of keys.slice(0, LIMITS.keys)) {
         const descriptor = Object.getOwnPropertyDescriptor(item, key);
-        out[key] = descriptor && 'value' in descriptor ? walk(descriptor.value, depth + 1) : { $tipo: 'getter' };
+        out[key] = descriptor && 'value' in descriptor ? walk(descriptor.value, depth + 1) : { $type: 'getter' };
       }
-      if (keys.length > LIMITS.keys) out.$mais = keys.length - LIMITS.keys;
+      if (keys.length > LIMITS.keys) out.$more = keys.length - LIMITS.keys;
       return out;
     } catch {
-      return { $tipo: 'ilegível' };
+      return { $type: 'unreadable' };
     }
   }
   return walk(value, 0);
@@ -333,13 +345,13 @@ function summary(item) {
   };
   const path = url => { try { const parsed = new URL(String(url), 'http://x'); return parsed.pathname + (parsed.search ? '?' + [...parsed.searchParams.keys()].map(key => `${key}=…`).join('&') : ''); } catch { return '[?]'; } };
   if (name === 'IncomingMessage' || (typeof item.method === 'string' && 'headers' in item && ('url' in item))) {
-    return { $classe: name, metodo: item.method, caminho: path(item.url), cabecalhos: headerNames(item.headers) };
+    return { $class: name, method: item.method, path: path(item.url), headers: headerNames(item.headers) };
   }
-  if (name === 'ServerResponse') return { $classe: name, estado: item.statusCode, cabecalhos: headerNames(item.getHeaders?.()) };
-  if (name === 'Response') return { $classe: name, estado: item.status, cabecalhos: headerNames(item.headers) };
-  if (name === 'Headers') return { $classe: name, nomes: headerNames(item) };
+  if (name === 'ServerResponse') return { $class: name, status: item.statusCode, headers: headerNames(item.getHeaders?.()) };
+  if (name === 'Response') return { $class: name, status: item.status, headers: headerNames(item.headers) };
+  if (name === 'Headers') return { $class: name, names: headerNames(item) };
   if (/^(Socket|TLSSocket|Server|Agent|EventEmitter|Readable|Writable|Duplex|Transform|PassThrough|WriteStream|ReadStream|Pool|PoolConnection|Connection|Database|DatabaseSync|Statement|StatementSync)$/.test(name)) {
-    return { $classe: name, $resumido: true };
+    return { $class: name, $summarised: true };
   }
   return null;
 }

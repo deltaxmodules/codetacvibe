@@ -115,14 +115,14 @@ test('modo normal: a mesma app segue as funções e o resumo conta-as', () => {
 
 test('comando: sem arranque descoberto e sem terminal, explica como o indicar', async () => {
   const dir = folder({ 'README.md': '' });
-  const child = spawn(process.execPath, [resolve('src/cli.mjs'), dir, '--painel', '4199'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [resolve('src/cli.mjs'), dir, '--panel-port', '4199'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let text = '';
   child.stdout.on('data', chunk => { text += chunk; });
   const code = await new Promise(done => child.on('exit', done));
   assert.equal(code, 2);
-  assert.match(text, /Não encontrei um package.json/);
+  assert.match(text, /did not find a package.json/);
   assert.match(text, /codetac \. -- node server\.js/);
-  assert.doesNotMatch(text, /não suportad/i);
+  assert.doesNotMatch(text, /not supported/i);
   rmSync(dir, { recursive: true });
 });
 
@@ -142,20 +142,20 @@ http.createServer((request, response) => { response.setHeader('content-type', 't
   .listen(process.env.PORT || 0, '127.0.0.1', function () { console.log('http://127.0.0.1:' + this.address().port); });`,
   });
   mkdirSync(join(dir, 'node_modules'));
-  const child = spawn(process.execPath, [resolve('src/cli.mjs'), dir, '--nao-abrir', '--painel', '4198'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODETAC_AI_PROVIDER: 'nenhum' } });
+  const child = spawn(process.execPath, [resolve('src/cli.mjs'), dir, '--no-open', '--panel-port', '4198'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CODETAC_AI_PROVIDER: 'none' } });
   let text = '';
   child.stdout.on('data', chunk => { text += chunk; });
   child.stderr.on('data', chunk => { text += chunk; });
   const end = Date.now() + 60000;
-  while (!/App pronta/.test(text) && child.exitCode === null && Date.now() < end) await new Promise(done => setTimeout(done, 200));
+  while (!/App ready/.test(text) && child.exitCode === null && Date.now() < end) await new Promise(done => setTimeout(done, 200));
   child.kill('SIGINT');
   await new Promise(done => child.on('exit', done));
-  assert.match(text, /falhou durante o arranque com a captura completa/);
-  assert.match(text, /✓ App pronta em http:\/\/\S+ \(\d+ s\) · modo mínimo/);
-  const run = text.match(/Gravação: (\S+-minimo)/)[1];
+  assert.match(text, /failed while starting with the full capture/);
+  assert.match(text, /✓ App ready at http:\/\/\S+ \(\d+ s\) · minimal mode/);
+  const run = text.match(/Recording: (\S+-minimal)/)[1];
   const start = readdirSync(resolve('.codetac', run)).flatMap(file => readFileSync(resolve('.codetac', run, file), 'utf8').trim().split('\n').map(JSON.parse))
     .find(event => event.type === 'capture-start');
   assert.equal(start.level, 'minimo');
-  assert.match(start.reason, /falhou ao arrancar com a instrumentação fina/);
+  assert.match(start.reason, /failed to start with the full instrumentation/);
   rmSync(dir, { recursive: true });
 });

@@ -3,20 +3,30 @@
 import { DatabaseSync } from 'node:sqlite';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { label as display } from './sentences.mjs';
 
 const WRITES = new Set(['INSERT', 'UPDATE', 'DELETE', 'UPSERT', 'REPLACE', 'MERGE']);
 const STRUCTURE = new Set(['CREATE', 'DROP', 'ALTER', 'TRUNCATE']);
-const KINDS = { a: 'ligação', button: 'botão', input: 'campo', select: 'lista', textarea: 'caixa de texto', label: 'etiqueta', summary: 'secção', form: 'formulário' };
+const KINDS = { a: 'link', button: 'button', input: 'field', select: 'list', textarea: 'text box', label: 'label', summary: 'section', form: 'form' };
 
-// "botão «Entrar»": the element as the person saw it.
+// 'button “Sign in”': the element as the person saw it.
 export function actionLabel(trigger) {
   const element = trigger?.element;
-  if (!element) return 'continuação após navegação';
+  if (!element) return 'continuation after navigation';
   const button = element.role === 'button' || (element.tag === 'input' && /^(submit|button|reset)$/.test(element.type ?? ''));
-  const kind = button ? 'botão' : KINDS[element.tag] ?? element.role ?? element.tag ?? 'elemento';
+  const kind = button ? 'button' : KINDS[element.tag] ?? element.role ?? element.tag ?? 'element';
   const text = element.text || element.label || element.name || element.id;
-  const suffix = trigger.event === 'change' ? (element.type === 'file' ? ' (ficheiro escolhido)' : ' (alteração)') : '';
-  return `${kind}${text ? ` «${text}»` : ''}${suffix}`;
+  const suffix = trigger.event === 'change' ? (element.type === 'file' ? ' (file chosen)' : ' (change)') : '';
+  return `${kind}${text ? ` “${text}”` : ''}${suffix}`;
+}
+
+// The deepest folder that holds both paths (absolute, "/"-separated).
+export function commonFolder(a, b) {
+  const left = a.split('/');
+  const right = b.split('/');
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) index++;
+  return left.slice(0, index).join('/') || '/';
 }
 
 export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
@@ -45,6 +55,11 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
   if (!columns.has('cookies')) db.exec('alter table requests add column cookies text;');
   // Phase 5: the request that loaded a page (it received the bar).
   if (!columns.has('document')) db.exec('alter table requests add column document integer;');
+  // Python stage 9: where the request ended in its process, to tell the work
+  // done after the response (background tasks) from the rest.
+  if (!columns.has('end_sequence')) db.exec('alter table requests add column end_sequence integer;');
+  // Python stage 10 (DP3): requests from a page of another origin, for the probable link.
+  if (!columns.has('origin')) db.exec('alter table requests add column origin text; alter table requests add column host text;');
   db.exec('create index if not exists requests_action on requests(action)');
   // Phase 5: why a recording is in minimal mode.
   if (!db.prepare('pragma table_info(runs)').all().some(column => column.name === 'reason')) db.exec('alter table runs add column reason text;');
@@ -65,10 +80,12 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
   const statements = {
     offset: db.prepare('select offset from ingested where file = ?'),
     setOffset: db.prepare('insert into ingested(file, offset) values (?, ?) on conflict(file) do update set offset = excluded.offset'),
-    run: db.prepare('insert into runs(run, root, node, level, reason) values (?, ?, ?, ?, ?) on conflict(run) do update set root = excluded.root, node = excluded.node, level = excluded.level, reason = excluded.reason'),
-    request: db.prepare('insert or ignore into requests(request_id, run, process, method, path, query_keys, at, action, action_request) values (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    run: db.prepare('insert into runs(run, root, node, level, reason) values (?, ?, ?, ?, ?) on conflict(run) do update set root = excluded.root, node = coalesce(excluded.node, runs.node), level = excluded.level, reason = excluded.reason'),
+    runRoot: db.prepare('select root from runs where run = ?'),
+    probable: db.prepare('select request_id, method, at from requests where action is null and origin = ? and host = ? and path = ? and at between ? and ? order by at'),
+    request: db.prepare('insert or ignore into requests(request_id, run, process, method, path, query_keys, at, action, action_request, origin, host) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     action: db.prepare('insert or replace into actions(action_id, segment, run, at, data) values (?, ?, ?, ?, ?)'),
-    requestEnd: db.prepare('update requests set status = ?, duration_ns = ?, aborted = ?, cookies = ?, ended = 1 where request_id = ?'),
+    requestEnd: db.prepare('update requests set status = ?, duration_ns = ?, aborted = ?, cookies = ?, ended = 1, end_sequence = ? where request_id = ? and process = ?'),
     event: db.prepare('insert or ignore into events(request_id, process, sequence, type, id, data) values (?, ?, ?, ?, ?, ?)'),
     limitation: db.prepare('insert or ignore into limitations(run, file, reason, line, detail) values (?, ?, ?, ?, ?)'),
     document: db.prepare('update requests set document = 1 where request_id = ?'),
@@ -97,17 +114,24 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
       let event;
       try { event = JSON.parse(line); } catch { continue; }
       switch (event.type) {
-        case 'capture-start': statements.run.run(run, event.root ?? null, event.node ?? null, event.level ?? null, event.reason ?? null); break;
+        case 'capture-start': {
+          // Several processes may share a recording (a Vite frontend and a
+          // Python API): the root is the folder common to all of theirs.
+          const known = statements.runRoot.get(run)?.root;
+          statements.run.run(run, known && event.root ? commonFolder(known, event.root) : event.root ?? known ?? null,
+            event.node ?? null, event.level ?? null, event.reason ?? null);
+          break;
+        }
         case 'page': pages.set(event.process, event.path); break;
         case 'request':
           if (pages.get(event.process) === event.path) { pages.delete(event.process); documents.add(event.requestId); }
           statements.request.run(event.requestId, run, event.process, event.method, event.path,
-          JSON.stringify(event.queryKeys ?? []), event.at ?? null, event.action ?? null, event.actionRequest ?? null);
+          JSON.stringify(event.queryKeys ?? []), event.at ?? null, event.action ?? null, event.actionRequest ?? null, event.origin ?? null, event.host ?? null);
           if (documents.has(event.requestId)) statements.document.run(event.requestId);
           break;
         case 'browser-action': statements.action.run(event.actionId, event.segment ?? 1, run, event.startedAt ?? null, line); break;
         case 'request-end': statements.requestEnd.run(event.status ?? null, event.durationNs ?? null, event.aborted ? 1 : 0,
-          event.cookies ? JSON.stringify(event.cookies) : null, event.requestId); break;
+          event.cookies ? JSON.stringify(event.cookies) : null, event.sequence ?? null, event.requestId, event.process); break;
         case 'limitation': statements.limitation.run(run, event.file ?? '', event.reason ?? '', event.line ?? null, event.detail ?? null); break;
         case 'enter': case 'exit': case 'boundary': case 'boundary-end': case 'detail':
           if (event.requestId) statements.event.run(event.requestId, event.process, event.sequence, event.type, event.id, line);
@@ -189,6 +213,25 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
     const timeline = [];
     const take = number => server.filter(item => item.number === number && !used.has(item.dossier.request.requestId))
       .map(item => { used.add(item.dossier.request.requestId); return item.dossier; });
+    // DP3 (b): a request of the page to another origin (the API on another
+    // port, without a proxy) cannot carry the action without changing the
+    // app (CORS). It is linked, as probable, to the request that server got
+    // from this page's origin, for the same host, method and path, while the
+    // browser waited for it; the CORS preflight (OPTIONS) goes with it.
+    const claimed = new Set();
+    const linked = new Set();  // browser requests with a probable link: the app's own API, not an outside service
+    const probable = (segment, request) => {
+      if (request.sameOrigin || !request.host || !segment.origin || segment.startedAt == null || request.startMs == null) return [];
+      const start = segment.startedAt + request.startMs;
+      const end = start + (request.durationMs ?? 0);
+      const rows = statements.probable.all(segment.origin, request.host, request.path ?? '', start - 250, end + 250)
+        .filter(row => !claimed.has(row.request_id));
+      const main = rows.filter(row => row.method === request.method).sort((a, b) => Math.abs(a.at - start) - Math.abs(b.at - start))[0];
+      if (!main) return [];
+      const preflight = rows.find(row => row.method === 'OPTIONS' && row.at <= main.at);
+      linked.add(request);
+      return [preflight, main].filter(Boolean).map(row => { claimed.add(row.request_id); return dossier(row.request_id); });
+    };
     segments.forEach((segment, index) => {
       if (index === 0 && segment.trigger) timeline.push({ type: 'trigger', segment: segment.segment, page: segment.page, trigger: segment.trigger });
       if (index > 0 || !segment.trigger) {
@@ -196,8 +239,13 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
         timeline.push({ type: 'document', segment: segment.segment, page: segment.page, server: take(null) });
       }
       const events = [
-        ...(segment.requests ?? []).map(request => ({ at: request.startMs ?? 0, item: { type: 'request', segment: segment.segment, browser: request, server: take(request.n) } })),
-        ...(segment.navigations ?? []).filter(item => item.kind !== 'documento')
+        ...(segment.requests ?? []).map(request => {
+          const server = take(request.n);
+          const guessed = server.length ? [] : probable(segment, request);
+          return { at: request.startMs ?? 0, item: { type: 'request', segment: segment.segment, browser: request, server: server.length ? server : guessed,
+            ...(guessed.length ? { probable: true } : {}) } };
+        }),
+        ...(segment.navigations ?? []).filter(item => item.kind !== 'document' && item.kind !== 'documento')
           .map(navigation => ({ at: navigation.atMs ?? 0, item: { type: 'navigation', segment: segment.segment, ...navigation } })),
       ].sort((a, b) => a.at - b.at);
       for (const { item } of events) timeline.push(item);
@@ -215,16 +263,16 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
       const found = combined.find(entry => entry.key === mark.key);
       if (found) found.count += mark.count; else combined.push({ ...mark });
     }
-    for (const request of segments.flatMap(segment => segment.requests ?? []).filter(request => !request.sameOrigin && request.host)) {
+    for (const request of segments.flatMap(segment => segment.requests ?? []).filter(request => !request.sameOrigin && request.host && !linked.has(request))) {
       const key = `browser:${request.host}`;
       const found = combined.find(entry => entry.key === key);
-      if (found) found.count++; else combined.push({ key, count: 1, label: `chamada do browser a ${request.host}` });
+      if (found) found.count++; else combined.push({ key, count: 1, label: `browser call to ${request.host}` });
     }
     const runs = [...new Set([...segments.map(segment => segment.run), ...serverRows.map(row => row.run)])];
     const limitations = runs.flatMap(run => db.prepare('select reason, count(*) as count from limitations where run = ? group by reason').all(run));
     const first = segments[0];
     return {
-      actionId, run: first?.run ?? serverRows[0]?.run, label: first ? actionLabel(first.trigger) : 'ação sem registo do browser', origin: first?.origin ?? null,
+      actionId, run: first?.run ?? serverRows[0]?.run, label: first ? actionLabel(first.trigger) : 'action not reported by the browser', origin: first?.origin ?? null,
       startedAt: first?.startedAt ?? serverRows[0]?.at ?? null,
       durationMs: segments.reduce((total, segment) => total + (segment.durationMs ?? 0), 0) || null,
       browserSeen: segments.length > 0, pending: all.some(item => !item.request.ended),
@@ -260,6 +308,10 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
     const starts = events.filter(event => event.type === 'enter' || event.type === 'boundary');
     const ids = new Set(starts.map(event => event.id));
     const depth = new Map();
+    // After the response: marked by the capture, or recorded after the
+    // request's end in its process (the order inside a process is exact).
+    const after = event => Boolean(event.afterResponse)
+      || (row.end_sequence != null && event.process === row.process && event.sequence > row.end_sequence);
     const steps = starts.map(event => {
       const level = event.parentId && ids.has(event.parentId) ? (depth.get(event.parentId) ?? 0) + 1 : 0;
       depth.set(event.id, level);
@@ -270,11 +322,12 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
         const detail = recordedValues.get(event.id);
         return { ...common, type: 'function', function: event.function, file: event.file, line: event.line,
           endLine: event.endLine ?? null, mapped: event.mapped, async: event.async,
+          opaque: event.opaque || undefined, afterResponse: after(event) || undefined,
           ...(detail ? { detail: { args: detail.args, lines: detail.lines, ...('returned' in detail ? { returned: detail.returned } : { threw: detail.threw }) } } : {}) };
       }
       const { type, id, parentId, requestId: _r, process, sequence, timeNs, version, ...details } = event;
       const { type: _t, id: _i, requestId: _q, durationNs: _d, error: _e, process: _p, sequence: _s, timeNs: _n, version: _v, ...result } = end ?? {};
-      const step = { ...common, type: 'boundary', ...details, result };
+      const step = { ...common, type: 'boundary', ...details, afterResponse: after(event) || undefined, result };
       if (step.kind === 'ia') step.costUsd = estimateCost(result.model ?? step.model, result.usage);
       return step;
     });
@@ -310,19 +363,19 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
       if (step.kind === 'base-de-dados' && STRUCTURE.has(step.operation)) {
         structure.commands++;
         for (const table of step.tables ?? []) structure.tables.add(table);
-      } else if (step.kind === 'base-de-dados' && WRITES.has(step.operation)) add(`escrita em ${step.tables?.join(', ') || 'base de dados'} (${step.operation})`, `db:${step.operation}:${step.tables}`);
+      } else if (step.kind === 'base-de-dados' && WRITES.has(step.operation)) add(`write to ${step.tables?.join(', ') || 'the database'} (${step.operation})`, `db:${step.operation}:${step.tables}`);
       else if (step.kind === 'ia') {
         const model = step.result?.model ?? step.model;
         const usage = step.result?.usage;
-        add(`chamada de IA a ${step.provider}${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}${step.costUsd != null ? ` · ~US$ ${step.costUsd.toFixed(4)}` : ''}`, `ia:${step.id}`);
+        add(`AI call to ${step.provider}${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}${step.costUsd != null ? ` · ~US$ ${step.costUsd.toFixed(4)}` : ''}`, `ia:${step.id}`);
       }
-      else if (step.kind === 'email' || step.kind === 'mensagem') add(`${step.kind === 'email' ? 'email' : 'mensagem'} enviado por ${step.provider ?? step.library}`, `mail:${step.provider}`);
-      else if (step.kind === 'pagamento') add(`pagamento ${step.provider} (${step.mode})`, `pay:${step.operation}`);
-      else if (step.kind === 'ficheiros' && step.operation !== 'leitura' && step.operation !== 'verificação') add(`ficheiro: ${step.operation} em ${step.bucket ?? step.provider}`, `file:${step.operation}:${step.bucket}`);
-      else if (step.kind === 'http' && !step.local) add(`chamada externa a ${step.host}`, `http:${step.host}`);
+      else if (step.kind === 'email' || step.kind === 'mensagem') add(`${step.kind === 'email' ? 'email' : 'message'} sent via ${step.provider ?? step.library}`, `mail:${step.provider}`);
+      else if (step.kind === 'pagamento') add(`payment ${step.provider} (${display(step.mode)})`, `pay:${step.operation}`);
+      else if (step.kind === 'ficheiros' && step.operation !== 'leitura' && step.operation !== 'verificação') add(`file: ${display(step.operation)} on ${step.bucket ?? step.provider}`, `file:${step.operation}:${step.bucket}`);
+      else if (step.kind === 'http' && !step.local) add(`external call to ${step.host}`, `http:${step.host}`);
     }
     if (structure.commands) result.push({ key: 'db:structure', count: 1,
-      label: `estrutura da base de dados: ${structure.commands} comandos (CREATE/ALTER/DROP) em ${structure.tables.size} tabelas` });
+      label: `database structure: ${structure.commands} commands (CREATE/ALTER/DROP) on ${structure.tables.size} tables` });
     return result;
   }
 

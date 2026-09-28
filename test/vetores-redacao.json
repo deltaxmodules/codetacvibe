@@ -1,0 +1,286 @@
+{
+  "descricao": "Vetores partilhados da redação: src/redact.mjs e src/python/codetac_py/redact.py têm de dar a mesma saída. Gerados a partir do redact.mjs e revistos.",
+  "env": {
+    "API_TOKEN": "tok-abcdef-123456",
+    "DB_PASSWORD": "hunter2hunter2",
+    "SESSION_SECRET": "short",
+    "DEBUG": "true",
+    "HOME": "/Users/alguem",
+    "STRIPE_SECRET_KEY": "x9Kq2mZ7pL"
+  },
+  "casos": [
+    {
+      "entrada": "ligação a postgres com hunter2hunter2 no texto",
+      "saida": "ligação a postgres com [REDACTED] no texto"
+    },
+    {
+      "entrada": "token do ambiente: tok-abcdef-123456, fim",
+      "saida": "token do ambiente: [REDACTED], fim"
+    },
+    {
+      "entrada": "valor curto short e true não são segredos",
+      "saida": "valor curto short e true não são segredos"
+    },
+    {
+      "entrada": "Authorization: Bearer abc.def.ghi-123 e mais",
+      "saida": "Authorization: [REDACTED] [REDACTED] e mais"
+    },
+    {
+      "entrada": "bearer\tXYZ;resto",
+      "saida": "Bearer [REDACTED];resto"
+    },
+    {
+      "entrada": "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nabc\n-----END RSA PRIVATE KEY----- depois",
+      "saida": "[REDACTED] depois"
+    },
+    {
+      "entrada": "chaves sk-proj-abcdefgh12345 sk-ant-api03-xyz_12345678 ghp_abcdefghij1234 AKIAABCDEFGHIJKLMNOP AIzaSyA1234567890abcdefghij xoxb-1234567890-abc",
+      "saida": "chaves [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED]"
+    },
+    {
+      "entrada": "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc-DEF_123",
+      "saida": "jwt [REDACTED]"
+    },
+    {
+      "entrada": "password=abc123 secret: \"com espaços\" api_key='k' apiKey:zzz private key = x; SESSION=s1",
+      "saida": "password=[REDACTED] secret: [REDACTED] api_key=[REDACTED] apiKey:[REDACTED] private key = [REDACTED]; SESSION=[REDACTED]"
+    },
+    {
+      "entrada": "contacto maria.silva+teste@exemplo.pt e a@b.co",
+      "saida": "contacto m***@e*** e a***@b***"
+    },
+    {
+      "entrada": "telefone +351 912 345 678 ou (21) 123-4567",
+      "saida": "telefone +3***78 ou (21***67"
+    },
+    {
+      "entrada": "timestamp 1727000000000 e ?v=1727000000000",
+      "saida": "timestamp 17***00 e ?v=17***00"
+    },
+    {
+      "entrada": "id-12345678-abc e 2026-09-24",
+      "saida": "id-12345678-abc e 20***24"
+    },
+    {
+      "entrada": "ms 12345 curto",
+      "saida": "ms 12345 curto"
+    },
+    {
+      "entrada": "caminho /Users/x/projeto/app.py:12",
+      "saida": "caminho /Users/x/projeto/app.py:12"
+    },
+    {
+      "entrada": "áááááááááááááááááááá",
+      "saida": "áááááááááááááááááááá"
+    },
+    {
+      "entrada": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "saida": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "entrada": "😀😀😀😀😀😀😀😀😀😀",
+      "saida": "😀😀😀😀😀😀😀😀😀😀"
+    },
+    {
+      "entrada": "emojis 😀 e acentuação ção",
+      "saida": "emojis 😀 e acentuação ção"
+    },
+    {
+      "entrada": " Bearer tok fim",
+      "saida": " Bearer [REDACTED] fim"
+    },
+    {
+      "entrada": "PASSWORD = segredo, Token:t0k",
+      "saida": "PASSWORD = [REDACTED], Token:[REDACTED]"
+    },
+    {
+      "entrada": 42,
+      "saida": 42
+    },
+    {
+      "entrada": 1727000000000,
+      "saida": 1727000000000
+    },
+    {
+      "entrada": 3.5,
+      "saida": 3.5
+    },
+    {
+      "entrada": true,
+      "saida": true
+    },
+    {
+      "entrada": false,
+      "saida": false
+    },
+    {
+      "entrada": null,
+      "saida": null
+    },
+    {
+      "entrada": {
+        "usage": {
+          "input": 12,
+          "output": 30
+        },
+        "tokens": 5,
+        "model": "claude"
+      },
+      "saida": {
+        "usage": {
+          "input": 12,
+          "output": 30
+        },
+        "tokens": "[REDACTED]",
+        "model": "claude"
+      }
+    },
+    {
+      "entrada": {
+        "password": "x",
+        "user": "ana@exemplo.pt",
+        "nested": {
+          "apiKey": "k",
+          "list": [
+            "Bearer abc",
+            1727000000000,
+            null
+          ]
+        }
+      },
+      "saida": {
+        "password": "[REDACTED]",
+        "user": "a***@e***",
+        "nested": {
+          "apiKey": "[REDACTED]",
+          "list": [
+            "Bearer [REDACTED]",
+            1727000000000,
+            null
+          ]
+        }
+      }
+    },
+    {
+      "entrada": {
+        "Authorization": "Bearer x",
+        "x-session-id": "abc",
+        "content-type": "text/html"
+      },
+      "saida": {
+        "Authorization": "[REDACTED]",
+        "x-session-id": "[REDACTED]",
+        "content-type": "text/html"
+      }
+    },
+    {
+      "entrada": [
+        "token=abc",
+        {
+          "secret": 1
+        },
+        [
+          [
+            "password: p"
+          ]
+        ]
+      ],
+      "saida": [
+        "token=[REDACTED]",
+        {
+          "secret": "[REDACTED]"
+        },
+        [
+          [
+            "password: [REDACTED]"
+          ]
+        ]
+      ]
+    },
+    {
+      "entrada": {
+        "a@b.com": 1
+      },
+      "saida": {
+        "a***@b***": 1
+      }
+    }
+  ],
+  "maxBytes": 16,
+  "casosCurtos": [
+    {
+      "entrada": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "saida": "xxxxxxxxxxxxxxxx[TRUNCATED]"
+    },
+    {
+      "entrada": "áááááááááááááááááááá",
+      "saida": "áááááááá[TRUNCATED]"
+    },
+    {
+      "entrada": "😀😀😀😀😀😀😀😀😀😀",
+      "saida": "😀😀😀😀[TRUNCATED]"
+    },
+    {
+      "entrada": "abcdefghijklmnoá",
+      "saida": "abcdefghijklmno[TRUNCATED]"
+    }
+  ],
+  "nomes": [
+    {
+      "nome": "password",
+      "sensivel": true
+    },
+    {
+      "nome": "userPassword",
+      "sensivel": true
+    },
+    {
+      "nome": "api_key",
+      "sensivel": true
+    },
+    {
+      "nome": "apiKey",
+      "sensivel": true
+    },
+    {
+      "nome": "API-KEY",
+      "sensivel": true
+    },
+    {
+      "nome": "session_id",
+      "sensivel": true
+    },
+    {
+      "nome": "tokens",
+      "sensivel": true
+    },
+    {
+      "nome": "usage",
+      "sensivel": false
+    },
+    {
+      "nome": "credentials",
+      "sensivel": true
+    },
+    {
+      "nome": "privateKey",
+      "sensivel": true
+    },
+    {
+      "nome": "name",
+      "sensivel": false
+    },
+    {
+      "nome": "email",
+      "sensivel": false
+    },
+    {
+      "nome": null,
+      "sensivel": false
+    },
+    {
+      "nome": "",
+      "sensivel": false
+    }
+  ]
+}

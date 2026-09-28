@@ -75,7 +75,7 @@ const server = http.createServer(handler).listen(0, '127.0.0.1', async () => {
   // Lines 7, 8, 9 and 13 ran; the else branch (11) did not.
   assert.deepEqual(price.lines, [7, 8, 9, 13]);
   assert.equal(by('slow').returned, 'feito');
-  assert.deepEqual(by('broken').threw, { $tipo: 'erro', nome: 'Error', mensagem: 'não há stock' });
+  assert.deepEqual(by('broken').threw, { $type: 'error', name: 'Error', message: 'não há stock' });
   assert.deepEqual(by('short').args, [{ name: 'n', value: 4 }]);
   assert.equal(by('short').returned, 8);
   assert.deepEqual(by('short').lines, [19]);
@@ -93,18 +93,18 @@ test('cópia legível dos valores: limites, circulares, classes, sem chamar gett
   const withGetter = { get x() { called = true; return 1; } };
   const value = preview({ aluno: new Aluno(), circular, lista: Array.from({ length: 25 }, (_, i) => i), fn: function save() {},
     data: new Date(0), bytes: Buffer.from('abc'), mapa: new Map([['k', 1]]), fundo: { a: { b: { c: { d: { e: 1 } } } } }, withGetter, nada: undefined });
-  assert.deepEqual(value.aluno, { $classe: 'Aluno', nome: 'Ana' });
-  assert.deepEqual(value.circular, { a: 1, self: { $tipo: 'circular' } });
+  assert.deepEqual(value.aluno, { $class: 'Aluno', nome: 'Ana' });
+  assert.deepEqual(value.circular, { a: 1, self: { $type: 'circular' } });
   assert.equal(value.lista.length, 21);
-  assert.deepEqual(value.lista.at(-1), { $mais: 5 });
-  assert.deepEqual(value.fn, { $tipo: 'função', nome: 'save' });
-  assert.deepEqual(value.data, { $tipo: 'data', valor: '1970-01-01T00:00:00.000Z' });
-  assert.deepEqual(value.bytes, { $tipo: 'Buffer', bytes: 3 });
-  assert.deepEqual(value.mapa, { $tipo: 'Map', tamanho: 1, entradas: [['k', 1]] });
-  assert.deepEqual(value.fundo.a.b.c, { $tipo: 'objeto', $resumido: true });
-  assert.deepEqual(value.withGetter, { x: { $tipo: 'getter' } });
+  assert.deepEqual(value.lista.at(-1), { $more: 5 });
+  assert.deepEqual(value.fn, { $type: 'function', name: 'save' });
+  assert.deepEqual(value.data, { $type: 'date', value: '1970-01-01T00:00:00.000Z' });
+  assert.deepEqual(value.bytes, { $type: 'Buffer', bytes: 3 });
+  assert.deepEqual(value.mapa, { $type: 'Map', size: 1, entries: [['k', 1]] });
+  assert.deepEqual(value.fundo.a.b.c, { $type: 'object', $summarised: true });
+  assert.deepEqual(value.withGetter, { x: { $type: 'getter' } });
   assert.equal(called, false);
-  assert.deepEqual(value.nada, { $tipo: 'undefined' });
+  assert.deepEqual(value.nada, { $type: 'undefined' });
 });
 
 test('objetos HTTP resumidos: sem valores de cabeçalhos, cookies nem internos', async () => {
@@ -116,12 +116,12 @@ test('objetos HTTP resumidos: sem valores de cabeçalhos, cookies nem internos',
   response.statusCode = 201;
   const fetched = new Request('http://localhost/x?q=1', { method: 'PUT', headers: { authorization: 'Bearer y' } });
   const value = preview({ request, response, fetched, headers: new Headers({ cookie: 'a=b' }), socket: new Socket(), own: new (class Thing { constructor() { this._private = 1; this.visible = 2; } })() });
-  assert.deepEqual(value.request, { $classe: 'IncomingMessage', metodo: 'POST', caminho: '/api/items?token=…&page=…', cabecalhos: ['cookie', 'content-type'] });
-  assert.deepEqual(value.response, { $classe: 'ServerResponse', estado: 201, cabecalhos: [] });
-  assert.deepEqual(value.fetched, { $classe: 'Request', metodo: 'PUT', caminho: '/x?q=…', cabecalhos: ['authorization'] });
-  assert.deepEqual(value.headers, { $classe: 'Headers', nomes: ['cookie'] });
-  assert.deepEqual(value.socket, { $classe: 'Socket', $resumido: true });
-  assert.deepEqual(value.own, { $classe: 'Thing', visible: 2 });
+  assert.deepEqual(value.request, { $class: 'IncomingMessage', method: 'POST', path: '/api/items?token=…&page=…', headers: ['cookie', 'content-type'] });
+  assert.deepEqual(value.response, { $class: 'ServerResponse', status: 201, headers: [] });
+  assert.deepEqual(value.fetched, { $class: 'Request', method: 'PUT', path: '/x?q=…', headers: ['authorization'] });
+  assert.deepEqual(value.headers, { $class: 'Headers', names: ['cookie'] });
+  assert.deepEqual(value.socket, { $class: 'Socket', $summarised: true });
+  assert.deepEqual(value.own, { $class: 'Thing', visible: 2 });
   assert.ok(!JSON.stringify(value).includes('segredo') && !JSON.stringify(value).includes('Bearer'));
 });
 

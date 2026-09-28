@@ -29,7 +29,7 @@ function decodeURIComponentSafe(value) {
 }
 export function splitUrl(raw, base = 'http://localhost') {
   let url;
-  try { url = new URL(raw, base); } catch { return { path: '[inválido]', queryKeys: [] }; }
+  try { url = new URL(raw, base); } catch { return { path: '[invalid]', queryKeys: [] }; }
   return { url, path: safePath(url.pathname), queryKeys: [...new Set(url.searchParams.keys())] };
 }
 
@@ -86,8 +86,20 @@ export function classifyHttp({ method, url, headers, body, client }) {
   const compatible = /^\/(v1\/(chat\/completions|completions|responses|messages)|api\/(chat|generate))$/.test(parsed.pathname);
   if (AI[host] || compatible) {
     const json = jsonBody(body);
-    return { ...base, kind: 'ia', provider: AI[host] ?? (local ? 'modelo local' : `compatível (${host})`), operation: path,
+    return { ...base, kind: 'ia', provider: AI[host] ?? (local ? 'local model' : `compatible (${host})`), operation: path,
       local: local || undefined, model: typeof json?.model === 'string' ? json.model : undefined };
+  }
+  // S3-compatible storage: signed header, or a presigned URL (signature in
+  // the query: SigV4, or SigV2, which boto3 still makes by default). Before
+  // the local case: a local MinIO or LocalStack is S3.
+  if (/^AWS4-HMAC-SHA256/.test(String(headers.authorization ?? '')) || headers['x-amz-content-sha256']
+      || queryKeys.some(key => /^x-amz-(signature|algorithm)$/i.test(key))
+      || (queryKeys.includes('AWSAccessKeyId') && queryKeys.includes('Signature'))) {
+    const virtualHost = host.match(/^(.+?)\.s3[.-]/);
+    const bucket = virtualHost ? virtualHost[1] : parsed.pathname.split('/')[1];
+    const operation = { GET: 'leitura', HEAD: 'verificação', PUT: 'escrita', POST: 'escrita', DELETE: 'remoção' }[method] ?? method;
+    const size = Number(headers['content-length']);
+    return { ...base, kind: 'ficheiros', provider: 'S3', operation, bucket, bytes: Number.isFinite(size) ? size : undefined };
   }
   if (local) return { ...base, local: true };
   if (host === 'api.stripe.com') {
@@ -115,15 +127,6 @@ export function classifyHttp({ method, url, headers, body, client }) {
     if (area === 'storage') return { ...base, kind: 'ficheiros', provider: 'Supabase Storage', operation: method, bucket: second === undefined ? first : second };
   }
   if (host === 'api.clerk.com' || host.endsWith('.clerk.accounts.dev')) return { ...base, kind: 'autenticação', provider: 'Clerk' };
-  // S3-compatible storage: signed header, or a presigned URL (signature in the query).
-  if (/^AWS4-HMAC-SHA256/.test(String(headers.authorization ?? '')) || headers['x-amz-content-sha256']
-      || queryKeys.some(key => /^x-amz-(signature|algorithm)$/i.test(key))) {
-    const virtualHost = host.match(/^(.+?)\.s3[.-]/);
-    const bucket = virtualHost ? virtualHost[1] : parsed.pathname.split('/')[1];
-    const operation = { GET: 'leitura', HEAD: 'verificação', PUT: 'escrita', POST: 'escrita', DELETE: 'remoção' }[method] ?? method;
-    const size = Number(headers['content-length']);
-    return { ...base, kind: 'ficheiros', provider: 'S3', operation, bucket, bytes: Number.isFinite(size) ? size : undefined };
-  }
   return base;
 }
 
@@ -236,7 +239,7 @@ function callerIsProject(root) {
   return false;
 }
 function describePath(root, target) {
-  if (typeof target !== 'string' && !(target instanceof URL) && !Buffer.isBuffer(target)) return { path: '(descritor)' };
+  if (typeof target !== 'string' && !(target instanceof URL) && !Buffer.isBuffer(target)) return { path: '(descriptor)' };
   let path = target instanceof URL ? fileURLToPath(target) : String(target);
   const within = relative(root, path);
   path = within && !within.startsWith('..') && !isAbsolute(within) ? within : path;
@@ -254,7 +257,7 @@ function installFiles(runtime, root) {
   const start = (name, args) => {
     if (!runtime.currentRequest() || !callerIsProject(root)) return null;
     const bytes = name === 'writeFile' || name === 'appendFile' ? sizeOf(args[1]) : undefined;
-    return runtime.startBoundary({ kind: 'ficheiros', provider: 'sistema de ficheiros', library: 'fs', function: name,
+    return runtime.startBoundary({ kind: 'ficheiros', provider: 'file system', library: 'fs', function: name,
       operation: FILE_OPERATIONS[name], ...describePath(root, args[0]), bytes });
   };
   const finish = (end, name, value) => end?.(name === 'readFile' ? { bytes: sizeOf(value) } : {});
@@ -452,7 +455,7 @@ export const libraryPoints = [
     before: args => describeSql(sqlArgument(args[0])),
     after: (result, end) => settle(result, end) },
   { file: /node_modules\/nodemailer\/lib\/mailer\/index\.js$/, names: ['sendMail'], kind: 'email', library: 'nodemailer', callbacks: [1],
-    before: ([data]) => ({ provider: 'SMTP/transporte', to: [data?.to].flat().filter(Boolean).map(String),
+    before: ([data]) => ({ provider: 'SMTP/transport', to: [data?.to].flat().filter(Boolean).map(String),
       subject: typeof data?.subject === 'string' ? data.subject : undefined }),
     after: (result, end) => settle(result, end, info => ({ accepted: info?.accepted?.length, rejected: info?.rejected?.length })) },
   // Authentication: whether a session exists, never its content.

@@ -1,0 +1,25 @@
+{
+  "name": "py-flask-browser",
+  "root": "{codetac}/fixtures/python/flask-sqlite",
+  "python": "{root}/.venv/bin/python",
+  "args": ["-m", "flask", "--app", "app", "run", "--debug", "--port", "{port}"],
+  "origin": "http://127.0.0.1:{port}",
+  "readyPath": "/",
+  "env": { "APP_DATABASE": "{out}/app.sqlite", "FLASK_SECRET_KEY": "chave-local-de-ensaio-navegador" },
+  "prepare": [["-e", "require('fs').rmSync(process.argv[1], { force: true })", "{out}/app.sqlite"]],
+  "extraSecrets": ["chave-local-de-ensaio-navegador", "palavra-passe-de-ensaio", "Pão de ló secreto"],
+  "steps": [
+    { "name": "abrir", "goto": "/", "waitFor": "document.querySelector('form')", "snapshot": "login" },
+    { "type": ["input[name=username]", "ana"] },
+    { "type": ["input[name=password]", "palavra-passe-de-ensaio"] },
+    { "name": "Entrar (formulário, navegação completa)", "click": "button[type=submit]", "after": "location.pathname === '/items'", "settle": 1000,
+      "expect": { "server": true, "segments": 2, "functions": ["login", "authenticate", "list_view", "list_items", "template items.html", "template base.html", "block content (items.html)"],
+        "lines": { "template items.html": "{% extends", "block content (items.html)": "{% block content %}" } }, "snapshot": "lista" },
+    { "name": "Atualizar lista", "click": "#atualizar", "after": "document.readyState === 'complete' && location.pathname === '/items'", "settle": 1000,
+      "expect": { "server": true, "segments": 2, "functions": ["list_view", "list_items", "select_items", "block content (items.html)"] } },
+    { "type": ["input[name=title]", "Pão de ló secreto"] },
+    { "name": "Acrescentar item", "click": "form[action='/items'] button", "after": "document.querySelectorAll('li').length === 1", "settle": 1000,
+      "expect": { "server": true, "dbWrite": true, "segments": 2, "functions": ["create_item", "add_item", "insert_item", "list_view"] }, "snapshot": "inserido", "openBar": true },
+    { "name": "Página de erro 500", "goto": "/erro", "waitFor": "document.readyState === 'complete'", "settle": 1000, "snapshot": "erro" }
+  ]
+}

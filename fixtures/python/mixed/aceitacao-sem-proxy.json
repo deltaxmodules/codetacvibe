@@ -1,0 +1,100 @@
+{
+  "name": "py-misto-sem-proxy",
+  "root": "{codetac}/fixtures/python/mixed/web",
+  "args": [
+    "{codetac}/node_modules/vite/bin/vite.js",
+    "--port",
+    "{port}",
+    "--strictPort",
+    "--host",
+    "127.0.0.1"
+  ],
+  "origin": "http://127.0.0.1:{port}",
+  "readyPath": "/",
+  "env": {
+    "SEM_PROXY": "1",
+    "VITE_API_URL": "http://127.0.0.1:{api}"
+  },
+  "companions": [
+    {
+      "name": "api",
+      "root": "{codetac}/fixtures/python/mixed/api",
+      "python": "{codetac}/fixtures/python/mixed/api/.venv/bin/python",
+      "args": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--port",
+        "{api}"
+      ],
+      "env": {
+        "APP_DATABASE": "{out}/tasks.sqlite",
+        "FRONTEND_ORIGIN": "http://127.0.0.1:{port}"
+      },
+      "readyPath": "/api/tasks"
+    }
+  ],
+  "prepare": [
+    [
+      "-e",
+      "require('fs').rmSync(process.argv[1], { force: true })",
+      "{out}/tasks.sqlite"
+    ]
+  ],
+  "extraSecrets": [
+    "Tarefa secreta de ensaio"
+  ],
+  "steps": [
+    {
+      "name": "abrir",
+      "goto": "/",
+      "waitFor": "document.querySelector('#adicionar')",
+      "settle": 800,
+      "snapshot": "inicio"
+    },
+    {
+      "type": [
+        "#titulo",
+        "Tarefa secreta de ensaio"
+      ]
+    },
+    {
+      "name": "Adicionar tarefa (sem proxy)",
+      "click": "#adicionar",
+      "after": "document.querySelectorAll('li').length === 1",
+      "settle": 800,
+      "expect": {
+        "server": true,
+        "component": true,
+        "handler": "submitTask",
+        "dbWrite": true,
+        "functions": [
+          "request validation (not observable)",
+          "create_task",
+          "add_task",
+          "clean",
+          "connect",
+          "list_tasks"
+        ],
+        "probable": true
+      },
+      "snapshot": "adicionada"
+    },
+    {
+      "name": "Atualizar (sem proxy)",
+      "click": "#atualizar",
+      "settle": 1000,
+      "expect": {
+        "server": true,
+        "component": true,
+        "handler": "refresh",
+        "functions": [
+          "list_tasks",
+          "connect"
+        ],
+        "probable": true
+      },
+      "openBar": true
+    }
+  ]
+}

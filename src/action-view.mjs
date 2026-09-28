@@ -39,7 +39,7 @@ export function createActionView(store, resolver = createResolver()) {
       const previous = result.at(-1);
       if (previous && previous.file === frame.file && previous.line === frame.line) continue;
       allowBrowserFile(run, frame.file);
-      result.push({ fn: frame.fn ?? '(anónima)', file: frame.file, short: shortFile(root, frame.file), line: frame.line, resolved: frame.resolved });
+      result.push({ fn: frame.fn ?? '(anonymous)', file: frame.file, short: shortFile(root, frame.file), line: frame.line, resolved: frame.resolved });
     }
     const libraries = [...new Set(frames.filter(frame => frame.library && !reactInternal(frame)).map(frame => frame.library))];
     return { chain: result, libraries, unresolved: frames.length > 0 && frames.every(frame => !frame.resolved) };
