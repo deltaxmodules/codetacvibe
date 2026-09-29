@@ -1,0 +1,295 @@
+// The structure endpoint of the panel (phase 2, step 6): /api/structure…
+// Reads the project of a recording in the background (a worker thread, with
+// the reader's incremental cache), keeps the last graph, and answers with the
+// plan for the boxes the user opened. The panel only listens on 127.0.0.1 and
+// checks the Host; these routes also refuse other origins and non-loopback
+// sockets.
+import { Worker } from 'node:worker_threads';
+import { readFileSync, realpathSync, statSync, watch as watchFolder } from 'node:fs';
+import { join, relative, sep, isAbsolute } from 'node:path';
+import { planView } from './plan.mjs';
+import { blockCard } from './card.mjs';
+import { explanationRequest, explainCard } from './explain.mjs';
+import { traceAction, traceRequest } from './trace.mjs';
+import { SKIPPED_FOLDERS } from './node/inventory.mjs';
+import { maskKeys } from './node/modules.mjs';
+import { leaksView } from './leaks.mjs';
+import { secretsView } from './secrets.mjs';
+import { dataView } from './data.mjs';
+import { healthView } from './smells.mjs';
+import { serviceCatalogue } from './services.mjs';
+import { readConfig } from './config.mjs';
+
+const MAX_SEARCH = 50;
+// While a project is watched, it is still read again after this long (a
+// change the watcher missed); otherwise after maxAge.
+const WATCHED_MAX_AGE = 5 * 60_000;
+
+// Watch mode (phase 12, step 2): changed() on any change in the project,
+// except dependencies, builds and .git. Returns stop(), or null when the
+// folder cannot be watched (the plan is then read again by age).
+export function watchProject(root, changed, failed = () => {}) {
+  try {
+    const watcher = watchFolder(root, { recursive: true, persistent: false }, (event, name) => {
+      if (name && String(name).split(/[\\/]/).some(part => SKIPPED_FOLDERS.has(part))) return;
+      changed(name ? String(name) : null);
+    });
+    watcher.on('error', () => { watcher.close(); failed(); });
+    return () => watcher.close();
+  } catch { return null; }
+}
+
+export function isLoopback(address) {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+// rootOf(run) → the project folder of a recording, or null.
+// ai: { config, complete } for the optional explanations (config.provider
+// empty when no model is configured).
+// recordings (phase 7): { actions(run) → [{ actionId, label, at }], action(id) → resolved dossier,
+// request(id) → request dossier }, so the plan can show where an action went.
+// watch: watchProject, or null for reading by age only; settle: ms of quiet
+// after a change before reading again.
+export function createStructureService({ rootOf, maxAge = 10_000, read = readInWorker, now = () => Date.now(), editor = null, ai = null, recordings = null,
+  watch = watchProject, settle = 300 }) {
+  const explanations = new Map();
+  const traces = new Map();
+  const MAX_SESSION_ACTIONS = 50;
+
+  // The trace of one action or request, cached while the graph and the dossier stay the same.
+  async function traceOf(entry, { action, request }) {
+    const key = `${action ? `a:${action}` : `r:${request}`}:${entry.readAt}`;
+    if (traces.has(key)) return traces.get(key);
+    const dossier = action ? await recordings?.action?.(action) : await recordings?.request?.(request);
+    if (!dossier) return null;
+    const trace = action ? traceAction(entry.graph, dossier) : traceRequest(entry.graph, dossier);
+    const result = { ...trace, label: action ? dossier.label : `${dossier.request?.method ?? ''} ${dossier.request?.path ?? ''}`.trim(),
+      steps: trace.steps.map(({ step, ...rest }) => rest) };
+    if (!dossier.pending) traces.set(key, result);
+    return result;
+  }
+  async function sessionTraces(entry, run) {
+    const list = (await recordings?.actions?.(run) ?? []).slice(0, MAX_SESSION_ACTIONS);
+    const out = [];
+    for (const item of list) {
+      const trace = await traceOf(entry, { action: item.actionId });
+      if (trace) out.push({ item, trace });
+    }
+    return out;
+  }
+  // What this session saw going out (phase 4): the server's calls to other
+  // hosts (with the names of the fields sent) and the browser's requests to
+  // other sites, in the last actions.
+  async function observedCalls(run) {
+    const server = (await recordings?.outgoing?.(run) ?? []).map(call => ({ host: call.host, fields: call.fields, source: 'server' }));
+    const browser = [];
+    for (const item of (await recordings?.actions?.(run) ?? []).slice(0, MAX_SESSION_ACTIONS)) {
+      const dossier = await recordings.action?.(item.actionId);
+      for (const step of dossier?.timeline ?? []) {
+        if (step.type === 'request' && step.browser?.sameOrigin === false && step.browser.host) browser.push({ host: step.browser.host, fields: null, source: 'browser' });
+      }
+    }
+    return [...server, ...browser];
+  }
+  const projects = new Map();
+
+  function start(root, entry) {
+    const began = now();
+    entry.changed = false;
+    entry.promise = read(root).then(result => {
+      if (result.error) entry.error = result.error;
+      else Object.assign(entry, { graph: result.graph, problems: result.problems ?? [], readAt: now(), readMs: now() - began, error: null });
+    }, error => { entry.error = String(error?.message ?? error); })
+      .finally(() => {
+        entry.promise = null;
+        // Changes made during the read: read again.
+        if (entry.changed && !entry.timer) start(root, entry);
+      });
+    return entry.promise;
+  }
+  // A change in a watched project: read again once it has been quiet for `settle` ms.
+  function changed(root, entry) {
+    entry.changed = true;
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => { entry.timer = null; if (!entry.promise && entry.changed) start(root, entry); }, settle);
+    entry.timer.unref?.();
+  }
+  // The entry of a project, (re)reading it when there is no graph yet or the
+  // last one is too old. Waits at most `wait` ms for a first read.
+  async function project(root, { wait = 0 } = {}) {
+    if (!projects.has(root)) {
+      const entry = { graph: null, readAt: 0, readMs: 0, promise: null, error: null, problems: [], watching: false, changed: false, timer: null };
+      projects.set(root, entry);
+      const stop = watch ? watch(root, () => changed(root, entry), () => { entry.watching = false; }) : null;
+      entry.watching = Boolean(stop);
+      entry.stop = stop;
+    }
+    const entry = projects.get(root);
+    if (!entry.promise && (!entry.graph || now() - entry.readAt > (entry.watching ? WATCHED_MAX_AGE : maxAge))) start(root, entry);
+    if (!entry.graph && entry.promise && wait > 0) await Promise.race([entry.promise, new Promise(resolve => setTimeout(resolve, wait).unref?.())]);
+    return entry;
+  }
+  function close() {
+    for (const entry of projects.values()) { entry.stop?.(); clearTimeout(entry.timer); }
+    projects.clear();
+  }
+
+  function summary(entry) {
+    const files = entry.graph.nodes.filter(node => node.kind === 'file');
+    return {
+      status: 'ready', reading: Boolean(entry.promise), watching: entry.watching, project: entry.graph.project, readAt: entry.readAt, readMs: entry.readMs,
+      files: files.length, unknown: files.filter(file => file.block === 'block:unknown').length,
+      notes: (entry.graph.notes ?? []).length, problems: entry.problems,
+    };
+  }
+
+  // What to open to show a node: its block, then its file.
+  function reveal(graph, node) {
+    const byId = new Map(graph.nodes.map(item => [item.id, item]));
+    const exposedBy = node.kind === 'route' ? graph.edges.find(edge => edge.kind === 'exposes' && edge.to === node.id)?.from : null;
+    const fileId = node.kind === 'file' ? node.id : node.kind === 'symbol' ? node.file : exposedBy;
+    const file = fileId ? byId.get(fileId) : null;
+    if (node.kind === 'block') return [];
+    if (!file) return [];
+    return node.kind === 'file' ? [file.block] : [file.block, file.id];
+  }
+
+  // The node of a step shown in a dossier (path#function@line), and what to open to see it.
+  function focusOf(graph, trace, focus) {
+    if (!focus) return {};
+    const step = trace.steps.find(item => `${item.file}#${item.function}@${item.line}` === focus);
+    const node = step ? graph.nodes.find(item => item.id === step.node) : null;
+    return node ? { focus: { node: node.id, open: reveal(graph, node) } } : { focus: { node: null } };
+  }
+
+  async function handle(pathname, params, { method = 'GET', body = null } = {}) {
+    const run = params.get('run');
+    const root = run ? rootOf(run) : null;
+    if (!run) return { status: 400, body: { error: 'Say which recording (run).' } };
+    if (!root) return { status: 404, body: { error: 'This recording has no project folder yet. Load a page of the app first.' } };
+    // The secret filter hid part of the folder's path (a name that looks like a key, M30/M131).
+    if (root.includes('[REDACTED]')) {
+      return { status: 404, body: { error: 'Part of the project folder\'s path looks like a secret (for example a long random name), so it was hidden when recording and the plan cannot find the folder. Move the project to a folder with a plain name and run codetac again.' } };
+    }
+    try { if (!statSync(root).isDirectory()) throw new Error(); } catch { return { status: 404, body: { error: 'The project folder of this recording no longer exists.' } }; }
+    const entry = await project(root, { wait: Number(params.get('wait')) > 0 ? Math.min(Number(params.get('wait')), 30_000) : 0 });
+    if (!entry.graph) {
+      return entry.error ? { status: 500, body: { status: 'error', error: entry.error } } : { status: 202, body: { status: 'reading' } };
+    }
+    if (pathname === '/api/structure') return { status: 200, body: summary(entry) };
+    if (pathname === '/api/structure/plan') {
+      const open = (params.get('open') ?? '').split(',').map(item => item.trim()).filter(Boolean).slice(0, 500);
+      const wanted = params.get('action') ? { action: params.get('action') } : params.get('request') ? { request: params.get('request') } : null;
+      const trace = wanted ? await traceOf(entry, wanted) : null;
+      let covered = null;
+      let sessionActions = 0;
+      if (params.get('coverage') === '1') {
+        const session = await sessionTraces(entry, run);
+        sessionActions = session.length;
+        covered = session.flatMap(({ trace: item }) => [...item.edges, ...item.inferred]);
+      }
+      return { status: 200, body: { ...summary(entry), plan: planView(entry.graph, { expanded: open, trace, covered }),
+        ...(trace ? { trace: { label: trace.label, nodes: trace.nodes, unmatched: trace.unmatched, steps: trace.steps, observed: trace.observed.length, inferred: trace.inferred.length,
+          ...focusOf(entry.graph, trace, params.get('focus')) } } : {}),
+        ...(wanted && !trace ? { traceError: 'That action is not recorded in this session.' } : {}),
+        ...(covered ? { sessionActions } : {}) } };
+    }
+    if (pathname === '/api/structure/leaks') {
+      const catalogue = serviceCatalogue(readConfig(root).services);
+      return { status: 200, body: { ...summary(entry), leaks: leaksView(entry.graph, { catalogue, observed: await observedCalls(run) }) } };
+    }
+    if (pathname === '/api/structure/secrets') {
+      return { status: 200, body: { ...summary(entry), secrets: secretsView(entry.graph, { root, platform: readConfig(root).env.platform }) } };
+    }
+    if (pathname === '/api/structure/health') {
+      // Duplication reads the code files: kept per reading of the project.
+      const thresholds = readConfig(root).smells;
+      const key = `${entry.readAt}:${JSON.stringify(thresholds)}`;
+      if (entry.health?.key !== key) entry.health = { key, view: healthView(entry.graph, { root, thresholds }) };
+      return { status: 200, body: { ...summary(entry), health: entry.health.view } };
+    }
+    if (pathname === '/api/structure/data') {
+      return { status: 200, body: { ...summary(entry), data: dataView(entry.graph) } };
+    }
+    if (pathname === '/api/structure/trace') {
+      const wanted = params.get('action') ? { action: params.get('action') } : params.get('request') ? { request: params.get('request') } : null;
+      const trace = wanted ? await traceOf(entry, wanted) : null;
+      return trace ? { status: 200, body: trace } : { status: 404, body: { error: 'That action is not recorded in this session.' } };
+    }
+    if (pathname === '/api/structure/search') {
+      const query = (params.get('q') ?? '').trim().toLowerCase();
+      if (!query) return { status: 200, body: { results: [] } };
+      const results = entry.graph.nodes
+        .filter(node => ['block', 'file', 'symbol', 'route'].includes(node.kind) && `${node.name} ${node.path ?? ''}`.toLowerCase().includes(query))
+        .sort((a, b) => (a.name.toLowerCase() === query ? 0 : 1) - (b.name.toLowerCase() === query ? 0 : 1) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, MAX_SEARCH)
+        .map(node => ({ id: node.id, kind: node.kind, name: node.name, ...(node.path ? { path: node.path } : {}),
+          ...(node.kind === 'symbol' ? { file: node.file.slice(5), line: node.line } : {}), open: reveal(entry.graph, node) }));
+      return { status: 200, body: { results } };
+    }
+    if (pathname === '/api/structure/card') {
+      const card = blockCard(entry.graph, params.get('block') ?? '');
+      if (!card) return { status: 404, body: { error: 'No such block.' } };
+      // Actions of this session that went through the block.
+      const members = new Set(entry.graph.nodes.filter(node => node.kind === 'file' && node.block === card.id).map(node => node.id));
+      const inBlock = id => members.has(id) || members.has(entry.graph.nodes.find(node => node.id === id)?.file);
+      const actions = (await sessionTraces(entry, run)).filter(({ trace }) => trace.nodes.some(inBlock))
+        .map(({ item }) => ({ actionId: item.actionId, label: item.label, at: item.at }));
+      return { status: 200, body: { ...card, actions } };
+    }
+    // Explanations: the preview is the exact request; sending needs its fingerprint.
+    if (pathname === '/api/structure/explain/preview' || pathname === '/api/structure/explain') {
+      const block = pathname.endsWith('/preview') ? params.get('block') : body?.block;
+      const card = blockCard(entry.graph, block ?? '');
+      if (!card) return { status: 404, body: { error: 'No such block.' } };
+      if (!ai?.config?.provider) return { status: 200, body: { active: false, problem: ai?.config?.problem ?? 'No AI model is configured.' } };
+      const request = explanationRequest(card, entry.graph.project);
+      const who = { active: true, provider: ai.config.provider, model: ai.config.model, local: Boolean(ai.config.local) };
+      if (pathname.endsWith('/preview')) return { status: 200, body: { ...who, ...request, cached: explanations.get(`${request.hash}:${ai.config.model}`) ?? null } };
+      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
+      if (body?.hash !== request.hash) return { status: 409, body: { error: 'The facts changed since the preview. Look at the new request before sending it.' } };
+      const key = `${request.hash}:${ai.config.model}`;
+      if (!explanations.has(key)) {
+        try { explanations.set(key, await explainCard({ config: ai.config, request, card, complete: ai.complete })); } catch (error) {
+          return { status: 502, body: { error: `The model did not answer: ${String(error?.message ?? error).slice(0, 200)}` } };
+        }
+      }
+      return { status: 200, body: { ...who, hash: request.hash, ...explanations.get(key) } };
+    }
+    if (pathname === '/api/structure/source') {
+      const result = excerpt(root, entry.graph, params.get('file'), Number(params.get('line')));
+      return result ? { status: 200, body: result } : { status: 404, body: { error: 'Code unavailable for this file.' } };
+    }
+    return { status: 404, body: { error: 'Not found.' } };
+  }
+
+  // The lines around a proof. Only files of the graph, never .env files or
+  // hidden files (their content is never shown), never outside the project.
+  function excerpt(root, graph, file, line) {
+    const node = graph.nodes.find(item => item.kind === 'file' && item.path === file);
+    if (!node || node.language === 'dotenv' || file.split('/').some(part => part.startsWith('.')) || !Number.isInteger(line) || line < 1) return null;
+    let real;
+    try { real = realpathSync(join(root, file)); } catch { return null; }
+    const within = relative(realpathSync(root), real);
+    if (!within || within.startsWith(`..${sep}`) || within === '..' || isAbsolute(within)) return null;
+    const lines = readFileSync(real, 'utf8').split('\n');
+    if (line > lines.length) return null;
+    const start = Math.max(1, line - 6);
+    const end = Math.min(lines.length, line + 12);
+    // Keys written in the code are masked (principle 4): the prefix stays.
+    return { file, line, start, end, lines: lines.slice(start - 1, end).map(maskKeys),
+      ...(editor ? { editorUrl: `${editor}://file${encodeURI(real)}:${line}:1` } : {}) };
+  }
+
+  return { handle, project, close };
+}
+
+function readInWorker(root) {
+  return new Promise(resolve => {
+    const worker = new Worker(new URL('./read-worker.mjs', import.meta.url), { workerData: { root } });
+    let answered = false;
+    worker.once('message', message => { answered = true; resolve(message); worker.terminate(); });
+    worker.once('error', error => { if (!answered) resolve({ error: String(error?.message ?? error) }); });
+    worker.once('exit', code => { if (!answered) resolve({ error: `The reader stopped (code ${code}).` }); });
+  });
+}

@@ -1,0 +1,372 @@
+{
+  "layers": {
+    "interface": "Interface",
+    "routes": "Routes and API",
+    "logic": "Logic",
+    "data": "Data access",
+    "external": "External integrations",
+    "config": "Configuration",
+    "utilities": "Utilities",
+    "tests": "Tests",
+    "unknown": "Unknown",
+    "support": "Utilities, configuration, tests, unknown"
+  },
+  "plan": {
+    "title": "Structure",
+    "searchPlaceholder": "Find a file, function or route",
+    "searchLabel": "Find by name",
+    "neverRan": "What never ran",
+    "neverRanTitle": "Arrows of the code that no action of this session went through",
+    "hideNeverRan": "Hide what never ran",
+    "collapse": "Collapse all",
+    "collapseTitle": "Close every block",
+    "reading": "Reading the project…",
+    "noRun": "Open this page from the CodeTAC bar in your app.",
+    "panelSilent": "The CodeTAC panel is not answering.",
+    "unreadable": "The structure could not be read.",
+    "files": {
+      "one": "{count} file",
+      "other": "{count} files"
+    },
+    "unknownShare": "{percent}% unknown",
+    "readIn": "read in {time}",
+    "watching": "follows your changes",
+    "legendCalls": "calls",
+    "legendImports": "imports",
+    "legendNotCertain": "not certain",
+    "legendObserved": "seen only at run time",
+    "pathOf": "Path of {label}",
+    "theAction": "the action",
+    "functionsOnPlan": {
+      "one": "{count} function on the plan",
+      "other": "{count} functions on the plan"
+    },
+    "observedArrows": {
+      "one": "{count} arrow seen only at run time",
+      "other": "{count} arrows seen only at run time"
+    },
+    "inferredArrows": {
+      "one": "{count} arrow probably used (no position from the browser)",
+      "other": "{count} arrows probably used (no position from the browser)"
+    },
+    "notOnPlan": "{count} not on the plan",
+    "neverRanOver": {
+      "one": "What never ran: dashed arrows, over {count} action of this session",
+      "other": "What never ran: dashed arrows, over {count} actions of this session"
+    },
+    "wholePlan": "Show the whole plan",
+    "noFiles": "No files were found in this project.",
+    "floorPlan": "Floor plan of the project",
+    "fromThe": "from the {side}",
+    "notCertain": "not certain",
+    "seenAtRunTime": "seen at run time, not in the code as read",
+    "actionWent": "this action went through it",
+    "actionProbably": "probably used by this action (the browser gave no position)",
+    "noActionWent": "no action of this session went through it",
+    "showCode": "Show the code",
+    "codeUnavailable": "Code unavailable.",
+    "openInEditor": "open in editor",
+    "unmatchedTitle": "Functions not on the plan",
+    "unmatchedText": "They ran in this action, but no node of the plan stands for them.",
+    "unnamed": "(unnamed)",
+    "close": "Close",
+    "proof": "Proof",
+    "proofFirst": "Proof (first {shown} of {count})",
+    "blockKind": "Block · {files}",
+    "fileKind": "File · {path}",
+    "routeKind": "Route",
+    "symbolKind": "symbol",
+    "clickBlock": "Click the block again to see its files.",
+    "clickFile": "Click the file again to see its functions and routes.",
+    "usedBy": "Used by",
+    "uses": "Uses",
+    "undecided": "Could not be decided",
+    "where": "Where",
+    "sectionPurpose": "What it is for",
+    "sectionData": "Data it touches",
+    "sectionLargest": "Largest files",
+    "sectionEntries": "Entry points",
+    "cardUnreadable": "The card could not be read.",
+    "showSource": "Show where this comes from",
+    "everyLine": "Every line comes from the code as it is. Click one to see its proof.",
+    "actionsHere": "Actions that pass here (this session)",
+    "lightAction": "Light up the path of this action",
+    "explain": "Explain with AI…",
+    "explainTitle": "Shows what would be sent first",
+    "explanationBy": "Explanation · written by AI ({model}), from the facts above",
+    "rejected": "Rejected: {reason} Only the facts above are shown.",
+    "previewFailed": "The preview could not be made.",
+    "noModel": "No AI model is configured. The card above is complete without it.",
+    "noModelBecause": "No AI model is configured ({problem}). The card above is complete without it.",
+    "willSend": "This will be sent to {provider} ({model})",
+    "willSendLocal": "This will be sent to {provider} ({model}) · on this computer",
+    "onlyFacts": "Only these facts, never code:",
+    "send": "Send",
+    "cancel": "Cancel",
+    "waiting": "Waiting for the model…",
+    "explainFailed": "The explanation failed.",
+    "nothingFound": "Nothing with that name.",
+    "leaksButton": "What leaves the machine",
+    "leaksButtonTitle": "The services your code sends data to, and where from",
+    "leaksBack": "Back to the plan",
+    "leaksTitle": "What leaves the machine",
+    "leaksServices": {
+      "one": "{count} service the code sends data to",
+      "other": "{count} services the code sends data to"
+    },
+    "leaksFromBrowserCount": {
+      "one": "{count} called from the browser",
+      "other": "{count} called from the browser"
+    },
+    "leaksNoJurisdictionCount": {
+      "one": "{count} without a jurisdiction",
+      "other": "{count} without a jurisdiction"
+    },
+    "leaksNone": "The code as read sends nothing outside this computer, and nothing was seen going out in this session.",
+    "leaksService": "Service",
+    "leaksDestination": "Destination",
+    "leaksWhere": "Where it is called",
+    "leaksJurisdiction": "Jurisdiction",
+    "leaksSeen": "Seen in this session",
+    "leaksUnknown": "unknown (the address is built at run time)",
+    "leaksFromVariable": "comes from the variable {name}",
+    "leaksBrowser": "browser",
+    "leaksServer": "server",
+    "leaksBrowserTitle": "Called from the browser: the service sees the user's IP address and the data directly",
+    "leaksNotSet": "not set",
+    "leaksNotSetTitle": "Where this service keeps the data. Write it yourself in codetac.structure.json (\"services\": [{ \"id\": …, \"jurisdiction\": … }]); CodeTAC never fills it in.",
+    "leaksNotSeen": "not seen yet",
+    "leaksCalls": {
+      "one": "{count} call",
+      "other": "{count} calls"
+    },
+    "leaksFields": "fields sent: {names}",
+    "leaksNoFieldsBrowser": "from the browser (field names are not recorded there)",
+    "leaksOnlySeenTitle": "Seen only at run time",
+    "leaksOnlySeenText": "These hosts received calls in this session, but the code as read does not show a call to them (an address built at run time, or a library's own call).",
+    "leaksFootnote": "Destinations and places come from the code as it is. Fields are names only; values are never recorded.",
+    "secretsButton": "Secrets and variables",
+    "secretsButtonTitle": "Where the keys live and whether one reaches the browser",
+    "secretsTitle": "Secrets and variables",
+    "secretsVariables": {
+      "one": "{count} variable",
+      "other": "{count} variables"
+    },
+    "secretsSecretLike": {
+      "one": "{count} with a secret's name",
+      "other": "{count} with a secret's name"
+    },
+    "secretsAlertCount": {
+      "one": "{count} alert",
+      "other": "{count} alerts"
+    },
+    "secretsWarningCount": {
+      "one": "{count} warning",
+      "other": "{count} warnings"
+    },
+    "secretsAlerts": "Alerts",
+    "secretsWarnings": "Warnings",
+    "secretsUnused": "Defined but never used",
+    "secretsUndefined": "Used but never defined",
+    "secretsNothing": "Nothing found.",
+    "secretsAll": "All variables",
+    "secretsName": "Name",
+    "secretsKind": "Kind",
+    "secretsDefinedIn": "Defined in",
+    "secretsReadIn": "Read in",
+    "secretsSecret": "secret",
+    "secretsPublic": "public",
+    "secretsNowhere": "in no .env file",
+    "secretsNeverRead": "never read",
+    "secretsFootnote": "Names, files and lines only: no value of a variable or key is shown, stored or sent to an AI. In code excerpts, keys written in the code are masked.",
+    "secret_public_secret": "{name} has a secret's name but the framework's public prefix: its value goes into the code sent to the browser.",
+    "secret_secret_in_browser": "{name} is a secret read in code that runs in the browser ({browser}). Without the public prefix it is empty there; with it, it would be exposed.",
+    "secret_env_tracked": "{files} is followed by git: its values are in the repository's history.",
+    "secret_env_not_ignored": "{files} is not covered by .gitignore: the next git add -A would put it in the repository.",
+    "secret_env_no_git": "The project is not in git and its .gitignore does not cover .env files ({files}).",
+    "secret_unused": "{name} is defined but no code reads it.",
+    "secret_undefined": "{name} is read by the code but defined in no .env file. If the hosting platform or the CI sets it, list it in codetac.structure.json (\"env\": { \"platform\": [...] }).",
+    "secretsPlatform": "on the hosting platform (codetac.structure.json)",
+    "dataButton": "Data model",
+    "dataButtonTitle": "The tables, their columns and relations, and who reads and writes each one",
+    "dataTitle": "Data model",
+    "dataTables": {
+      "one": "{count} table",
+      "other": "{count} tables"
+    },
+    "dataInferredCount": {
+      "one": "{count} known only from use",
+      "other": "{count} known only from use"
+    },
+    "dataRlsCount": {
+      "one": "row level security on in {count} of {known}",
+      "other": "row level security on in {count} of {known}"
+    },
+    "dataNone": "No tables found: no schema file (Prisma, Drizzle, SQL migrations, Supabase types) and no table used in the code.",
+    "dataNoProblems": "No alerts or warnings.",
+    "dataZoomIn": "Zoom in",
+    "dataZoomOut": "Zoom out",
+    "dataFit": "Fit",
+    "dataDiagram": "Entity-relationship diagram",
+    "dataClickTable": "Click a table to see who reads and writes it.",
+    "dataInferred": "inferred from use",
+    "dataSourcePrisma": "Prisma schema",
+    "dataSourceDrizzle": "Drizzle schema",
+    "dataSourceSql": "SQL migrations",
+    "dataSourceTypes": "Supabase generated types",
+    "dataRlsOn": {
+      "one": "RLS on · {count} policy",
+      "other": "RLS on · {count} policies"
+    },
+    "dataRlsOff": "RLS off",
+    "dataRls": "Row level security",
+    "dataRlsUnknown": "Not known: no SQL file of the project mentions this table.",
+    "dataRlsInfo": "Information, not an audit: the content of the policies is not checked.",
+    "dataColumns": "Columns",
+    "dataColumnsUnknown": "Columns not known: the table is known only from its use in the code.",
+    "dataNoColumns": "columns not known",
+    "dataMore": "+{count} more",
+    "dataKey": "key",
+    "dataRequired": "required",
+    "dataOutside": "outside the project",
+    "dataDefinedIn": "Defined in",
+    "dataReadBy": "Read by",
+    "dataWrittenBy": "Written by",
+    "dataNobody": "No code found.",
+    "dataFileLevel": "top of the file",
+    "data_no_rls_browser": "{name} has row level security off in the migrations and is used directly from code that runs in the browser ({browser}): anyone with the project's public key can read or change it.",
+    "data_used_not_defined": "{name} is used by the code, but no schema file of the project defines it.",
+    "data_defined_never_used": "{name} is defined, but no code of the project uses it.",
+    "dataFootnote": "Read from the schema files and the code as they are: tables built from a variable, and changes made only in the database's dashboard, are not seen.",
+    "healthButton": "Structure health",
+    "healthButtonTitle": "Organisation problems AI-written code tends to pile up: loops, dead code, copies, shortcuts",
+    "healthTitle": "Structure health",
+    "healthCount": {
+      "one": "{count} thing to look at",
+      "other": "{count} things to look at"
+    },
+    "healthPossibleCount": {
+      "one": "{count} of them only possibly",
+      "other": "{count} of them only possibly"
+    },
+    "healthNone": "Nothing to point out: no loops, dead files, copies or shortcuts were found.",
+    "healthIntro": "Information only: nothing here blocks anything. The limits are set in codetac.structure.json (\"smells\").",
+    "healthPossibly": "possibly",
+    "healthShow": "Show in the plan",
+    "healthMoreProof": "{count} more",
+    "smell_duplicate_stretches": {
+      "one": "{count} stretch",
+      "other": "{count} stretches"
+    },
+    "healthGroupCycle": "Import loops",
+    "healthGroupSkipped": "Shortcuts past the server",
+    "healthGroupCoupling": "Too many links",
+    "healthGroupDuplicate": "Copied code",
+    "healthGroupDead": "Files nothing uses",
+    "healthGroupLarge": "Large files",
+    "healthGroupUnused": "Exports nothing imports",
+    "healthBecauseFolder": "it is in a folder that frameworks often load by themselves",
+    "healthBecauseName": "its name is often an entry point",
+    "healthBecausePublic": "it is served as it is from a public folder and may be loaded by its address",
+    "smell_cycle": "{files} import each other.",
+    "smell_cycle_why": "A change in one can break the other, and an AI editing one of them rarely sees the loop. It also makes them hard to move or test apart.",
+    "smell_skipped_layer": "{from} runs in the browser and uses {to} directly, although the project has its own server routes.",
+    "smell_skipped_layer_why": "Browser code that talks straight to the database or to an outside service shows its keys and logic to anyone. Going through the server routes keeps them private.",
+    "smell_coupling_uses_all": "{block} depends on every other block.",
+    "smell_coupling_uses_all_why": "A change anywhere can affect it: a sign that it mixes too many jobs.",
+    "smell_coupling_used_by_all": "Every other block depends on {block}.",
+    "smell_coupling_used_by_all_why": "A change there can break the whole project, so changes to it need extra care.",
+    "smell_file_used_by_many": "{file} is imported by {count} files.",
+    "smell_file_uses_many": "{file} imports {count} files.",
+    "smell_file_uses_many_why": "It does too much: splitting it makes changes smaller and safer.",
+    "smell_duplicate": "Copied code ({tokens} tokens) in {count} places: {files}.",
+    "smell_duplicate_why": "A fix made in one copy is easily missed in the others. AI assistants copy code often; one shared function is easier to keep right.",
+    "smell_dead_file": "{file} is not imported by any file, and no framework or script starts it.",
+    "smell_dead_file_possible": "{file} is not imported by any file, but it may still run: {because}",
+    "smell_dead_file_why": "Dead code misleads you and the AI: it gets read, copied and fixed although it never runs.",
+    "smell_large_file": "{file} has {lines} lines (the limit is {limit}).",
+    "smell_large_file_why": "Large files are hard to review, and an AI editing them tends to rewrite or cut parts it was not asked to touch.",
+    "smell_unused_export": "{name} in {file} is exported, but no file of the project imports it.",
+    "smell_unused_export_why": "It is probably left over from an earlier version; removing it makes the file easier to follow."
+  },
+  "bar": {
+    "structure": "Structure",
+    "structureTitle": "CodeTAC: the plan of the project, with the path of the last action",
+    "actionTab": "Action",
+    "actionTabTitle": "The dossier of an action",
+    "structureTabTitle": "What the project is made of",
+    "openPanel": "panel ↗",
+    "openPanelTitle": "Open in the panel",
+    "close": "Close",
+    "frameTitle": "Project structure"
+  },
+  "card": {
+    "list": "{items} and {more} more",
+    "files": {
+      "one": "{count} file",
+      "other": "{count} files"
+    },
+    "lines": {
+      "one": "{count} line",
+      "other": "{count} lines"
+    },
+    "routes": {
+      "one": "{count} route",
+      "other": "{count} routes"
+    },
+    "calls": {
+      "one": "{count} call",
+      "other": "{count} calls"
+    },
+    "imports": {
+      "one": "{count} import",
+      "other": "{count} imports"
+    },
+    "kinds": {
+      "function": {
+        "one": "{count} function",
+        "other": "{count} functions"
+      },
+      "component": {
+        "one": "{count} component",
+        "other": "{count} components"
+      },
+      "class": {
+        "one": "{count} class",
+        "other": "{count} classes"
+      },
+      "variable": {
+        "one": "{count} variable",
+        "other": "{count} variables"
+      },
+      "any": {
+        "one": "{count} {kind}",
+        "other": "{count} {kind}s"
+      }
+    },
+    "and": "{first} and {second}",
+    "size": "{block}: {files}.",
+    "projectRoot": "(project root)",
+    "folders": "Folders: {list}.",
+    "rules": "Placed here by the rules {list}.",
+    "exports": "Exports {kinds}: {list}.",
+    "exposes": "Exposes {routes}: {list}.",
+    "usedBy": "{other} uses it ({kinds}): {far} → {near}.",
+    "uses": "It uses {other} ({kinds}): {near} → {far}.",
+    "database": "Reaches the database through {list}.",
+    "outside": "Talks to outside services through {list}.",
+    "reads": "Reads {list}.",
+    "writes": "Writes {list}.",
+    "sendsDataTo": "Sends data to {list}.",
+    "usesSecret": "Uses the secret {list}.",
+    "table": "{name} (table)",
+    "variable": "{name} (variable)",
+    "largest": "Largest files: {list}.",
+    "entries": "Entry points: {list}.",
+    "whyRoutes": "exposes {routes}",
+    "whyPage": "a page",
+    "whyLoaded": "loaded by a page",
+    "whyServer": "starts the server",
+    "whyNext": "a Next.js entry"
+  }
+}

@@ -373,6 +373,26 @@ function installRequests(runtime, page) {
   }
 }
 
+// The names of the fields a request sends out (StructureTAC phase 4), never
+// their values: the top-level keys of a JSON body, of a form, or the parts of
+// a multipart body. Plain names only, at most 40; null when the body cannot be
+// read without consuming it (a stream).
+const FIELD_NAME = /^[A-Za-z_$][\w$.-]{0,63}$/;
+export function sentFields(body, contentType = '') {
+  const text = bodyText(body);
+  if (text == null || !text.trim()) return null;
+  let names = [];
+  const trimmed = text.trim();
+  if (/multipart\/form-data/i.test(contentType)) names = [...text.matchAll(/content-disposition:[^\r\n]*\bname="([^"]+)"/gi)].map(match => match[1]);
+  else if (trimmed.startsWith('{')) {
+    try { const json = JSON.parse(trimmed); if (json && typeof json === 'object' && !Array.isArray(json)) names = Object.keys(json); } catch { return null; }
+  } else if (trimmed.startsWith('[')) {
+    try { const json = JSON.parse(trimmed); const first = Array.isArray(json) ? json.find(item => item && typeof item === 'object') : null; if (first) names = Object.keys(first); } catch { return null; }
+  } else if (/x-www-form-urlencoded/i.test(contentType) || /^[\w.$-]+=[^&]*(&[\w.$-]+=[^&]*)*$/.test(trimmed)) names = [...new URLSearchParams(trimmed).keys()];
+  const unique = [...new Set(names.filter(name => FIELD_NAME.test(name)))].slice(0, 40);
+  return unique.length ? unique : null;
+}
+
 function installHttpClients(runtime) {
   const pending = new WeakMap();
   diagnostics.subscribe('undici:request:create', ({ request }) => {
@@ -380,6 +400,9 @@ function installHttpClients(runtime) {
       const headers = headerMap(request.headers);
       const details = classifyHttp({ method: request.method, url: `${request.origin}${request.path}`, headers, body: request.body, client: 'fetch' });
       const entry = { end: runtime.startBoundary(details) };
+      // What leaves the machine: the names of the fields sent to another host,
+      // read from the first 64 KB sent (fetch hands the body over in chunks).
+      if (!details.local) entry.out = { chunks: [], size: 0, type: headers['content-type'] ?? '' };
       // AI bodies are read (bounded) for usage and excerpts; nothing else is.
       if (details.kind === 'ia') Object.assign(entry, { ai: true, sent: [], received: [], size: 0, request: aiRequestDetails(jsonBody(request.body)) });
       pending.set(request, entry);
@@ -391,7 +414,15 @@ function installHttpClients(runtime) {
     entry.size += buffer.length;
     list(entry).push(buffer);
   };
-  diagnostics.subscribe('undici:request:bodyChunkSent', ({ request, chunk }) => collect(entry => entry.sent, pending.get(request), chunk));
+  diagnostics.subscribe('undici:request:bodyChunkSent', ({ request, chunk }) => {
+    const entry = pending.get(request);
+    collect(item => item.sent, entry, chunk);
+    if (entry?.out && entry.out.size < 65536) { const buffer = Buffer.from(chunk); entry.out.chunks.push(buffer); entry.out.size += buffer.length; }
+  });
+  const fieldsOf = entry => {
+    if (!entry.out?.chunks.length) return {};
+    try { const fields = sentFields(Buffer.concat(entry.out.chunks).toString('utf8'), entry.out.type); return fields ? { fields } : {}; } catch { return {}; }
+  };
   diagnostics.subscribe('undici:request:bodyChunkReceived', ({ request, chunk }) => collect(entry => entry.received, pending.get(request), chunk));
   const aiDetails = entry => {
     if (!entry.ai) return {};
@@ -407,11 +438,11 @@ function installHttpClients(runtime) {
   });
   diagnostics.subscribe('undici:request:trailers', ({ request }) => {
     const entry = pending.get(request);
-    if (entry) { pending.delete(request); entry.end({ status: entry.status, ...aiDetails(entry) }); }
+    if (entry) { pending.delete(request); entry.end({ status: entry.status, ...fieldsOf(entry), ...aiDetails(entry) }); }
   });
   diagnostics.subscribe('undici:request:error', ({ request }) => {
     const entry = pending.get(request);
-    if (entry) { pending.delete(request); entry.end({ status: entry.status, error: true, ...aiDetails(entry) }); }
+    if (entry) { pending.delete(request); entry.end({ status: entry.status, error: true, ...fieldsOf(entry), ...aiDetails(entry) }); }
   });
 
   // http/https (axios, older SDKs): the bodies are not on the channels, so for

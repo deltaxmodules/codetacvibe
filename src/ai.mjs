@@ -470,3 +470,6 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
 
   return { status, wait: id => jobs.get(id)?.promise };
 }
+
+// The structure view (StructureTAC) asks the same providers.
+export { complete };

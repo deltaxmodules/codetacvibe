@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "about": "Services StructureTAC recognises in the code (phase 4). hosts: where the service answers (a leading *. matches any subdomain). sdk: the package and the names that create a client or send data (\"default\" = the default export). destination: the option of the client that holds the address, when it is not fixed. Extend it with \"services\" in codetac.structure.json.",
+  "services": [
+    { "id": "openai", "name": "OpenAI", "category": "ai", "hosts": ["api.openai.com"], "sdk": [{ "package": "openai", "create": ["OpenAI", "default"] }] },
+    { "id": "anthropic", "name": "Anthropic", "category": "ai", "hosts": ["api.anthropic.com"], "sdk": [{ "package": "@anthropic-ai/sdk", "create": ["Anthropic", "default"] }] },
+    { "id": "google-ai", "name": "Google AI", "category": "ai", "hosts": ["generativelanguage.googleapis.com"], "sdk": [{ "package": "@google/generative-ai", "create": ["GoogleGenerativeAI"] }, { "package": "@google/genai", "create": ["GoogleGenAI"] }] },
+    { "id": "mistral", "name": "Mistral", "category": "ai", "hosts": ["api.mistral.ai"], "sdk": [{ "package": "@mistralai/mistralai", "create": ["Mistral", "MistralClient"] }] },
+    { "id": "groq", "name": "Groq", "category": "ai", "hosts": ["api.groq.com"], "sdk": [{ "package": "groq-sdk", "create": ["Groq", "default"] }] },
+    { "id": "openrouter", "name": "OpenRouter", "category": "ai", "hosts": ["openrouter.ai"] },
+    { "id": "deepseek", "name": "DeepSeek", "category": "ai", "hosts": ["api.deepseek.com"] },
+    { "id": "cohere", "name": "Cohere", "category": "ai", "hosts": ["api.cohere.com", "api.cohere.ai"], "sdk": [{ "package": "cohere-ai", "create": ["CohereClient", "CohereClientV2"] }] },
+    { "id": "together", "name": "Together AI", "category": "ai", "hosts": ["api.together.xyz"], "sdk": [{ "package": "together-ai", "create": ["Together", "default"] }] },
+    { "id": "replicate", "name": "Replicate", "category": "ai", "hosts": ["api.replicate.com"], "sdk": [{ "package": "replicate", "create": ["Replicate", "default"] }] },
+
+    { "id": "supabase", "name": "Supabase", "category": "database", "hosts": ["*.supabase.co", "*.supabase.in"], "sdk": [{ "package": "@supabase/supabase-js", "create": ["createClient"] }, { "package": "@supabase/ssr", "create": ["createBrowserClient", "createServerClient"] }], "destination": "argument" },
+    { "id": "postgres", "name": "PostgreSQL", "category": "database", "sdk": [{ "package": "pg", "create": ["Pool", "Client"] }, { "package": "postgres", "create": ["default"] }, { "package": "@neondatabase/serverless", "create": ["neon", "Pool", "Client"] }, { "package": "@vercel/postgres", "create": ["createPool", "createClient", "sql"] }], "destination": "connectionString" },
+    { "id": "mysql", "name": "MySQL", "category": "database", "sdk": [{ "package": "mysql2", "create": ["createConnection", "createPool"] }, { "package": "mysql2/promise", "create": ["createConnection", "createPool"] }, { "package": "@planetscale/database", "create": ["connect", "Client"] }], "destination": "argument" },
+    { "id": "mongodb", "name": "MongoDB", "category": "database", "hosts": ["*.mongodb.net"], "sdk": [{ "package": "mongodb", "create": ["MongoClient"] }, { "package": "mongoose", "create": ["connect", "createConnection"] }], "destination": "argument" },
+    { "id": "redis", "name": "Redis", "category": "database", "sdk": [{ "package": "ioredis", "create": ["Redis", "default"] }, { "package": "redis", "create": ["createClient"] }], "destination": "url" },
+    { "id": "upstash", "name": "Upstash", "category": "database", "hosts": ["*.upstash.io"], "sdk": [{ "package": "@upstash/redis", "create": ["Redis"] }], "destination": "url" },
+    { "id": "firebase", "name": "Firebase", "category": "database", "hosts": ["firestore.googleapis.com", "*.firebaseio.com", "identitytoolkit.googleapis.com"], "sdk": [{ "package": "firebase/app", "create": ["initializeApp"] }, { "package": "firebase-admin", "create": ["initializeApp"] }, { "package": "firebase-admin/app", "create": ["initializeApp"] }] },
+    { "id": "convex", "name": "Convex", "category": "database", "hosts": ["*.convex.cloud"], "sdk": [{ "package": "convex/browser", "create": ["ConvexHttpClient", "ConvexClient"] }, { "package": "convex/react", "create": ["ConvexReactClient"] }], "destination": "argument" },
+
+    { "id": "stripe", "name": "Stripe", "category": "payments", "hosts": ["api.stripe.com"], "sdk": [{ "package": "stripe", "create": ["Stripe", "default"] }, { "package": "@stripe/stripe-js", "create": ["loadStripe"] }] },
+    { "id": "paypal", "name": "PayPal", "category": "payments", "hosts": ["api-m.paypal.com", "api-m.sandbox.paypal.com"] },
+    { "id": "lemonsqueezy", "name": "Lemon Squeezy", "category": "payments", "hosts": ["api.lemonsqueezy.com"], "sdk": [{ "package": "@lemonsqueezy/lemonsqueezy.js", "create": ["lemonSqueezySetup"] }] },
+
+    { "id": "resend", "name": "Resend", "category": "email", "hosts": ["api.resend.com"], "sdk": [{ "package": "resend", "create": ["Resend"] }] },
+    { "id": "sendgrid", "name": "SendGrid", "category": "email", "hosts": ["api.sendgrid.com"], "sdk": [{ "package": "@sendgrid/mail", "create": ["setApiKey", "send"] }] },
+    { "id": "postmark", "name": "Postmark", "category": "email", "hosts": ["api.postmarkapp.com"], "sdk": [{ "package": "postmark", "create": ["ServerClient"] }] },
+    { "id": "mailgun", "name": "Mailgun", "category": "email", "hosts": ["api.mailgun.net", "api.eu.mailgun.net"], "sdk": [{ "package": "mailgun.js", "create": ["default"] }] },
+    { "id": "brevo", "name": "Brevo", "category": "email", "hosts": ["api.brevo.com"] },
+    { "id": "smtp", "name": "SMTP (email)", "category": "email", "sdk": [{ "package": "nodemailer", "create": ["createTransport"] }], "destination": "host" },
+
+    { "id": "twilio", "name": "Twilio", "category": "messaging", "hosts": ["api.twilio.com"], "sdk": [{ "package": "twilio", "create": ["default", "Twilio"] }] },
+    { "id": "slack", "name": "Slack", "category": "messaging", "hosts": ["slack.com", "hooks.slack.com"], "sdk": [{ "package": "@slack/web-api", "create": ["WebClient"] }] },
+    { "id": "discord", "name": "Discord", "category": "messaging", "hosts": ["discord.com"] },
+    { "id": "telegram", "name": "Telegram", "category": "messaging", "hosts": ["api.telegram.org"] },
+    { "id": "pusher", "name": "Pusher", "category": "messaging", "hosts": ["*.pusher.com", "*.pusherapp.com"], "sdk": [{ "package": "pusher", "create": ["default", "Pusher"] }, { "package": "pusher-js", "create": ["default", "Pusher"] }] },
+
+    { "id": "posthog", "name": "PostHog", "category": "analytics", "hosts": ["app.posthog.com", "us.i.posthog.com", "eu.i.posthog.com", "*.posthog.com"], "sdk": [{ "package": "posthog-js", "create": ["init"] }, { "package": "posthog-node", "create": ["PostHog"] }] },
+    { "id": "google-analytics", "name": "Google Analytics", "category": "analytics", "hosts": ["www.google-analytics.com", "region1.google-analytics.com", "www.googletagmanager.com"], "sdk": [{ "package": "react-ga4", "create": ["initialize"] }, { "package": "@next/third-parties/google", "create": ["GoogleAnalytics", "GoogleTagManager"] }] },
+    { "id": "mixpanel", "name": "Mixpanel", "category": "analytics", "hosts": ["api.mixpanel.com", "api-eu.mixpanel.com"], "sdk": [{ "package": "mixpanel-browser", "create": ["init"] }, { "package": "mixpanel", "create": ["init"] }] },
+    { "id": "segment", "name": "Segment", "category": "analytics", "hosts": ["api.segment.io", "cdn.segment.com"], "sdk": [{ "package": "@segment/analytics-node", "create": ["Analytics"] }, { "package": "@segment/analytics-next", "create": ["AnalyticsBrowser"] }] },
+    { "id": "amplitude", "name": "Amplitude", "category": "analytics", "hosts": ["api2.amplitude.com", "api.eu.amplitude.com"], "sdk": [{ "package": "@amplitude/analytics-browser", "create": ["init"] }] },
+    { "id": "plausible", "name": "Plausible", "category": "analytics", "hosts": ["plausible.io"] },
+    { "id": "vercel-analytics", "name": "Vercel Analytics", "category": "analytics", "sdk": [{ "package": "@vercel/analytics/react", "create": ["Analytics"] }, { "package": "@vercel/analytics", "create": ["inject", "track"] }] },
+
+    { "id": "sentry", "name": "Sentry", "category": "monitoring", "hosts": ["sentry.io", "*.sentry.io", "*.ingest.sentry.io", "*.ingest.us.sentry.io", "*.ingest.de.sentry.io"], "sdk": [{ "package": "@sentry/nextjs", "create": ["init"] }, { "package": "@sentry/node", "create": ["init"] }, { "package": "@sentry/react", "create": ["init"] }, { "package": "@sentry/browser", "create": ["init"] }], "destination": "dsn" },
+    { "id": "datadog", "name": "Datadog", "category": "monitoring", "hosts": ["*.datadoghq.com", "*.datadoghq.eu"], "sdk": [{ "package": "@datadog/browser-rum", "create": ["init"] }, { "package": "dd-trace", "create": ["init"] }] },
+    { "id": "logrocket", "name": "LogRocket", "category": "monitoring", "hosts": ["*.logrocket.io", "*.lr-ingest.io"], "sdk": [{ "package": "logrocket", "create": ["init"] }] },
+
+    { "id": "s3", "name": "Amazon S3", "category": "storage", "hosts": ["*.amazonaws.com"], "sdk": [{ "package": "@aws-sdk/client-s3", "create": ["S3Client", "S3"] }] },
+    { "id": "cloudinary", "name": "Cloudinary", "category": "storage", "hosts": ["api.cloudinary.com", "res.cloudinary.com"], "sdk": [{ "package": "cloudinary", "create": ["config"] }] },
+    { "id": "vercel-blob", "name": "Vercel Blob", "category": "storage", "hosts": ["*.blob.vercel-storage.com"], "sdk": [{ "package": "@vercel/blob", "create": ["put", "del", "list"] }] },
+    { "id": "uploadthing", "name": "UploadThing", "category": "storage", "hosts": ["*.uploadthing.com", "utfs.io"], "sdk": [{ "package": "uploadthing/server", "create": ["UTApi"] }] },
+
+    { "id": "clerk", "name": "Clerk", "category": "auth", "hosts": ["api.clerk.com", "*.clerk.accounts.dev"], "sdk": [{ "package": "@clerk/nextjs", "create": ["ClerkProvider", "clerkMiddleware"] }, { "package": "@clerk/clerk-sdk-node", "create": ["createClerkClient"] }, { "package": "@clerk/backend", "create": ["createClerkClient"] }] },
+    { "id": "auth0", "name": "Auth0", "category": "auth", "hosts": ["*.auth0.com"], "sdk": [{ "package": "@auth0/nextjs-auth0", "create": ["Auth0Client", "initAuth0"] }, { "package": "@auth0/auth0-react", "create": ["Auth0Provider"] }] },
+    { "id": "github", "name": "GitHub API", "category": "http", "hosts": ["api.github.com"], "sdk": [{ "package": "@octokit/rest", "create": ["Octokit"] }, { "package": "octokit", "create": ["Octokit"] }] }
+  ]
+}

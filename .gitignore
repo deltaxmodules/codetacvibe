@@ -8,7 +8,11 @@ dist/
 .DS_Store
 *.log
 .claude/settings.local.json
+aluno.md
+chaves.md
 __pycache__/
 *.pyc
 .venv/
 instance/
+fixtures/prisma*/**/*.db
+fixtures/prisma*/*.db

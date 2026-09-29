@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeTAC — structure</title>
+<style>
+:root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e3de; --accent:#2f5bd3; --code:#f3f2ee; --hit:#fff3bf;
+  --l-interface:#dbe7ff; --l-routes:#e5dcff; --l-logic:#d9f2e3; --l-data:#ffe6cc; --l-external:#ffd9de; --l-support:#ecebe6;
+  --b-interface:#5b7fd6; --b-routes:#8467d7; --b-logic:#3f9d68; --b-data:#d18a3a; --b-external:#d0566a; --b-support:#9a9993;
+  --a-imports:#9a9993; --a-calls:#2f5bd3; --a-data:#d18a3a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --panel:#1f1f1d; --text:#ecebe6; --muted:#9a9993; --line:#33332f; --accent:#7ea2ff; --code:#262624; --hit:#4a4320;
+  --l-interface:#23304f; --l-routes:#2f2748; --l-logic:#1f3a2b; --l-data:#40301d; --l-external:#442329; --l-support:#2a2a27;
+  --a-imports:#77766f; --a-calls:#7ea2ff; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; height:100vh; display:flex; flex-direction:column; }
+header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--panel); }
+header h1 { font-size:14px; margin:0; }
+.muted { color:var(--muted); }
+.search { position:relative; margin-left:auto; }
+.search input { width:220px; padding:4px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); font:inherit; }
+.results { position:absolute; right:0; top:28px; width:340px; max-height:320px; overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.18); z-index:5; }
+.results button { all:unset; display:block; width:100%; padding:6px 10px; cursor:pointer; box-sizing:border-box; }
+.results button:hover, .results button:focus { background:var(--code); }
+.results small { color:var(--muted); display:block; }
+button.plain { all:unset; cursor:pointer; color:var(--accent); }
+main { flex:1; display:flex; min-height:0; }
+#canvas { flex:1; overflow:auto; position:relative; }
+#canvas svg { display:block; margin:16px auto; }
+aside { width:360px; max-width:45vw; border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:12px; display:none; }
+aside.on { display:block; }
+aside h2 { font-size:14px; margin:0 0 6px; }
+aside h3 { font-size:12px; margin:14px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+aside ul { margin:0; padding-left:0; list-style:none; }
+aside li { margin:3px 0; }
+.fact { all:unset; cursor:pointer; display:block; padding:3px 6px; border-radius:5px; overflow-wrap:anywhere; }
+.fact:hover, .fact:focus { background:var(--code); }
+.facts > li > div { padding-left:10px; }
+.small { font-size:11px; }
+.explain { margin-top:14px; border-top:1px solid var(--line); padding-top:10px; }
+.explain pre { white-space:pre-wrap; max-height:260px; }
+.explanation { border-left:3px solid var(--accent); padding-left:10px; }
+.proof { all:unset; display:inline-block; cursor:pointer; color:var(--accent); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; overflow-wrap:anywhere; }
+pre { background:var(--code); padding:8px; border-radius:6px; overflow:auto; font-size:12px; margin:6px 0; }
+pre .hit { background:var(--hit); display:block; }
+.legend { display:flex; gap:10px; flex-wrap:wrap; align-items:center; font-size:12px; }
+.legend i { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; border:1px solid var(--line); }
+.legend svg { vertical-align:middle; }
+.status { padding:24px; color:var(--muted); }
+.box rect { stroke-width:1.2; }
+.box { cursor:pointer; }
+.box text { fill:var(--text); font-size:12px; pointer-events:none; }
+.box .sub { fill:var(--muted); font-size:11px; }
+.box.sel rect.frame, .box.hit rect.frame { stroke:var(--accent); stroke-width:2.5; }
+.arrow { fill:none; cursor:pointer; }
+.arrow.possible { stroke-dasharray:5 4; }
+.arrow.sel { stroke:var(--accent) !important; }
+.arrow-hit { stroke:transparent; stroke-width:12; fill:none; cursor:pointer; }
+.count { font-size:10px; fill:var(--muted); pointer-events:none; }
+.note { fill:#d0566a; }
+.note-text { fill:#fff; font-size:10px; font-weight:700; pointer-events:none; }
+body.embed h1 { display:none; }
+:root { --a-observed:#d97a1f; }
+#tracebar { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; padding:6px 12px; background:var(--code); border-bottom:1px solid var(--line); font-size:12px; }
+#tracebar b { font-weight:600; }
+.box.dim { opacity:.28; }
+.box.lit rect.frame { stroke:var(--accent); stroke-width:2.5; }
+.arrow.dim { opacity:.12 !important; }
+.arrow.lit { opacity:1 !important; }
+.leaks { padding:14px 16px; max-width:1200px; }
+.leaks h2 { font-size:14px; margin:0 0 4px; }
+[hidden] { display:none !important; }
+.leaks table { width:100%; border-collapse:collapse; margin:10px 0 18px; background:var(--panel); table-layout:fixed; }
+.leaks table.main col.c1 { width:15%; } .leaks table.main col.c2 { width:16%; } .leaks table.main col.c3 { width:39%; } .leaks table.main col.c4 { width:12%; } .leaks table.main col.c5 { width:18%; }
+.leaks td { overflow-wrap:anywhere; }
+.leaks td pre { max-width:100%; }
+.leaks th, .leaks td { text-align:left; vertical-align:top; padding:7px 8px; border-bottom:1px solid var(--line); }
+.leaks th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+.leaks td ul { margin:0; padding:0; list-style:none; }
+.leaks td li { margin:2px 0; }
+.tag { display:inline-block; padding:0 6px; border-radius:9px; font-size:11px; background:var(--code); color:var(--muted); margin-left:4px; }
+.tag.client { background:#ffd9de; color:#8a1f33; }
+.tag.server { background:#d9f2e3; color:#1f5c3a; }
+.warn { color:#b3452e; }
+.leaks h3 { font-size:12px; margin:16px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.findings { list-style:none; padding:0; margin:0; }
+.findings > li { padding:6px 10px; margin:4px 0; border-radius:6px; background:var(--panel); border-left:3px solid var(--line); }
+.findings ul { list-style:none; padding-left:0; margin:2px 0 0; }
+.findings.alert > li { border-left-color:#d0566a; }
+.findings.warning > li { border-left-color:#d18a3a; }
+header button.plain.on { font-weight:600; text-decoration:underline; }
+.arrow.inferred { stroke-dasharray:2 4; }
+.arrow.never { stroke-dasharray:7 5; }
+.arrow.observed { stroke-dasharray:4 3; }
+.er { overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--bg); max-height:70vh; }
+.er svg { display:block; margin:0; }
+.zoom { display:flex; gap:12px; align-items:center; margin:12px 0 6px; }
+.zoom button.plain { font-weight:600; min-width:14px; text-align:center; }
+.findings.health > li { border-left-color:#8467d7; }
+.leaks details > summary { cursor:pointer; font-size:12px; margin:14px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+.findings.health > li > div:first-child b { font-weight:600; }
+.tbox.sel rect.frame { stroke:var(--accent); stroke-width:2.5; }
+.tbox { cursor:pointer; } .tbox text { fill:var(--text); font-size:12px; pointer-events:none; } .tbox .sub { fill:var(--muted); font-size:11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-t="title"></h1>
+  <span id="project" class="muted"></span>
+  <span class="legend" id="legend"></span>
+  <span class="search"><input id="q" type="search" data-t-placeholder="searchPlaceholder" autocomplete="off" data-t-aria-label="searchLabel"><div class="results" id="results" hidden></div></span>
+  <button class="plain" id="coverage" data-t="neverRan" data-t-title="neverRanTitle"></button>
+  <button class="plain" id="leaksButton" data-t="leaksButton" data-t-title="leaksButtonTitle"></button>
+  <button class="plain" id="secretsButton" data-t="secretsButton" data-t-title="secretsButtonTitle"></button>
+  <button class="plain" id="dataButton" data-t="dataButton" data-t-title="dataButtonTitle"></button>
+  <button class="plain" id="healthButton" data-t="healthButton" data-t-title="healthButtonTitle"></button>
+  <button class="plain" id="collapse" data-t="collapse" data-t-title="collapseTitle"></button>
+</header>
+<div id="tracebar" hidden></div>
+<main>
+  <div id="canvas"><div class="status" id="status" data-t="reading"></div></div>
+  <aside id="side" aria-live="polite"></aside>
+</main>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const run = params.get('run') || '';
+  if (params.get('embed') === '1') document.body.classList.add('embed');
+  const LAYER_CLASS = { interface: 'interface', routes: 'routes', logic: 'logic', data: 'data', external: 'external' };
+  // The sentences, from src/structure/text/<language>.json (put here by the panel).
+  const TEXT = /*CODETAC_TEXT*/null || { layers: {}, plan: {} };
+  const t = (key, vars = {}) => {
+    let value = key.split('.').reduce((node, part) => node?.[part], key.includes('.') ? TEXT : TEXT.plan);
+    if (value && typeof value === 'object' && 'other' in value) value = vars.count === 1 ? value.one : value.other;
+    if (typeof value !== 'string') return key;
+    return value.replace(/\{(\w+)\}/g, (hole, name) => (name in vars ? String(vars[name]) : hole));
+  };
+  for (const node of document.querySelectorAll('[data-t]')) node.textContent = t(node.dataset.t);
+  for (const attribute of ['placeholder', 'title', 'aria-label']) {
+    for (const node of document.querySelectorAll('[data-t-' + attribute + ']')) node.setAttribute(attribute, t(node.getAttribute('data-t-' + attribute)));
+  }
+  const LAYER_NAMES = TEXT.layers;
+  const storeKey = 'codetac.structure.open.' + run;
+  let open = new Set();
+  try { open = new Set(JSON.parse(localStorage.getItem(storeKey) || '[]')); } catch {}
+  let plan = null;
+  // Phase 7: the action (or request) whose path is lit, and a step to focus.
+  let action = params.get('action') || '';
+  let request = params.get('request') || '';
+  let focus = params.get('focus') || '';
+  let coverage = false;
+  // Phase 4: the «What leaves the machine» view instead of the plan.
+  // Phases 4, 5, 6 and 8: a table, the data model or the structure's health instead of the plan (view=leaks | secrets | data | health).
+  let view = ['leaks', 'secrets', 'data', 'health'].includes(params.get('view')) ? params.get('view') : 'plan';
+  let traceInfo = null;
+  let openedFor = null;
+  let lastText = '';
+  let shownReadAt = 0;
+  let selected = null;
+  let highlight = null;
+  const $ = id => document.getElementById(id);
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const el = (name, attrs = {}, parent) => {
+    const node = document.createElementNS(svgNS, name);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+  const html = (tag, text, attrs = {}) => { const node = document.createElement(tag); if (text != null) node.textContent = text; Object.assign(node, attrs); return node; };
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const layerOf = box => LAYER_CLASS[box.layer] || 'support';
+  const save = () => { try { localStorage.setItem(storeKey, JSON.stringify([...open])); } catch {} };
+
+  function legend() {
+    const box = $('legend');
+    for (const layer of ['interface', 'routes', 'logic', 'data', 'external', 'support']) {
+      const item = html('span', LAYER_NAMES[layer].split(',')[0]);
+      const swatch = html('i');
+      swatch.style.background = css('--l-' + layer);
+      swatch.style.borderColor = css('--b-' + layer);
+      item.prepend(swatch);
+      item.title = LAYER_NAMES[layer];
+      box.appendChild(item);
+    }
+    const arrows = [['calls', t('legendCalls'), false], ['imports', t('legendImports'), false], ['calls', t('legendNotCertain'), true], ['observed', t('legendObserved'), true]];
+    for (const [kind, label, dashed] of arrows) {
+      const item = html('span', label);
+      const svg = el('svg', { width: 26, height: 10 });
+      el('line', { x1: 1, y1: 5, x2: 25, y2: 5, stroke: css('--a-' + kind), 'stroke-width': 2, ...(dashed ? { 'stroke-dasharray': '5 4' } : {}) }, svg);
+      item.prepend(svg);
+      box.appendChild(item);
+    }
+  }
+
+  async function refresh(wait) {
+    if (!run) { $('status').textContent = t('noRun'); return; }
+    if (view !== 'plan') return refreshTable(wait);
+    let response;
+    try {
+      response = await fetch('/api/structure/plan?run=' + encodeURIComponent(run) + '&open=' + encodeURIComponent([...open].join(',')) + (wait ? '&wait=5000' : '') +
+        (action ? '&action=' + encodeURIComponent(action) : request ? '&request=' + encodeURIComponent(request) : '') + (focus ? '&focus=' + encodeURIComponent(focus) : '') +
+        (coverage ? '&coverage=1' : ''), { cache: 'no-store' });
+    } catch { showStatus(t('panelSilent')); return; }
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 202) { showStatus(t('reading')); setTimeout(() => refresh(true), 500); return; }
+    if (!response.ok) { showStatus(body.error || t('unreadable')); return; }
+    const text = JSON.stringify(body.plan);
+    $('project').textContent = [body.project.name, t('files', { count: body.files }),
+      ...(body.unknown ? [t('unknownShare', { percent: Math.round(100 * body.unknown / Math.max(1, body.files)) })] : []),
+      t('readIn', { time: body.readMs >= 1000 ? (body.readMs / 1000).toFixed(1) + ' s' : body.readMs + ' ms' }), ...(body.watching ? [t('watching')] : [])].join(' · ');
+    shownReadAt = body.readAt;
+    traceInfo = body.trace || null;
+    traceBar(body);
+    // The first time an action is shown, open the blocks it went through (and the focused step).
+    const key = action || request;
+    if (traceInfo && key && openedFor !== key + '|' + focus) {
+      openedFor = key + '|' + focus;
+      // The server side of a fresh action may still be running: look again shortly.
+      setTimeout(() => { lastText = ''; refresh(); }, 1500);
+      let changed = false;
+      for (const box of body.plan.boxes) if (box.kind === 'block' && box.lit && box.expandable && !open.has(box.id)) { open.add(box.id); changed = true; }
+      for (const id of traceInfo.focus?.open ?? []) if (!open.has(id)) { open.add(id); changed = true; }
+      if (traceInfo.focus?.node) { highlight = traceInfo.focus.node; selected = { type: 'box', id: traceInfo.focus.node }; }
+      if (changed) { save(); lastText = ''; return refresh(); }
+    }
+    if (text === lastText) return;
+    lastText = text;
+    plan = body.plan;
+    // Forget open boxes that no longer exist.
+    const ids = new Set(plan.boxes.map(box => box.id));
+    for (const id of [...open]) if (!ids.has(id)) { open.delete(id); }
+    save();
+    draw();
+    // A step opened from a dossier shows its details at once.
+    if (selected && !$('side').classList.contains('on')) details();
+  }
+  function traceBar(body) {
+    const bar = $('tracebar');
+    bar.textContent = '';
+    const notes = [];
+    if (body.traceError) notes.push(html('span', body.traceError));
+    if (traceInfo) {
+      const ran = traceInfo.steps.length;
+      const title = html('span');
+      const [before, after] = t('pathOf', { label: '\u0000' }).split('\u0000');
+      title.append(before, html('b', traceInfo.label || t('theAction')), after + ' · ' + t('functionsOnPlan', { count: ran }));
+      notes.push(title);
+      if (traceInfo.observed) notes.push(html('span', t('observedArrows', { count: traceInfo.observed })));
+      if (traceInfo.inferred) notes.push(html('span', t('inferredArrows', { count: traceInfo.inferred })));
+      if (traceInfo.unmatched.length) {
+        const button = html('button', t('notOnPlan', { count: traceInfo.unmatched.length }), { className: 'plain' });
+        button.addEventListener('click', () => { selected = { type: 'unmatched' }; details(); });
+        notes.push(button);
+      }
+    }
+    if (body.sessionActions != null) notes.push(html('span', t('neverRanOver', { count: body.sessionActions })));
+    if (!notes.length) { bar.hidden = true; return; }
+    if (traceInfo || body.traceError) {
+      const clear = html('button', t('wholePlan'), { className: 'plain' });
+      clear.addEventListener('click', () => { action = ''; request = ''; focus = ''; traceInfo = null; highlight = null; lastText = ''; refresh(); });
+      notes.push(clear);
+    }
+    bar.append(...notes);
+    bar.hidden = false;
+  }
+  function showStatus(text) {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    canvas.appendChild(html('div', text, { className: 'status', id: 'status' }));
+  }
+
+  let lastTable = '';
+  async function refreshTable(wait) {
+    const shown = view;
+    let response;
+    try { response = await fetch('/api/structure/' + shown + '?run=' + encodeURIComponent(run) + (wait ? '&wait=5000' : ''), { cache: 'no-store' }); }
+    catch { showStatus(t('panelSilent')); return; }
+    const body = await response.json().catch(() => ({}));
+    if (shown !== view) return;
+    if (response.status === 202) { showStatus(t('reading')); setTimeout(() => refreshTable(true), 500); return; }
+    if (!response.ok) { showStatus(body.error || t('unreadable')); return; }
+    shownReadAt = body.readAt;
+    $('tracebar').hidden = true;
+    const text = shown + JSON.stringify(body[shown]);
+    if (text === lastTable) return;
+    lastTable = text;
+    if (shown === 'leaks') drawLeaks(body.leaks); else if (shown === 'data') drawData(body.data); else if (shown === 'health') drawHealth(body.health); else drawSecrets(body.secrets);
+  }
+  function destinationText(destination) {
+    if (!destination || destination.type === 'unknown') return t('leaksUnknown');
+    return destination.type === 'env' ? t('leaksFromVariable', { name: destination.variable }) : destination.host;
+  }
+  function seenCell(seen) {
+    const cell = html('td');
+    if (!seen) { cell.appendChild(html('span', t('leaksNotSeen'), { className: 'muted' })); return cell; }
+    cell.appendChild(html('div', t('leaksCalls', { count: seen.calls }) + ' · ' + seen.hosts.join(', ')));
+    if (seen.fields.length) cell.appendChild(html('div', t('leaksFields', { names: seen.fields.join(', ') }), { className: 'muted small' }));
+    else if (seen.sources.includes('browser') && !seen.sources.includes('server')) cell.appendChild(html('div', t('leaksNoFieldsBrowser'), { className: 'muted small' }));
+    return cell;
+  }
+  function drawLeaks(leaks) {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    const box = html('div', null, { className: 'leaks' });
+    box.appendChild(html('h2', t('leaksTitle')));
+    const sum = leaks.summary;
+    box.appendChild(html('p', [t('leaksServices', { count: sum.services }), ...(sum.fromBrowser ? [t('leaksFromBrowserCount', { count: sum.fromBrowser })] : []),
+      ...(sum.withoutJurisdiction ? [t('leaksNoJurisdictionCount', { count: sum.withoutJurisdiction })] : [])].join(' · '), { className: 'muted' }));
+    if (!leaks.rows.length && !leaks.onlySeen.length) { box.appendChild(html('p', t('leaksNone'))); canvas.appendChild(box); return; }
+    if (leaks.rows.length) {
+      const table = html('table', null, { className: 'main' });
+      const columns = html('colgroup');
+      for (let index = 1; index <= 5; index++) columns.appendChild(html('col', null, { className: 'c' + index }));
+      table.appendChild(columns);
+      const head = html('tr');
+      for (const key of ['leaksService', 'leaksDestination', 'leaksWhere', 'leaksJurisdiction', 'leaksSeen']) head.appendChild(html('th', t(key)));
+      table.appendChild(head);
+      for (const row of leaks.rows) {
+        const tr = html('tr');
+        const name = html('td');
+        name.appendChild(html('b', row.name));
+        name.appendChild(html('span', row.category, { className: 'tag' }));
+        tr.appendChild(name);
+        tr.appendChild(html('td', destinationText(row.destination), { className: row.destination?.type === 'literal' ? '' : 'muted' }));
+        const where = html('td');
+        const list = html('ul');
+        for (const call of row.calls) {
+          const item = html('li');
+          item.appendChild(html('span', call.from + ' '));
+          if (call.runsOn) item.appendChild(html('span', call.runsOn === 'client' ? t('leaksBrowser') : call.runsOn === 'server' ? t('leaksServer') : call.runsOn,
+            { className: 'tag ' + call.runsOn, title: call.runsOn === 'client' ? t('leaksBrowserTitle') : '' }));
+          const slot = html('div');
+          proofList(slot, call.proof);
+          item.appendChild(slot);
+          list.appendChild(item);
+        }
+        where.appendChild(list);
+        tr.appendChild(where);
+        tr.appendChild(row.jurisdiction ? html('td', row.jurisdiction) : html('td', t('leaksNotSet'), { className: 'muted', title: t('leaksNotSetTitle') }));
+        tr.appendChild(seenCell(row.seen));
+        table.appendChild(tr);
+      }
+      box.appendChild(table);
+    }
+    if (leaks.onlySeen.length) {
+      box.appendChild(html('h2', t('leaksOnlySeenTitle')));
+      box.appendChild(html('p', t('leaksOnlySeenText'), { className: 'muted' }));
+      const table = html('table');
+      const head = html('tr');
+      for (const key of ['leaksService', 'leaksJurisdiction', 'leaksSeen']) head.appendChild(html('th', t(key)));
+      table.appendChild(head);
+      for (const row of leaks.onlySeen) {
+        const tr = html('tr');
+        const name = html('td');
+        name.appendChild(html('b', row.name));
+        name.appendChild(html('span', row.category, { className: 'tag' }));
+        tr.appendChild(name);
+        tr.appendChild(row.jurisdiction ? html('td', row.jurisdiction) : html('td', t('leaksNotSet'), { className: 'muted', title: t('leaksNotSetTitle') }));
+        tr.appendChild(seenCell(row.seen));
+        table.appendChild(tr);
+      }
+      box.appendChild(table);
+    }
+    box.appendChild(html('p', t('leaksFootnote'), { className: 'muted small' }));
+    canvas.appendChild(box);
+  }
+
+  // Phase 5: secrets and variables — alerts, warnings, the two separate
+  // lists, and every variable with where it is defined and read. Names only.
+  function findingText(item) {
+    if (item.kind === 'literal-key') return item.message;
+    const key = { 'public-secret': 'secret_public_secret', 'secret-in-browser': 'secret_secret_in_browser', 'env-tracked': 'secret_env_tracked',
+      'env-not-ignored': 'secret_env_not_ignored', 'env-no-git': 'secret_env_no_git', unused: 'secret_unused', undefined: 'secret_undefined' }[item.kind];
+    return t(key, { name: item.variable ?? '', files: (item.files ?? []).join(', '), browser: (item.browserFiles ?? []).join(', ') });
+  }
+  function findingList(parent, list, className) {
+    const ul = html('ul', null, { className: 'findings ' + className });
+    for (const item of list) {
+      const li = html('li');
+      li.appendChild(html('div', findingText(item)));
+      const slot = html('div');
+      proofList(slot, item.proof.slice(0, 6));
+      li.appendChild(slot);
+      ul.appendChild(li);
+    }
+    parent.appendChild(ul);
+  }
+  function drawSecrets(data) {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    const box = html('div', null, { className: 'leaks' });
+    box.appendChild(html('h2', t('secretsTitle')));
+    const sum = data.summary;
+    box.appendChild(html('p', [t('secretsVariables', { count: sum.variables }), t('secretsSecretLike', { count: sum.secrets }),
+      t('secretsAlertCount', { count: sum.alerts }), t('secretsWarningCount', { count: sum.warnings })].join(' · '), { className: 'muted' }));
+    const section = (title, list, className, render) => {
+      box.appendChild(html('h3', title + ' (' + list.length + ')'));
+      if (!list.length) { box.appendChild(html('p', t('secretsNothing'), { className: 'muted small' })); return; }
+      render(list, className);
+    };
+    section(t('secretsAlerts'), data.alerts, 'alert', (list, name) => findingList(box, list, name));
+    section(t('secretsWarnings'), data.warnings, 'warning', (list, name) => findingList(box, list, name));
+    section(t('secretsUnused'), data.unused, 'warning', list => findingList(box, list.map(item => ({ ...item, kind: 'unused' })), 'warning'));
+    section(t('secretsUndefined'), data.undefined, 'warning', list => findingList(box, list.map(item => ({ ...item, kind: 'undefined' })), 'warning'));
+    box.appendChild(html('h3', t('secretsAll') + ' (' + data.variables.length + ')'));
+    const table = html('table');
+    const head = html('tr');
+    for (const key of ['secretsName', 'secretsKind', 'secretsDefinedIn', 'secretsReadIn']) head.appendChild(html('th', t(key)));
+    table.appendChild(head);
+    for (const variable of data.variables) {
+      const tr = html('tr');
+      tr.appendChild(html('td', variable.name));
+      const kind = html('td');
+      if (variable.secretLike) kind.appendChild(html('span', t('secretsSecret'), { className: 'tag client' }));
+      if (variable.public) kind.appendChild(html('span', t('secretsPublic'), { className: 'tag' }));
+      tr.appendChild(kind);
+      const defined = html('td');
+      if (variable.definedIn.length) proofList(defined, variable.definedIn);
+      if (variable.platform) defined.appendChild(html('div', t('secretsPlatform'), { className: 'muted small' }));
+      else if (!variable.definedIn.length) defined.appendChild(html('span', t('secretsNowhere'), { className: 'muted' }));
+      tr.appendChild(defined);
+      const read = html('td');
+      if (!variable.readIn.length) read.appendChild(html('span', t('secretsNeverRead'), { className: 'muted' }));
+      for (const item of variable.readIn) {
+        const line = html('div');
+        if (item.runsOn) line.appendChild(html('span', item.runsOn === 'client' ? t('leaksBrowser') : item.runsOn === 'server' ? t('leaksServer') : item.runsOn, { className: 'tag ' + item.runsOn }));
+        proofList(line, item.proof);
+        read.appendChild(line);
+      }
+      tr.appendChild(read);
+      table.appendChild(tr);
+    }
+    box.appendChild(table);
+    box.appendChild(html('p', t('secretsFootnote'), { className: 'muted small' }));
+    canvas.appendChild(box);
+  }
+
+  // Where the line from a box's centre towards (x, y) leaves the box.
+  function edgePoint(box, x, y) {
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    const dx = x - cx;
+    const dy = y - cy;
+    if (!dx && !dy) return [cx, cy];
+    const scale = Math.min(Math.abs((box.w / 2) / (dx || 1e-9)), Math.abs((box.h / 2) / (dy || 1e-9)));
+    return [cx + dx * Math.min(scale, 1), cy + dy * Math.min(scale, 1)];
+  }
+
+  function draw() {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    if (!plan.boxes.length) { showStatus(t('noFiles')); return; }
+    const margin = 24;
+    const side = margin + 80; // room for the arrows that go round
+    const svg = el('svg', { width: plan.width + side * 2, height: plan.height + margin * 2, viewBox: [-side, -margin, plan.width + side * 2, plan.height + margin * 2].join(' '),
+      role: 'img', 'aria-label': t('floorPlan') });
+    const defs = el('defs', {}, svg);
+    for (const kind of ['imports', 'calls', 'data', 'observed', 'sel']) {
+      const marker = el('marker', { id: 'head-' + kind, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' }, defs);
+      el('path', { d: 'M0,0 L10,5 L0,10 z', fill: kind === 'sel' ? css('--accent') : css('--a-' + kind) }, marker);
+    }
+    const byId = new Map(plan.boxes.map(box => [box.id, box]));
+    const notesOf = new Map();
+    for (const note of plan.notes) if (note.box) notesOf.set(note.box, (notesOf.get(note.box) || 0) + 1);
+    const boxLayer = el('g', {}, svg);
+    for (const box of plan.boxes) {
+      const g = el('g', { class: 'box' + (selected?.id === box.id ? ' sel' : '') + (highlight === box.id ? ' hit' : '') + ('lit' in box ? (box.lit ? ' lit' : ' dim') : ''), tabindex: 0, 'data-id': box.id }, boxLayer);
+      const layer = layerOf(box);
+      const fill = box.kind === 'block' ? css('--l-' + layer) : css('--panel');
+      el('rect', { class: 'frame', x: box.x, y: box.y, width: box.w, height: box.h, rx: box.kind === 'block' ? 10 : 6, fill, stroke: css('--b-' + layer) }, g);
+      const chevron = box.expandable ? (box.expanded ? '▾ ' : '▸ ') : '';
+      const title = el('text', { x: box.x + 10, y: box.y + (box.kind === 'block' || box.kind === 'file' ? 20 : 15) }, g);
+      const label = box.kind === 'file' && box.path.length <= 26 ? box.path : box.label;
+      title.textContent = chevron + (box.kind === 'symbol' ? box.label + (box.symbolKind === 'component' ? ' ‹›' : '()') : label);
+      if (box.kind === 'block' && !box.expanded) {
+        const sub = el('text', { class: 'sub', x: box.x + 10, y: box.y + 42 }, g);
+        sub.textContent = t('files', { count: box.count });
+      }
+      if (box.kind === 'file' && !box.expanded && box.count) {
+        const sub = el('text', { class: 'sub', x: box.x + box.w - 8, y: box.y + 20, 'text-anchor': 'end' }, g);
+        sub.textContent = String(box.count);
+      }
+      const title2 = el('title', {}, g);
+      title2.textContent = box.path || box.label;
+      if (notesOf.has(box.id)) {
+        el('circle', { class: 'note', cx: box.x + box.w - 4, cy: box.y + 4, r: 7 }, g);
+        const mark = el('text', { class: 'note-text', x: box.x + box.w - 4, y: box.y + 8, 'text-anchor': 'middle' }, g);
+        mark.textContent = '?';
+      }
+      const activate = event => {
+        event.stopPropagation();
+        if (box.expandable && (selected?.id === box.id || box.kind === 'block' || box.kind === 'file')) {
+          if (open.has(box.id)) open.delete(box.id); else open.add(box.id);
+          save();
+          selected = { type: 'box', id: box.id };
+          lastText = '';
+          refresh().then(details);
+          return;
+        }
+        selected = { type: 'box', id: box.id };
+        details();
+        mark();
+      };
+      g.addEventListener('click', activate);
+      g.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); } });
+    }
+    const arrowLayer = el('g', {}, svg);
+    let arrowIndex = 0;
+    for (const arrow of plan.arrows) {
+      const from = byId.get(arrow.from);
+      const to = byId.get(arrow.to);
+      if (!from || !to) continue;
+      const [x1, y1] = edgePoint(from, to.x + to.w / 2, to.y + to.h / 2);
+      const [x2, y2] = edgePoint(to, from.x + from.w / 2, from.y + from.h / 2);
+      // A gentle curve, so arrows between the same rows do not overlap. An
+      // arrow that would cross another box goes round it on the right.
+      let mx = (x1 + x2) / 2 + (y2 - y1) * 0.08;
+      let my = (y1 + y2) / 2 - (x2 - x1) * 0.08;
+      let d = 'M' + x1 + ',' + y1 + ' Q' + mx + ',' + my + ' ' + x2 + ',' + y2;
+      const ends = new Set([from.id, to.id, ...ancestors(from, byId), ...ancestors(to, byId)]);
+      const blocking = plan.boxes.filter(box => !box.parent && !ends.has(box.id) && crosses(box, x1, y1, x2, y2));
+      if (blocking.length) {
+        // Round the left or the right, whichever crosses fewer boxes (right on a tie).
+        const spread = 28 + (arrowIndex++ % 4) * 10;
+        const others = plan.boxes.filter(box => !box.parent && !ends.has(box.id));
+        const detour = left => {
+          const side = left ? Math.min(...blocking.map(box => box.x), from.x, to.x) - spread : Math.max(...blocking.map(box => box.x + box.w), from.x + from.w, to.x + to.w) + spread;
+          const p = [[left ? from.x : from.x + from.w, from.y + from.h / 2], [side, from.y + from.h / 2], [side, to.y + to.h / 2], [left ? to.x : to.x + to.w, to.y + to.h / 2]];
+          let hits = 0;
+          for (let step = 1; step < 40; step++) {
+            const t = step / 40; const u = 1 - t;
+            const x = u * u * u * p[0][0] + 3 * u * u * t * p[1][0] + 3 * u * t * t * p[2][0] + t * t * t * p[3][0];
+            const y = u * u * u * p[0][1] + 3 * u * u * t * p[1][1] + 3 * u * t * t * p[2][1] + t * t * t * p[3][1];
+            if (others.some(box => x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h)) hits += 1;
+          }
+          return { p, hits, side, left };
+        };
+        const right = detour(false);
+        const leftWay = detour(true);
+        const way = leftWay.hits < right.hits ? leftWay : right;
+        d = 'M' + way.p[0] + ' C' + way.p[1] + ' ' + way.p[2] + ' ' + way.p[3];
+        mx = way.side + (way.left ? 6 : -6); my = (way.p[0][1] + way.p[3][1]) / 2;
+      }
+      const kind = arrow.kinds.observed && arrow.count === arrow.kinds.observed ? 'observed' : arrow.kinds.calls ? 'calls' : arrow.kinds.imports ? 'imports' : 'data';
+      const state = ('lit' in arrow ? (arrow.lit ? ' lit' : arrow.inferred ? ' inferred' : ' dim') : '') + (arrow.ran === false ? ' never' : '') + (kind === 'observed' ? ' observed' : '');
+      const isSel = selected?.type === 'arrow' && selected.id === arrow.id;
+      el('path', { class: 'arrow ' + kind + state + (arrow.confidence === 'possible' ? ' possible' : '') + (isSel ? ' sel' : ''), d,
+        stroke: css('--a-' + kind), 'stroke-width': Math.min(6, 1.2 + Math.log2(arrow.count)), 'marker-end': 'url(#head-' + (isSel ? 'sel' : kind) + ')', opacity: 0.85 }, arrowLayer);
+      const hit = el('path', { class: 'arrow-hit', d, 'data-arrow': arrow.id }, arrowLayer);
+      const tip = el('title', {}, hit);
+      tip.textContent = describeArrow(arrow);
+      hit.addEventListener('click', event => { event.stopPropagation(); selected = { type: 'arrow', id: arrow.id }; details(); draw(); });
+      if (arrow.count > 1) {
+        const label = el('text', { class: 'count', x: mx, y: my - 2, 'text-anchor': 'middle' }, arrowLayer);
+        label.textContent = '×' + arrow.count;
+      }
+    }
+    canvas.appendChild(svg);
+    if (highlight) {
+      const target = svg.querySelector('[data-id="' + CSS.escape(highlight) + '"]');
+      if (target) target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    }
+  }
+  function ancestors(box, byId) {
+    const list = [];
+    for (let parent = byId.get(box.parent); parent; parent = byId.get(parent.parent)) list.push(parent.id);
+    return list;
+  }
+  // Whether the straight line between two points passes through a box.
+  function crosses(box, x1, y1, x2, y2) {
+    for (let step = 1; step < 40; step++) {
+      const x = x1 + (x2 - x1) * step / 40;
+      const y = y1 + (y2 - y1) * step / 40;
+      if (x > box.x + 2 && x < box.x + box.w - 2 && y > box.y + 2 && y < box.y + box.h - 2) return true;
+    }
+    return false;
+  }
+  // Phase 6: the data model — alerts and inconsistencies, the
+  // entity-relationship diagram (zoom), and the card of a table.
+  let dataZoom = 0;
+  let dataSelected = null;
+  let dataShown = null;
+  const DATA_FINDINGS = { 'no-rls-browser': 'data_no_rls_browser', 'used-not-defined': 'data_used_not_defined', 'defined-never-used': 'data_defined_never_used' };
+  const DATA_SOURCES = { prisma: 'dataSourcePrisma', drizzle: 'dataSourceDrizzle', sql: 'dataSourceSql', 'supabase-types': 'dataSourceTypes' };
+  function dataFindingList(parent, list, className) {
+    const ul = html('ul', null, { className: 'findings ' + className });
+    for (const item of list) {
+      const li = html('li');
+      const text = html('button', t(DATA_FINDINGS[item.kind], { name: item.table, browser: (item.browserFiles || []).join(', ') }), { className: 'fact', title: t('dataClickTable') });
+      text.addEventListener('click', () => { dataSelected = item.table; drawData(dataShown); });
+      li.appendChild(text);
+      const slot = html('div');
+      proofList(slot, item.proof.slice(0, 6));
+      li.appendChild(slot);
+      ul.appendChild(li);
+    }
+    parent.appendChild(ul);
+  }
+  function rlsText(rls) { return rls ? (rls.enabled ? t('dataRlsOn', { count: rls.policies }) : t('dataRlsOff')) : ''; }
+  function drawData(data) {
+    dataShown = data;
+    const canvas = $('canvas');
+    const scrolled = canvas.querySelector('.er');
+    const keep = scrolled ? [scrolled.scrollLeft, scrolled.scrollTop] : null;
+    canvas.textContent = '';
+    const box = html('div', null, { className: 'leaks' });
+    box.appendChild(html('h2', t('dataTitle')));
+    const sum = data.summary;
+    box.appendChild(html('p', [t('dataTables', { count: sum.tables }), ...(sum.inferred ? [t('dataInferredCount', { count: sum.inferred })] : []),
+      ...(sum.rlsKnown ? [t('dataRlsCount', { count: sum.withRls, known: sum.rlsKnown })] : []),
+      t('secretsAlertCount', { count: sum.alerts }), t('secretsWarningCount', { count: sum.warnings })].join(' · '), { className: 'muted' }));
+    if (!data.tables.length) { box.appendChild(html('p', t('dataNone'))); canvas.appendChild(box); dataCard(); return; }
+    if (data.alerts.length) { box.appendChild(html('h3', t('secretsAlerts') + ' (' + data.alerts.length + ')')); dataFindingList(box, data.alerts, 'alert'); }
+    if (!data.alerts.length && !data.warnings.length) box.appendChild(html('p', t('dataNoProblems'), { className: 'muted small' }));
+    const tools = html('p', null, { className: 'zoom' });
+    const layout = data.layout;
+    const fit = Math.min(1, Math.max(0.3, (Math.min(canvas.clientWidth - 32 - (dataSelected && !$('side').classList.contains('on') ? 360 : 0), 1200) - 36) / Math.max(1, layout.width + 40)));
+    if (!dataZoom) dataZoom = fit;
+    for (const [label, title, next] of [['−', t('dataZoomOut'), () => dataZoom / 1.25], ['+', t('dataZoomIn'), () => dataZoom * 1.25], [t('dataFit'), t('dataFit'), () => fit]]) {
+      const button = html('button', label, { className: 'plain', title });
+      button.addEventListener('click', () => { dataZoom = Math.min(3, Math.max(0.2, next())); drawData(dataShown); });
+      tools.appendChild(button);
+    }
+    tools.appendChild(html('span', Math.round(dataZoom * 100) + '% · ' + t('dataClickTable'), { className: 'muted small' }));
+    box.appendChild(tools);
+    const area = html('div', null, { className: 'er' });
+    const pad = 20;
+    const width = layout.width + pad * 2;
+    const height = layout.height + pad * 2;
+    const svg = el('svg', { width: width * dataZoom, height: height * dataZoom, viewBox: [-pad, -pad, width, height].join(' '), role: 'img', 'aria-label': t('dataDiagram') });
+    const defs = el('defs', {}, svg);
+    const marker = el('marker', { id: 'head-rel', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' }, defs);
+    el('path', { d: 'M0,0 L10,5 L0,10 z', fill: css('--a-data') }, marker);
+    const rowY = (table, column) => {
+      const place = layout.boxes[table.name];
+      const index = table.columns.findIndex(item => item.name === column);
+      return place.y + layout.header + (index < 0 || index >= layout.maxRows ? layout.maxRows - 0.5 : index + 0.5) * layout.row + 4;
+    };
+    const byName = new Map(data.tables.map(table => [table.name, table]));
+    const lines = el('g', {}, svg);
+    for (const relation of data.relations) {
+      if (relation.outside || !layout.boxes[relation.to]) continue;
+      const from = layout.boxes[relation.from];
+      const to = layout.boxes[relation.to];
+      const target = byName.get(relation.to);
+      const y1 = rowY(byName.get(relation.from), relation.column);
+      const y2 = relation.toColumn ? rowY(target, relation.toColumn) : to.y + layout.header / 2;
+      const self = relation.from === relation.to;
+      const rightward = to.x >= from.x + from.w;
+      const x1 = rightward || self ? from.x + from.w : from.x;
+      const x2 = self ? to.x + to.w : rightward ? to.x : to.x + to.w;
+      const bend = self ? 40 : Math.max(30, Math.abs(x2 - x1) / 2);
+      const d = 'M' + x1 + ',' + y1 + ' C' + (x1 + (rightward || self ? bend : -bend)) + ',' + y1 + ' ' + (x2 + (self || !rightward ? bend : -bend)) + ',' + y2 + ' ' + x2 + ',' + y2;
+      const path = el('path', { d, class: 'relation', stroke: css('--a-data'), 'stroke-width': 1.5, fill: 'none', 'marker-end': 'url(#head-rel)' }, lines);
+      el('title', {}, path).textContent = relation.from + '.' + relation.column + ' → ' + relation.to + (relation.toColumn ? '.' + relation.toColumn : '');
+    }
+    for (const table of data.tables) {
+      const place = layout.boxes[table.name];
+      const g = el('g', { class: 'tbox' + (dataSelected === table.name ? ' sel' : '') + (table.findings.length ? ' flagged' : ''), tabindex: 0, 'data-table': table.name }, svg);
+      const alert = table.findings.includes('no-rls-browser');
+      el('rect', { class: 'frame', x: place.x, y: place.y, width: place.w, height: place.h, rx: 8, fill: css('--panel'),
+        stroke: alert ? '#d0566a' : css('--b-data'), 'stroke-dasharray': table.inferred ? '5 4' : '' }, g);
+      el('rect', { x: place.x, y: place.y, width: place.w, height: layout.header - 6, rx: 8, fill: css('--l-data') }, g);
+      el('text', { x: place.x + 10, y: place.y + 19, 'font-weight': 600 }, g).textContent = table.name;
+      el('text', { class: 'sub', x: place.x + place.w - 8, y: place.y + 19, 'text-anchor': 'end' }, g).textContent = table.inferred ? t('dataInferred') : rlsText(table.rls);
+      if (!table.columns.length) {
+        el('text', { class: 'sub', x: place.x + 10, y: place.y + layout.header + 13 }, g).textContent = t('dataNoColumns');
+      }
+      table.columns.slice(0, layout.maxRows).forEach((column, index) => {
+        const y = place.y + layout.header + index * layout.row + 13;
+        el('text', { x: place.x + 10, y }, g).textContent = (column.primaryKey ? '◆ ' : column.references ? '→ ' : '  ') + column.name;
+        el('text', { class: 'sub', x: place.x + place.w - 8, y, 'text-anchor': 'end' }, g).textContent = (column.type || '').slice(0, 18);
+      });
+      if (table.columns.length > layout.maxRows) {
+        el('text', { class: 'sub', x: place.x + 10, y: place.y + layout.header + layout.maxRows * layout.row + 13 }, g).textContent = t('dataMore', { count: table.columns.length - layout.maxRows });
+      }
+      el('title', {}, g).textContent = table.name + (table.inferred ? ' · ' + t('dataInferred') : '');
+      const choose = event => { event.stopPropagation(); dataSelected = table.name; drawData(dataShown); };
+      g.addEventListener('click', choose);
+      g.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(event); } });
+    }
+    area.appendChild(svg);
+    box.appendChild(area);
+    if (data.warnings.length) { box.appendChild(html('h3', t('secretsWarnings') + ' (' + data.warnings.length + ')')); dataFindingList(box, data.warnings, 'warning'); }
+    box.appendChild(html('p', t('dataFootnote'), { className: 'muted small' }));
+    canvas.appendChild(box);
+    if (keep) { area.scrollLeft = keep[0]; area.scrollTop = keep[1]; }
+    dataCard();
+  }
+  function usersList(side, title, list) {
+    side.appendChild(html('h3', title + ' (' + list.length + ')'));
+    if (!list.length) { side.appendChild(html('p', t('dataNobody'), { className: 'muted small' })); return; }
+    const ul = html('ul', null, { className: 'facts' });
+    for (const item of list) {
+      const li = html('li');
+      const head = html('div');
+      head.appendChild(html('b', item.name || t('dataFileLevel')));
+      head.appendChild(html('span', ' · ' + item.file, { className: 'muted' }));
+      for (const operation of item.operations) head.appendChild(html('span', operation, { className: 'tag' }));
+      if (item.runsOn) head.appendChild(html('span', item.runsOn === 'client' ? t('leaksBrowser') : item.runsOn === 'server' ? t('leaksServer') : item.runsOn, { className: 'tag ' + item.runsOn }));
+      li.appendChild(head);
+      if (item.block) li.appendChild(html('div', item.block.name, { className: 'muted small' }));
+      const slot = html('div');
+      proofList(slot, item.proof);
+      li.appendChild(slot);
+      ul.appendChild(li);
+    }
+    side.appendChild(ul);
+  }
+  function dataCard() {
+    const side = $('side');
+    const table = dataShown?.tables.find(item => item.name === dataSelected);
+    side.textContent = '';
+    if (!table) { side.classList.remove('on'); return; }
+    side.classList.add('on');
+    const close = html('button', '✕', { className: 'plain', title: t('close') });
+    close.style.float = 'right';
+    close.addEventListener('click', () => { dataSelected = null; drawData(dataShown); });
+    side.appendChild(close);
+    side.appendChild(html('h2', table.name));
+    side.appendChild(html('p', [table.store, table.inferred ? t('dataInferred') : t(DATA_SOURCES[table.source] || 'dataInferred')].join(' · '), { className: 'muted' }));
+    const findings = [...dataShown.alerts, ...dataShown.warnings].filter(item => item.table === table.name);
+    if (findings.length) dataFindingList(side, findings, findings.some(item => item.severity === 'alert') ? 'alert' : 'warning');
+    if (table.definedIn.length) { side.appendChild(html('h3', t('dataDefinedIn'))); proofList(side, table.definedIn); }
+    side.appendChild(html('h3', t('dataRls')));
+    if (table.rls) {
+      side.appendChild(html('p', rlsText(table.rls)));
+      proofList(side, table.rls.proof);
+      side.appendChild(html('p', t('dataRlsInfo'), { className: 'muted small' }));
+    } else side.appendChild(html('p', t('dataRlsUnknown'), { className: 'muted small' }));
+    usersList(side, t('dataReadBy'), table.readers);
+    usersList(side, t('dataWrittenBy'), table.writers);
+    side.appendChild(html('h3', t('dataColumns') + ' (' + table.columns.length + ')'));
+    if (!table.columns.length) side.appendChild(html('p', t('dataColumnsUnknown'), { className: 'muted small' }));
+    const ul = html('ul', null, { className: 'facts' });
+    for (const column of table.columns) {
+      const li = html('li');
+      const line = html('button', column.name + (column.type ? ' · ' + column.type : ''), { className: 'fact', title: t('showSource') });
+      if (column.primaryKey) line.appendChild(html('span', t('dataKey'), { className: 'tag' }));
+      else if (!column.nullable) line.appendChild(html('span', t('dataRequired'), { className: 'tag' }));
+      if (column.references) line.appendChild(html('span', '→ ' + column.references.table + (column.references.column ? '.' + column.references.column : '')
+        + (dataShown.tables.some(item => item.name === column.references.table) ? '' : ' (' + t('dataOutside') + ')'), { className: 'tag' }));
+      const slot = html('div');
+      line.addEventListener('click', () => { if (slot.childNodes.length) slot.textContent = ''; else proofList(slot, column.proof); });
+      li.append(line, slot);
+      ul.appendChild(li);
+    }
+    side.appendChild(ul);
+  }
+
+  // Phase 8: the structure's health — the smells in order, each with why it
+  // matters, its proof, and a way to see it in the plan.
+  const SMELL_TEXT = { cycle: ['smell_cycle', 'smell_cycle_why'], 'skipped-layer': ['smell_skipped_layer', 'smell_skipped_layer_why'],
+    duplicate: ['smell_duplicate', 'smell_duplicate_why'], 'large-file': ['smell_large_file', 'smell_large_file_why'],
+    'unused-export': ['smell_unused_export', 'smell_unused_export_why'] };
+  const COUPLING_TEXT = { 'uses-all': ['smell_coupling_uses_all', 'smell_coupling_uses_all_why'], 'used-by-all': ['smell_coupling_used_by_all', 'smell_coupling_used_by_all_why'],
+    'file-used-by-many': ['smell_file_used_by_many', 'smell_coupling_used_by_all_why'], 'file-uses-many': ['smell_file_uses_many', 'smell_file_uses_many_why'] };
+  const BECAUSE = { folder: 'healthBecauseFolder', name: 'healthBecauseName', public: 'healthBecausePublic' };
+  function smellText(item) {
+    const files = item.files || [];
+    const vars = { files: files.join(' ⇄ '), file: files[0] || '', from: files[0] || '', to: files[1] || '', block: item.blockName || item.block || '',
+      count: item.kind === 'duplicate' ? item.places : item.count, tokens: item.tokens, lines: item.lines, limit: item.limit, name: item.name,
+      because: item.because ? (BECAUSE[item.because] ? t(BECAUSE[item.because]) : item.because) : '' };
+    if (item.kind === 'duplicate') vars.files = files.join(', ') + (item.stretches > 1 ? ' (' + t('smell_duplicate_stretches', { count: item.stretches }) + ')' : '');
+    if (item.kind === 'skipped-layer' && item.to) vars.to = files[1] + ' (' + (LAYER_NAMES[item.to.slice(6)] || item.to) + ')';
+    const [what, why] = item.kind === 'coupling' ? COUPLING_TEXT[item.direction]
+      : item.kind === 'dead-file' ? [item.certainty === 'possible' ? 'smell_dead_file_possible' : 'smell_dead_file', 'smell_dead_file_why'] : SMELL_TEXT[item.kind];
+    return [t(what, vars), t(why)];
+  }
+  function drawHealth(health) {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    const box = html('div', null, { className: 'leaks' });
+    box.appendChild(html('h2', t('healthTitle')));
+    const sum = health.summary;
+    box.appendChild(html('p', [t('healthCount', { count: sum.total }), ...(sum.possible ? [t('healthPossibleCount', { count: sum.possible })] : [])].join(' · '), { className: 'muted' }));
+    box.appendChild(html('p', t('healthIntro'), { className: 'muted small' }));
+    if (!health.smells.length) { box.appendChild(html('p', t('healthNone'))); canvas.appendChild(box); return; }
+    // One group per kind, in the order of importance; a long group starts closed.
+    const GROUPS = { cycle: 'healthGroupCycle', 'skipped-layer': 'healthGroupSkipped', coupling: 'healthGroupCoupling', duplicate: 'healthGroupDuplicate',
+      'dead-file': 'healthGroupDead', 'large-file': 'healthGroupLarge', 'unused-export': 'healthGroupUnused' };
+    let list = null;
+    let kind = null;
+    for (const item of health.smells) {
+      if (item.kind !== kind) {
+        kind = item.kind;
+        const group = html('details');
+        group.open = health.summary.byKind[kind] <= 10;
+        group.appendChild(html('summary', t(GROUPS[kind]) + ' (' + health.summary.byKind[kind] + ')'));
+        list = html('ol', null, { className: 'findings' });
+        list.classList.add('health');
+        group.appendChild(list);
+        box.appendChild(group);
+      }
+      const li = html('li');
+      const [what, why] = smellText(item);
+      const head = html('div');
+      head.appendChild(html('b', what));
+      if (item.certainty === 'possible') head.appendChild(html('span', t('healthPossibly'), { className: 'tag' }));
+      if (item.blockName) head.appendChild(html('span', item.blockName, { className: 'tag' }));
+      li.appendChild(head);
+      li.appendChild(html('div', why, { className: 'muted small' }));
+      if (item.target) {
+        const show = html('button', t('healthShow'), { className: 'plain' });
+        show.classList.add('small');
+        show.addEventListener('click', () => {
+          for (const id of item.target.open) open.add(id);
+          save();
+          highlight = item.target.id;
+          setView('plan').then(() => { selected = { type: 'box', id: item.target.id }; details(); mark(); });
+        });
+        li.appendChild(show);
+      }
+      const slot = html('div');
+      proofList(slot, item.proof.slice(0, 3));
+      if (item.proof.length > 3) {
+        const more = html('button', t('healthMoreProof', { count: item.proof.length - 3 }), { className: 'plain' });
+        more.classList.add('small');
+        more.addEventListener('click', () => { slot.textContent = ''; proofList(slot, item.proof); });
+        slot.appendChild(more);
+      }
+      li.appendChild(slot);
+      list.appendChild(li);
+    }
+    canvas.appendChild(box);
+  }
+
+  function mark() {
+    for (const node of document.querySelectorAll('.box')) node.classList.toggle('sel', node.dataset.id === selected?.id);
+  }
+  const nameOf = id => plan.boxes.find(box => box.id === id)?.label || id;
+  function describeArrow(arrow) {
+    const kinds = Object.entries(arrow.kinds).map(([kind, count]) => count + ' ' + kind).join(', ');
+    return [nameOf(arrow.from) + ' → ' + nameOf(arrow.to) + ' (' + kinds + ')', ...(arrow.runsOn ? [t('fromThe', { side: arrow.runsOn })] : []),
+      ...(arrow.confidence === 'possible' ? [t('notCertain')] : []), ...(arrow.kinds.observed ? [t('seenAtRunTime')] : []),
+      ...(arrow.lit ? [t('actionWent')] : arrow.inferred ? [t('actionProbably')] : []), ...(arrow.ran === false ? [t('noActionWent')] : [])].join(' · ');
+  }
+
+  function proofList(parent, proofs) {
+    const list = html('ul');
+    for (const proof of proofs) {
+      const item = html('li');
+      const button = html('button', proof.file + ':' + proof.line + (proof.note ? ' (' + proof.note + ')' : ''), { className: 'proof', title: t('showCode') });
+      const slot = html('div');
+      button.addEventListener('click', () => showCode(slot, proof));
+      item.append(button, slot);
+      list.appendChild(item);
+    }
+    parent.appendChild(list);
+  }
+  async function showCode(slot, proof) {
+    if (slot.childNodes.length) { slot.textContent = ''; return; }
+    const response = await fetch('/api/structure/source?run=' + encodeURIComponent(run) + '&file=' + encodeURIComponent(proof.file) + '&line=' + proof.line, { cache: 'no-store' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { slot.appendChild(html('p', body.error || t('codeUnavailable'), { className: 'muted' })); return; }
+    const pre = html('pre');
+    body.lines.forEach((text, index) => {
+      const number = body.start + index;
+      const line = html('span', String(number).padStart(4) + '  ' + text + '\n');
+      if (number === body.line) line.className = 'hit';
+      pre.appendChild(line);
+    });
+    slot.appendChild(pre);
+    if (body.editorUrl) slot.appendChild(html('a', t('openInEditor'), { href: body.editorUrl, className: 'proof' }));
+  }
+
+  function details() {
+    const side = $('side');
+    side.textContent = '';
+    if (!selected || !plan) { side.classList.remove('on'); return; }
+    side.classList.add('on');
+    if (selected.type === 'unmatched') {
+      side.appendChild(html('h2', t('unmatchedTitle')));
+      side.appendChild(html('p', t('unmatchedText'), { className: 'muted' }));
+      const list = html('ul');
+      for (const item of traceInfo?.unmatched ?? []) list.appendChild(html('li', (item.function || t('unnamed')) + ' · ' + (item.file || '?') + (item.line ? ':' + item.line : '') + ' — ' + item.reason));
+      side.appendChild(list);
+      return;
+    }
+    const close = html('button', '✕', { className: 'plain', title: t('close') });
+    close.style.float = 'right';
+    close.addEventListener('click', () => { selected = null; details(); mark(); });
+    side.appendChild(close);
+    if (selected.type === 'arrow') {
+      const arrow = plan.arrows.find(item => item.id === selected.id);
+      if (!arrow) return;
+      side.appendChild(html('h2', nameOf(arrow.from) + ' → ' + nameOf(arrow.to)));
+      side.appendChild(html('p', describeArrow(arrow), { className: 'muted' }));
+      side.appendChild(html('h3', arrow.count > arrow.proof.length ? t('proofFirst', { shown: arrow.proof.length, count: arrow.count }) : t('proof')));
+      proofList(side, arrow.proof);
+      return;
+    }
+    const box = plan.boxes.find(item => item.id === selected.id);
+    if (!box) return;
+    if (box.kind === 'block') { blockDetails(side, box); return; }
+    side.appendChild(html('h2', box.label));
+    const kind = box.kind === 'block' ? t('blockKind', { files: t('files', { count: box.count }) }) : box.kind === 'file' ? t('fileKind', { path: box.path })
+      : box.kind === 'route' ? t('routeKind') : (box.symbolKind || t('symbolKind'));
+    side.appendChild(html('p', kind, { className: 'muted' }));
+    if (box.expandable && !box.expanded) side.appendChild(html('p', box.kind === 'block' ? t('clickBlock') : t('clickFile'), { className: 'muted' }));
+    const incoming = plan.arrows.filter(arrow => arrow.to === box.id);
+    const outgoing = plan.arrows.filter(arrow => arrow.from === box.id);
+    for (const [title, list, end] of [[t('usedBy'), incoming, 'from'], [t('uses'), outgoing, 'to']]) {
+      if (!list.length) continue;
+      side.appendChild(html('h3', title));
+      const ul = html('ul');
+      for (const arrow of list) {
+        const item = html('li');
+        const link = html('button', nameOf(arrow[end]) + ' (' + arrow.count + ')', { className: 'plain' });
+        link.addEventListener('click', () => { selected = { type: 'arrow', id: arrow.id }; details(); draw(); });
+        item.appendChild(link);
+        ul.appendChild(item);
+      }
+      side.appendChild(ul);
+    }
+    const notes = plan.notes.filter(note => note.box === box.id);
+    if (notes.length) {
+      side.appendChild(html('h3', t('undecided')));
+      for (const note of notes) { side.appendChild(html('p', note.message)); proofList(side, note.proof); }
+    }
+    if (box.kind === 'symbol' || box.kind === 'route') {
+      side.appendChild(html('h3', t('where')));
+      const file = plan.boxes.find(item => item.id === box.parent);
+      if (file && box.line) proofList(side, [{ file: file.path, line: box.line }]);
+    }
+  }
+
+  // The card of a block: facts from the structure, each line opening its proof.
+  const SECTIONS = [['purpose', t('sectionPurpose')], ['usedBy', t('usedBy')], ['uses', t('uses')], ['data', t('sectionData')],
+    ['largest', t('sectionLargest')], ['entries', t('sectionEntries')], ['notes', t('undecided')]];
+  async function blockDetails(side, box) {
+    side.appendChild(html('h2', box.label));
+    side.appendChild(html('p', box.expandable && !box.expanded ? t('clickBlock') : t('files', { count: box.count }), { className: 'muted' }));
+    const response = await fetch('/api/structure/card?run=' + encodeURIComponent(run) + '&block=' + encodeURIComponent(box.id), { cache: 'no-store' });
+    const card = await response.json().catch(() => null);
+    if (selected?.id !== box.id) return;
+    if (!response.ok || !card) { side.appendChild(html('p', (card && card.error) || t('cardUnreadable'), { className: 'muted' })); return; }
+    for (const [section, title] of SECTIONS) {
+      const facts = card.facts.filter(fact => fact.section === section);
+      if (!facts.length) continue;
+      side.appendChild(html('h3', title));
+      const list = html('ul', null, { className: 'facts' });
+      for (const fact of facts) {
+        const item = html('li');
+        const line = html('button', fact.text, { className: 'fact', title: t('showSource') });
+        const slot = html('div');
+        line.addEventListener('click', () => {
+          if (slot.childNodes.length) { slot.textContent = ''; return; }
+          proofList(slot, fact.proof);
+        });
+        item.append(line, slot);
+        list.appendChild(item);
+      }
+      side.appendChild(list);
+    }
+    side.appendChild(html('p', t('everyLine'), { className: 'muted small' }));
+    if (card.actions?.length) {
+      side.appendChild(html('h3', t('actionsHere')));
+      const list = html('ul', null, { className: 'facts' });
+      for (const item of card.actions) {
+        const li = html('li');
+        const button = html('button', item.label, { className: 'fact', title: t('lightAction') });
+        button.addEventListener('click', () => { action = item.actionId; request = ''; focus = ''; lastText = ''; refresh(); });
+        li.appendChild(button);
+        list.appendChild(li);
+      }
+      side.appendChild(list);
+    }
+    explainArea(side, box);
+  }
+
+  // Optional AI explanation: preview of the exact request, then consent.
+  function explainArea(side, box) {
+    const area = html('div', null, { className: 'explain' });
+    const start = html('button', t('explain'), { className: 'plain', title: t('explainTitle') });
+    area.appendChild(start);
+    side.appendChild(area);
+    const show = result => {
+      const out = html('div', null, { className: 'explanation' });
+      out.appendChild(html('h3', t('explanationBy', { model: result.model })));
+      if (result.rejected) out.appendChild(html('p', t('rejected', { reason: result.rejected }), { className: 'muted' }));
+      else out.appendChild(html('p', result.explanation));
+      return out;
+    };
+    start.addEventListener('click', async () => {
+      area.textContent = '';
+      const response = await fetch('/api/structure/explain/preview?run=' + encodeURIComponent(run) + '&block=' + encodeURIComponent(box.id), { cache: 'no-store' });
+      const preview = await response.json().catch(() => ({}));
+      if (!response.ok) { area.appendChild(html('p', preview.error || t('previewFailed'), { className: 'muted' })); return; }
+      if (!preview.active) { area.appendChild(html('p', preview.problem ? t('noModelBecause', { problem: preview.problem }) : t('noModel'), { className: 'muted' })); return; }
+      if (preview.cached) { area.appendChild(show({ ...preview.cached, model: preview.model })); return; }
+      area.appendChild(html('h3', t(preview.local ? 'willSendLocal' : 'willSend', { provider: preview.provider, model: preview.model })));
+      area.appendChild(html('p', t('onlyFacts'), { className: 'muted small' }));
+      area.appendChild(html('pre', preview.system + '\n\n' + preview.text));
+      const send = html('button', t('send'), { className: 'plain' });
+      const cancel = html('button', t('cancel'), { className: 'plain' });
+      cancel.style.marginLeft = '14px';
+      cancel.addEventListener('click', () => { area.textContent = ''; area.appendChild(start); });
+      send.addEventListener('click', async () => {
+        send.disabled = true;
+        send.textContent = t('waiting');
+        const answer = await fetch('/api/structure/explain?run=' + encodeURIComponent(run), { method: 'POST', cache: 'no-store',
+          headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ block: box.id, hash: preview.hash }) });
+        const result = await answer.json().catch(() => ({}));
+        area.textContent = '';
+        if (!answer.ok) { area.appendChild(html('p', result.error || t('explainFailed'), { className: 'muted' })); area.appendChild(start); return; }
+        area.appendChild(show(result));
+      });
+      area.append(send, cancel);
+    });
+  }
+
+  // Search by name: opens what is needed to show the result.
+  let searchTimer = null;
+  $('q').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      const q = $('q').value.trim();
+      const results = $('results');
+      results.textContent = '';
+      if (!q) { results.hidden = true; return; }
+      const response = await fetch('/api/structure/search?run=' + encodeURIComponent(run) + '&q=' + encodeURIComponent(q), { cache: 'no-store' });
+      const body = await response.json().catch(() => ({ results: [] }));
+      results.hidden = false;
+      if (!body.results?.length) { results.appendChild(html('div', t('nothingFound'), { className: 'status' })); return; }
+      for (const result of body.results) {
+        const button = html('button', result.name);
+        button.appendChild(html('small', result.kind + (result.path ? ' · ' + result.path : result.file ? ' · ' + result.file + ':' + result.line : '')));
+        button.addEventListener('click', () => {
+          for (const id of result.open) open.add(id);
+          save();
+          highlight = result.id;
+          selected = { type: 'box', id: result.id };
+          results.hidden = true;
+          lastText = '';
+          refresh().then(details);
+        });
+        results.appendChild(button);
+      }
+    }, 200);
+  });
+  document.addEventListener('click', event => { if (!event.target.closest('.search')) $('results').hidden = true; });
+  $('coverage').addEventListener('click', () => { coverage = !coverage; $('coverage').textContent = coverage ? t('hideNeverRan') : t('neverRan'); lastText = ''; refresh(); });
+  function showButtons() {
+    for (const [name, key] of [['leaks', 'leaksButton'], ['secrets', 'secretsButton'], ['data', 'dataButton'], ['health', 'healthButton']]) {
+      $(name + 'Button').classList.toggle('on', view === name);
+      $(name + 'Button').textContent = view === name ? t('leaksBack') : t(key);
+    }
+    for (const id of ['coverage', 'collapse', 'legend']) $(id).hidden = view !== 'plan';
+  }
+  function setView(next) {
+    view = next;
+    dataSelected = null;
+    selected = null;
+    details();
+    showButtons();
+    lastText = ''; lastTable = '';
+    const url = new URL(location.href);
+    if (view !== 'plan') url.searchParams.set('view', view); else url.searchParams.delete('view');
+    history.replaceState(null, '', url);
+    return refresh();
+  }
+  $('leaksButton').addEventListener('click', () => setView(view === 'leaks' ? 'plan' : 'leaks'));
+  $('secretsButton').addEventListener('click', () => setView(view === 'secrets' ? 'plan' : 'secrets'));
+  $('dataButton').addEventListener('click', () => setView(view === 'data' ? 'plan' : 'data'));
+  $('healthButton').addEventListener('click', () => setView(view === 'health' ? 'plan' : 'health'));
+  $('collapse').addEventListener('click', () => { open.clear(); save(); selected = null; highlight = null; details(); lastText = ''; refresh(); });
+
+  legend();
+  showButtons();
+  refresh(true);
+  setInterval(() => { if (!document.hidden) refresh(); }, 10000);
+  // Watch mode: a light look every 2 s; a new reading of the project redraws the plan at once.
+  setInterval(async () => {
+    if (document.hidden || !run || !shownReadAt) return;
+    try {
+      const body = await (await fetch('/api/structure?run=' + encodeURIComponent(run), { cache: 'no-store' })).json();
+      if (body.readAt && body.readAt !== shownReadAt) refresh();
+    } catch {}
+  }, 2000);
+})();
+</script>
+</body>
+</html>

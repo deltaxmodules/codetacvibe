@@ -4,6 +4,7 @@
 // built on node:http (Next.js, Vite, Express...), with no proxy or extension.
 import { readFileSync } from 'node:fs';
 import { splitUrl } from './boundaries.mjs';
+import { TEXT } from './structure/text.mjs';
 
 export const PREFIX = '/__codetac/';
 export const ACTION_HEADER = 'x-codetac-action';
@@ -16,7 +17,8 @@ const TAG = '<script src="/__codetac/bar.js" data-codetac=""></script>';
 let script = null;
 function barScript(options) {
   if (!script) {
-    const config = { panel: options.panel, run: options.run };
+    // The bar's Structure sentences come from src/structure/text/<language>.json.
+    const config = { panel: options.panel, run: options.run, text: TEXT.bar };
     script = `window.__CODETAC_CONFIG__=${JSON.stringify(config)};\n${readFileSync(new URL('./browser/bar.js', import.meta.url), 'utf8')}`;
   }
   return script;

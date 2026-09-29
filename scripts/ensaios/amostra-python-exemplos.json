@@ -1,9 +1,0 @@
-{
-  "painel": 4100,
-  "projetos": [
-    { "nome": "py-flask-sqlite", "pasta": "fixtures/python/flask-sqlite", "ferramenta": "exemplo 1", "stack": "Flask + Jinja + sqlite3" },
-    { "nome": "py-fastapi-async", "pasta": "fixtures/python/fastapi-async", "ferramenta": "exemplo 2", "stack": "FastAPI async + SQLAlchemy", "pagina": "/docs", "pedidos": ["/notes"] },
-    { "nome": "py-fastapi-sync", "pasta": "fixtures/python/fastapi-sync", "ferramenta": "exemplo 3", "stack": "FastAPI def + gather", "pagina": "/docs", "pedidos": ["/report", "/dashboard"] },
-    { "nome": "py-mixed", "pasta": "fixtures/python/mixed", "ferramenta": "exemplo 4", "stack": "Vite + React → FastAPI" }
-  ]
-}

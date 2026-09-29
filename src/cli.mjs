@@ -12,6 +12,7 @@ import { basename, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { detectProject, describeStart, foreignRuntime } from './detect.mjs';
+import { panelOnPort } from './panel-ping.mjs';
 import { MINIMUM, commandFor, describePythonFolder, environmentOf, interpreters, moveTo, probe, proxyOf, pythonPort, versionBelow } from './detect-python.mjs';
 import { createSummary, follow } from './recording.mjs';
 import { describeFailure, ownError, readTraceback } from './failure.mjs';
@@ -29,6 +30,10 @@ const HELP = `Usage:
   codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)
   codetac diagnose [folder]                  explains what is and what is not working
   codetac report [folder]                    saves the diagnosis to a file to attach to an issue
+  codetac structure [folder]                 what the project is made of: its files by block
+  codetac structure [folder] --reclassify <file> <block|auto>
+                                             places a file in a block yourself (saved in codetac.structure.json)
+  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)
   codetac help                               this help
   codetac --version                          installed version
 
@@ -43,7 +48,7 @@ Options:
   -- <command>         the start command, when it is not found (e.g. -- node server.js)`;
 
 function parseArgs(argv) {
-  const options = { parts: [], command: null, folder: null, sub: null };
+  const options = { parts: [], command: null, folder: null, sub: null, reclassify: null };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     const value = () => argv[++index];
@@ -58,6 +63,9 @@ function parseArgs(argv) {
     else if (arg === '-h' || arg === '--help' || (arg === 'help' && !options.sub && !options.folder)) options.sub = 'help';
     else if (!options.sub && !options.folder && arg === 'diagnose') options.sub = 'diagnose';
     else if (!options.sub && !options.folder && arg === 'report') options.sub = 'report';
+    else if (!options.sub && !options.folder && arg === 'structure') options.sub = 'structure';
+    else if (options.sub === 'structure' && arg === '--reclassify') options.reclassify = [value(), value()];
+    else if (options.sub === 'structure' && arg === '--suggest') options.suggest = true;
     else if (arg === '-v' || arg === '--version') options.sub = 'version';
     else if (!options.folder && !arg.startsWith('-')) options.folder = arg;
     else { say(`Unknown option: ${arg}\n\n${HELP}`); process.exit(2); }
@@ -109,12 +117,19 @@ function get(port, path, { host = '127.0.0.1', timeout = 3000, headers = {} } = 
 }
 const wait = ms => new Promise(done => setTimeout(done, ms));
 
-// The panel: reuses one already running, or starts it.
+// The panel: reuses one of this version already running, or starts it. A
+// panel of another version is left running (another codetac may be using it)
+// and a new one starts on the next free port: an older panel does not know
+// the pages the new bar asks for (/structure answered "Not found.").
 async function ensurePanel(port, avoid) {
+  const version = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version;
+  const others = [];
   for (let candidate = port; candidate < port + 20; candidate++) {
     if (avoid.has(candidate)) continue;
     const ping = await get(candidate, '/api/ping');
-    if (ping?.status === 200 && ping.body.includes('"ok":true')) return { port: candidate, reused: true };
+    const found = panelOnPort(ping, version);
+    if (found?.kind === 'same') return { port: candidate, reused: true, others, version };
+    if (found) { others.push({ port: candidate, version: found.version, pid: found.pid }); continue; }
     if (ping) continue; // another program answers on this port
     const child = spawn(process.execPath, [join(workspace, 'src', 'panel.mjs'), '--port', String(candidate)],
       { cwd: workspace, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } });
@@ -125,7 +140,7 @@ async function ensurePanel(port, avoid) {
       await wait(250);
       if (child.exitCode !== null) break;
       const ok = await get(candidate, '/api/ping');
-      if (ok?.status === 200) return { port: candidate, child, line: first.split('\n')[0] };
+      if (ok?.status === 200) return { port: candidate, child, line: first.split('\n')[0], others, version };
     }
     child.kill();
     if (/EADDRINUSE/.test(first)) continue;
@@ -435,6 +450,12 @@ async function main() {
     say('  https://github.com/deltaxmodules/codetacvibe/issues/new');
     return;
   }
+  if (options.sub === 'structure') {
+    const { structureCommand } = await import('./structure/cli.mjs');
+    const confirm = interactive ? async question => /^y(es)?$/i.test(String(await ask(question) ?? '').trim()) : null;
+    process.exitCode = await structureCommand(root, { reclassify: options.reclassify, suggest: options.suggest, yes: options.yes, confirm });
+    return;
+  }
   if (options.sub === 'diagnose') {
     const { diagnose } = await import('./diagnose.mjs');
     process.exitCode = await diagnose(root, { panelPort: options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000) });
@@ -552,6 +573,10 @@ async function main() {
   if (options.port) predicted.add(options.port);
   const panel = await ensurePanel(options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000), predicted);
   const panelUrl = `http://127.0.0.1:${panel.port}`;
+  for (const other of panel.others) {
+    say(`! A CodeTAC panel of ${other.version ? `version ${other.version}` : 'an older version'} is running on port ${other.port}; this run uses its own panel (${panel.version}).`);
+    say(`  To close the old one: ${other.pid ? `kill ${other.pid}` : `stop the codetac that started it, or run: lsof -ti tcp:${other.port} -sTCP:LISTEN | xargs kill`}`);
+  }
   say(panel.reused ? `  Panel: ${panelUrl} (already running)` : `  Panel: ${panelUrl}${panel.line ? ` · ${panel.line}` : ''}`);
 
   // 4. The application, with the fine capture; minimal mode if it does not start.

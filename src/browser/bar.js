@@ -8,6 +8,9 @@
   if (window.__codetacPage) return;
   window.__codetacPage = true;
   const config = window.__CODETAC_CONFIG__ || {};
+  // The Structure sentences, from src/structure/text/<language>.json (sent with
+  // the config), escaped for the markup they go into.
+  const barText = key => String((config.text || {})[key] ?? key).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const ENDPOINT = '/__codetac/events';
   const HEADER = 'x-codetac-action';
   const COOKIE = 'codetac_action';
@@ -508,6 +511,8 @@
   // ---------------------------------------------------------------------------
   let shadow = null;
   let shown = null;
+  // The sheet has two views: the dossier of an action, and the project's structure.
+  let view = 'action';
   function mountBar() {
     if (host || !document.documentElement) return;
     host = document.createElement('codetac-bar');
@@ -518,51 +523,105 @@
       '.pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(24,24,27,.82);color:#f4f4f5;border:0;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.25);max-width:280px}' +
       '.pill:hover{background:rgba(24,24,27,.95)}.dot{width:8px;height:8px;border-radius:50%;background:#71717a;flex:none}.dot.on{background:#22c55e}' +
       '.flash .dot{animation:f 1s ease-out}@keyframes f{0%{transform:scale(1.8);background:#4ade80}100%{transform:scale(1)}}' +
-      '.label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row{display:flex;gap:6px;justify-content:flex-end}' +
       '.sheet{position:fixed;right:12px;bottom:48px;width:min(760px,calc(100vw - 24px));height:min(640px,calc(100vh - 72px));background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden}' +
       '.top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#18181b;color:#f4f4f5}.top b{margin-right:auto}' +
       '.top button,.top a{all:unset;cursor:pointer;padding:2px 8px;border-radius:5px;color:#e4e4e7}.top button:hover,.top a:hover{background:#3f3f46}' +
+      '.top .tab{color:#a1a1aa}.top .tab.on{background:#3f3f46;color:#fff}.sheet.wide{width:min(1100px,calc(100vw - 24px));height:min(760px,calc(100vh - 72px))}' +
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}</style>' +
-      '<button class="pill" part="pill" title="CodeTAC: click to see the dossier of the last action"><span class="dot"></span><span class="label">CodeTAC</span></button>';
-    shadow.querySelector('.pill').addEventListener('click', () => toggleSheet());
+      '<div class="row"><button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '</button>' +
+      '<button class="pill main" part="pill" title="CodeTAC: click to see the dossier of the last action"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
+    shadow.querySelector('.pill.main').addEventListener('click', () => { if (shown && view === 'structure') { view = 'action'; shown.remove(); shown = null; } toggleSheet(); });
+    shadow.querySelector('.pill.structure').addEventListener('click', () => {
+      if (shown && view === 'structure') { shown.remove(); shown = null; return; }
+      showStructure();
+    });
     document.documentElement.appendChild(host);
     updateBar(false);
   }
   function updateBar(flash) {
     if (!shadow) return;
-    const pill = shadow.querySelector('.pill');
+    const pill = shadow.querySelector('.pill.main');
     const last = recorded[recorded.length - 1];
     shadow.querySelector('.dot').classList.toggle('on', Boolean(last));
     shadow.querySelector('.label').textContent = last ? 'Recorded: ' + last.label : 'CodeTAC';
     if (flash) { pill.classList.remove('flash'); void pill.offsetWidth; pill.classList.add('flash'); }
-    if (shown && flash) showAction(recorded.length - 1);
+    if (shown && flash && view === 'action') showAction(recorded.length - 1);
+    // With the plan open, a new action lights up its path.
+    if (shown && flash && view === 'structure') showStructure();
+  }
+  // Action / Structure tabs at the start of the sheet's top line.
+  function tabs() {
+    return '<button class="tab' + (view === 'action' ? ' on' : '') + '" data-tab="action" title="' + barText('actionTabTitle') + '">' + barText('actionTab') + '</button>' +
+      '<button class="tab' + (view === 'structure' ? ' on' : '') + '" data-tab="structure" title="' + barText('structureTabTitle') + '">' + barText('structure') + '</button>';
+  }
+  function wireTabs() {
+    for (const button of shown.querySelectorAll('[data-tab]')) {
+      button.addEventListener('click', () => {
+        if (button.dataset.tab === view) return;
+        view = button.dataset.tab;
+        if (view === 'structure') showStructure();
+        else if (recorded.length) showAction(recorded.length - 1);
+        else { shown.remove(); shown = null; toggleSheet(); }
+      });
+    }
+  }
+  function sheet() {
+    if (!shown) {
+      shown = document.createElement('div');
+      shown.className = 'sheet';
+      shadow.appendChild(shown);
+    }
+    shown.classList.toggle('wide', view === 'structure');
+    shown.style.height = '';
+    return shown;
+  }
+  function panelMissing(panel) {
+    // The panel runs separately; without it the frame would stay blank.
+    originalFetch.call(window, panel + '/api/ping', { mode: 'no-cors', cache: 'no-store' }).catch(() => {
+      if (!shown) return;
+      const frame = shown.querySelector('iframe');
+      if (!frame) return;
+      const message = document.createElement('div');
+      message.className = 'msg';
+      message.textContent = 'The CodeTAC panel is not running. Stop the app (Ctrl+C) and run codetac again.';
+      frame.replaceWith(message);
+    });
+  }
+  function showStructure() {
+    view = 'structure';
+    const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
+    const last = recorded[recorded.length - 1];
+    const query = 'run=' + encodeURIComponent(config.run || '') + (last ? '&action=' + encodeURIComponent(last.id) : '');
+    sheet().innerHTML = '<div class="top">' + tabs() + '<b></b><a target="_blank" rel="noopener" title="' + barText('openPanelTitle') + '">' + barText('openPanel') + '</a><button data-close title="' + barText('close') + '">✕</button></div>' +
+      '<iframe title="' + barText('frameTitle') + '"></iframe>';
+    shown.querySelector('a').href = panel + '/structure?' + query;
+    shown.querySelector('iframe').src = panel + '/structure?embed=1&' + query;
+    shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
+    wireTabs();
+    panelMissing(panel);
   }
   function toggleSheet() {
     if (shown) { shown.remove(); shown = null; return; }
+    if (view === 'structure') { showStructure(); return; }
     if (recorded.length) { showAction(recorded.length - 1); return; }
     // Nothing recorded on this page yet: say so instead of doing nothing.
     const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
-    shown = document.createElement('div');
-    shown.className = 'sheet';
-    shown.style.height = 'auto';
-    shown.innerHTML = '<div class="top"><b>CodeTAC</b><a target="_blank" rel="noopener">panel ↗</a><button data-close title="Close">✕</button></div>' +
+    sheet().style.height = 'auto';
+    shown.innerHTML = '<div class="top">' + tabs() + '<b></b><a target="_blank" rel="noopener">panel ↗</a><button data-close title="Close">✕</button></div>' +
       '<div class="msg">No actions recorded on this page yet. Click a button, submit a form or follow a link in the app: ' +
       'the action shows up here. Actions from other pages are in the panel.</div>';
     shown.querySelector('a').href = panel + '/';
     shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
-    shadow.appendChild(shown);
+    wireTabs();
   }
   function showAction(index) {
     const item = recorded[index];
     if (!item) return;
     const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
     const url = panel + '/?embed=1&action=' + encodeURIComponent(item.id);
-    if (!shown) {
-      shown = document.createElement('div');
-      shown.className = 'sheet';
-      shadow.appendChild(shown);
-    }
-    shown.innerHTML = '<div class="top"><b></b><button data-go="-1" title="Previous action">◀</button><button data-go="1" title="Next action">▶</button>' +
+    view = 'action';
+    sheet().innerHTML = '<div class="top">' + tabs() + '<b></b><button data-go="-1" title="Previous action">◀</button><button data-go="1" title="Next action">▶</button>' +
       '<a target="_blank" rel="noopener" title="Open in the panel">panel ↗</a><button data-close title="Close">✕</button></div>' +
       '<iframe title="Action dossier"></iframe>';
     shown.querySelector('b').textContent = (index + 1) + '/' + recorded.length + ' · ' + item.label;
@@ -572,15 +631,8 @@
     for (const button of shown.querySelectorAll('[data-go]')) {
       button.addEventListener('click', () => showAction(Math.max(0, Math.min(recorded.length - 1, index + Number(button.dataset.go)))));
     }
-    // The panel runs separately; without it the frame would stay blank.
-    originalFetch.call(window, panel + '/api/ping', { mode: 'no-cors', cache: 'no-store' }).catch(() => {
-      if (!shown) return;
-      const frame = shown.querySelector('iframe');
-      const message = document.createElement('div');
-      message.className = 'msg';
-      message.textContent = 'The CodeTAC panel is not running. Stop the app (Ctrl+C) and run codetac again.';
-      frame.replaceWith(message);
-    });
+    wireTabs();
+    panelMissing(panel);
   }
   // Mounted after the page has loaded, so it never takes part in hydration.
   function whenLoaded() {

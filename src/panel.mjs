@@ -10,8 +10,12 @@ import { dataDirectory } from './home.mjs';
 import { createActionView } from './action-view.mjs';
 import { digestAction, digestRequest } from './digest.mjs';
 import { LABELS } from './sentences.mjs';
-import { answerQuestion, createPurposes, describeConfig, loadConfig } from './ai.mjs';
+import { answerQuestion, complete, createPurposes, describeConfig, loadConfig } from './ai.mjs';
+import { createStructureService, isLoopback } from './structure/service.mjs';
+import { planPageWithText } from './structure/text.mjs';
+import { maskKeys } from './structure/node/modules.mjs';
 
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const directory = dataDirectory();
 const portIndex = process.argv.indexOf('--port');
 const port = Number(portIndex > 0 ? process.argv[portIndex + 1] : process.env.CODETAC_PANEL_PORT || 4000);
@@ -38,7 +42,8 @@ function source(run, file, line, endLine) {
   const lines = readFileSync(real, 'utf8').split('\n');
   const start = Math.max(1, line);
   const end = Math.min(lines.length, endLine && endLine >= start ? Math.min(endLine, start + 400) : start + 40);
-  return { file: within, start, end, lines: lines.slice(start - 1, end) };
+  // Keys written in the code are masked, here as in the structure (principle 4).
+  return { file: within, start, end, lines: lines.slice(start - 1, end).map(maskKeys) };
 }
 
 const view = createActionView(store);
@@ -51,6 +56,12 @@ else console.log(`Purpose sentences: fixed, built from the facts${ai.problem ? `
 const EDITORS = { vscode: 'vscode', cursor: 'cursor', windsurf: 'windsurf', vscodium: 'vscodium' };
 const editor = String(process.env.CODETAC_EDITOR ?? 'vscode').toLowerCase();
 const editorScheme = EDITORS[editor] ?? null;
+
+// The project's structure (StructureTAC): the folder of each recording.
+const structurePage = planPageWithText(readFileSync(new URL('./structure/plan-page.html', import.meta.url), 'utf8'));
+const structure = createStructureService({ rootOf: run => { store.ingest(); return store.root(run); }, editor: editorScheme, ai: { config: ai, complete },
+  recordings: { actions: run => { store.ingest(); return store.listActions({ run, limit: 50 }); }, action: id => view.resolvedAction(id), request: id => requestWithDigest(id),
+    outgoing: run => { store.ingest(); return store.outgoing(run); } } });
 
 // Detail requests live in the recording's folder, where the running
 // application reads them (runtime.mjs).
@@ -96,13 +107,20 @@ const server = http.createServer(async (request, response) => {
       response.end(page);
       return;
     }
+    if (url.pathname === '/structure') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+        'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
+      response.end(structurePage);
+      return;
+    }
     if (url.pathname === '/favicon.ico') {
       response.writeHead(204);
       response.end();
       return;
     }
     if (url.pathname === '/api/ping') {
-      json(response, 200, { ok: true });
+      // The version lets a newer codetac refuse to reuse an older panel.
+      json(response, 200, { ok: true, version: VERSION, pid: process.pid });
       return;
     }
     if (url.pathname === '/api/runs') {
@@ -119,6 +137,19 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/actions') {
       store.ingest();
       json(response, 200, store.listActions({ limit: Number(url.searchParams.get('limit') || 200), run: url.searchParams.get('run') || undefined }));
+      return;
+    }
+    // Structure: read-only, and only for the panel's own pages on this computer.
+    if (url.pathname === '/api/structure' || url.pathname.startsWith('/api/structure/')) {
+      const post = request.method === 'POST' && url.pathname === '/api/structure/explain';
+      if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
+        || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
+        || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {
+        json(response, 403, { error: 'Request refused.' });
+        return;
+      }
+      const answer = await structure.handle(url.pathname, url.searchParams, post ? { method: 'POST', body: await body(request) } : {});
+      json(response, answer.status, answer.body);
       return;
     }
     if (url.pathname === '/api/config') {
@@ -440,7 +471,7 @@ function rowHtml(n, c, depth, open) {
       '<span class="where" title="' + esc(where) + '">' + esc(n.function) + (where ? ' · ' + esc(where.split('/').pop()) : '') + '</span>' + (n.error ? ' <span class="tag" style="color:var(--error)">error</span>' : '') +
       (n.opaque ? ' <span class="tag" title="This part runs, but CodeTAC cannot see what it does inside.">opaque</span>' : '') + afterTag(n) +
       (n.opaque ? '' : '<span class="acts"><button class="mini' + (on ? ' on' : '') + '" data-detalhe="' + esc(n.id) + '" title="' + (on ? 'Detail requested: the next run records the values. Click to turn it off.' : 'Record the input and output values and the lines run of this function, from the next action on') + '">' + (on ? 'detail on' : 'request detail') + '</button>' +
-      editorLink(n.file, n.line) + '</span>') + '</span><span class="time">' + ms(n.durationMs) + '</span></div>' + (n.detail ? valuesHtml(n, valuesPad) : '');
+      editorLink(n.file, n.line) + planLink(n, c) + '</span>') + '</span><span class="time">' + ms(n.durationMs) + '</span></div>' + (n.detail ? valuesHtml(n, valuesPad) : '');
   } else {
     const r = n.result || {};
     row = '<div class="step boundary' + (n.error || r.error ? ' error' : '') + '" ' + pad + ' data-step="' + esc(n.id) + '">' + caret + '<span class="body"><span class="tag k-' + esc(n.kind) + '">' + esc(kindLabel(n.kind)) + '</span>' + afterTag(n) +
@@ -456,6 +487,15 @@ function rowHtml(n, c, depth, open) {
 // A step starts open when there is a boundary, an error or recorded values
 // inside it, so the way to them is visible; groups start closed.
 function busy(n) { return (n.children || []).some(c => c.type === 'boundary' || c.error || c.detail || busy(c)); }
+// The step on the Structure plan: the whole action lit, this function in focus.
+function planLink(n, c) {
+  if (!c.run || !n.file || n.line == null || !c.root) return '';
+  const rel = relative(c.root, n.file);
+  if (rel === n.file) return '';
+  const target = selected && selected.type === 'action' ? 'action=' + encodeURIComponent(selected.id) : 'request=' + encodeURIComponent(c.req);
+  const url = '/structure?' + (embed ? 'embed=1&' : '') + 'run=' + encodeURIComponent(c.run) + '&' + target + '&focus=' + encodeURIComponent(rel + '#' + n.function + '@' + n.line);
+  return ' <a class="mini" href="' + esc(url) + '" title="Show this step on the plan of the project, with the whole action lit">see on plan</a>';
+}
 function nodesHtml(nodes, c, depth, forced) {
   return nodes.map(n => rowHtml(n, c, depth, forced === false ? false : n.type === 'group' ? false : busy(n))).join('');
 }

@@ -20,6 +20,8 @@ Click a button in your app and codeTAC shows a **dossier** of that action:
 
 On any step, you can open that function's code and ask a question about it.
 
+Next to the dossier, **Structure** shows the floor plan of the whole project, with the path of each action lit on it ([section 5](#5-the-projects-structure)).
+
 Everything runs on your computer. Your app's code is not changed.
 
 ## Which apps it works with
@@ -33,7 +35,7 @@ Everything runs on your computer. Your app's code is not changed.
 - TanStack Start;
 - projects with a separate frontend and backend, and monorepos (npm, pnpm, yarn).
 
-Other Node apps should work (Nuxt, SvelteKit, Astro, Remix, NestJS, Fastify…), but have not been tested yet. If something fails, see [section 6](#6-when-something-does-not-work).
+Other Node apps should work (Nuxt, SvelteKit, Astro, Remix, NestJS, Fastify…), but have not been tested yet. If something fails, see [section 7](#7-when-something-does-not-work).
 
 **Python — tested with:**
 - FastAPI (`async def` and `def` functions), with uvicorn, `fastapi dev` or gunicorn;
@@ -130,7 +132,82 @@ For an app it already knows, the first dossier usually arrives in less than a mi
 - **Lasting effects:** what remained after the action (rows written, emails, cookies). “No lasting effect observed” means the action only read.
 - **Minimal mode** (yellow strip): codeTAC could not follow the project's functions and shows only the requests, the boundaries and the browser. The strip says why.
 
-## 5. AI explanations (optional)
+## 5. The project's structure
+
+The dossier shows one action. **Structure** shows the whole project: a floor plan of what it is made of, read from the code on your computer, without running it.
+
+**How to open it:** click **Structure** in the bar at the bottom right of your app (next to the dossier pill), or use the **Structure** tab of the sheet. The plan opens with the path of your last action lit. `codetac structure` in the Terminal lists the same blocks as text, with the tables and a summary of the structure's health.
+
+**What each view shows:**
+- **The plan.** The project's files grouped in blocks, in layers from top to bottom: Interface, Routes and API, Logic, Data access, External integrations (and a last row with utilities, configuration, tests and unknown files). Click a block to open it and see its files; click a file to see its functions and routes. Arrows are the imports and the calls between them; the number on an arrow is how many there are. The search box finds a file, a function or a route by name.
+- **The card of a block** (click a block): what it is for, who uses it, what it uses, the data it touches, its largest files and its entry points. Every line comes from the code: click it to see the file and line that prove it. **Explain with AI…** is optional: it first shows exactly what would be sent (only the facts of the card, never code), and an explanation that names something not in the facts is rejected.
+- **The path of an action.** After an action, the blocks, files and arrows it went through are lit and the rest is dimmed. In the dossier, **see on plan** on a step shows that function on the plan. The card lists the **actions that pass here**. **What never ran** dashes the arrows that no action of this session went through.
+- The plan **follows your changes**: when you save a file, it is read again and redrawn within a few seconds.
+- **What leaves the machine** (button at the top of the plan): every service your code sends data to — AI, databases, payments, email, analytics, monitoring and any other address — with where it is called (file and line), whether the call is made **from the browser** (the service then sees the user's IP address and the data directly) or from the server, where the data goes (the address, “comes from the variable X”, or unknown: never guessed) and the **jurisdiction** you wrote for it. It also shows what this session saw going out: calls and the **names** of the fields sent (never their values), and, apart, hosts that received calls the code as read does not show.
+- **Secrets and variables** (button next to it): every environment variable, where it is defined (`.env` files, by name only) and where it is read, in the browser or on the server. **Alerts:** a secret with the framework's public prefix (`NEXT_PUBLIC_`, `VITE_`…), whose value goes into the browser code; a `.env` file followed by git; a key written in the code (its kind and public prefix only, such as `sk_test_…`). **Warnings:** a secret read in browser code without the prefix; a `.env` file no `.gitignore` rule covers. And two separate lists: **defined but never used**, **used but never defined**. Keys made to be public (the Supabase anon key, Stripe publishable keys) never alert; a `service_role` key always does.
+
+- **Data model** (button next to it): the project's tables, read from its schema — Prisma, Drizzle, SQL migrations or the types Supabase generates, in that order — and from the code that uses them (`supabase.from('t')`, SQL in `query(…)`, `prisma.model.findMany()`, Drizzle's `db.select().from(t)`). A diagram with zoom shows each table with its columns (◆ key, → a column pointing to another table) and the links between tables; a table known only from its use in the code is dashed. Click a table for its card: **who reads it and who writes it** (the function, file, block and line, in the browser or on the server, and the operation: `select`, `insert`, `update`, `upsert`, `delete`), where it is defined and its **row level security** (on or off, and how many policies, when the project's SQL files say it — information, not an audit). **Alert:** a table whose row level security is off and that code running in the browser reads or writes directly (anyone with the project's public key can then read or change it). **Warnings:** a table used but not defined, and one defined but never used (only when the project has a schema).
+- **Structure health** (button next to it): organisation problems that AI-written code tends to pile up — files that import each other in a loop; browser code that talks straight to the database or an outside service although the project has its own server routes; a block or file everything depends on (or that depends on everything); copied code; files nothing imports and no framework or script starts; very large files; exports no file imports. Each one says what it is and why it matters, with its proof, and **Show in the plan** opens it on the plan. Entry points of frameworks (Next.js pages, layouts, routes and middleware, tests, config files, what `package.json` starts) are never called dead; when in doubt (a folder frameworks load by themselves, a `public/` file, a module loaded at run time from that folder) it says **possibly**, and why. Nothing blocks: it is information.
+
+**Where each arrow comes from:**
+
+| Arrow | Origin | Meaning |
+| --- | --- | --- |
+| solid | static | read from the code: an `import`, a call to a function of the project, a `fetch` to a route of the project |
+| dotted (“not certain”) | static, possible | read from the code, but it could not be confirmed (for example, two functions with the same name) |
+| orange, dashed (“seen only at run time”) | observed | it happened in an action, but is not in the code as read (for example, a module chosen at run time) |
+| lit, dotted | inferred | this action probably used it: the browser did not say from where exactly |
+
+A file placed by the optional AI suggestions (`codetac structure --suggest`, only for Unknown files) stays marked as a suggestion until you confirm it with `--reclassify`.
+
+**Configuration (optional):** a file `codetac.structure.json` at the project root. codeTAC never creates it on its own, except when you move a file with `codetac structure --reclassify`.
+
+```json
+{
+  "version": 1,
+  "ignore": ["generated/", "*.stories.tsx"],
+  "layers": { "src/jobs/": "logic", "packages/db/": "data" },
+  "reclassify": { "misc/seed.js": "data" },
+  "services": [
+    { "id": "openai", "jurisdiction": "USA" },
+    { "id": "acme", "name": "Acme CRM", "category": "http", "hosts": ["api.acme.example"], "jurisdiction": "EU (Frankfurt)" }
+  ],
+  "env": { "platform": ["PORT", "DATABASE_URL"] },
+  "smells": { "largeFileLines": 600, "off": ["unused-export"] }
+}
+```
+
+- `ignore`: files left out of the plan, on top of `.gitignore` (same patterns: `*`, `**`, a trailing `/` for a folder);
+- `layers`: your own rules, pattern → block, applied before codeTAC's (the first that matches wins);
+- `reclassify`: one file → block; always wins;
+- blocks: `interface`, `routes`, `logic`, `data`, `external`, `config`, `utilities`, `tests`, `unknown`;
+- `services`: the **jurisdiction** of a service (where it keeps the data — codeTAC never fills it in), or a service of your own (`id`, `name`, a `category` among `ai`, `database`, `payments`, `analytics`, `monitoring`, `email`, `messaging`, `storage`, `auth`, `http`, and its `hosts` or its SDK: `"sdk": [{ "package": "@acme/sdk", "create": ["Acme"] }]`). About 50 services are known out of the box;
+- `env.platform`: variables set outside the `.env` files (your hosting platform, the CI), so they are not listed as “used but never defined”;
+- `smells` sets the limits of the structural smells (`largeFileLines` 400, `duplicateTokens` 80, `duplicateLines` 8, `couplingFiles` 25, `couplingBlocks` 4) and turns kinds off (`"off": ["unused-export"]`). Nothing blocks: smells are information.
+
+A mistake in the file is shown on the plan and never stops it.
+
+**Project size:** recommended up to **10 000 files**. Measured on a Mac: 1 000 files are read in 0.1 s the first time; 10 000 files in 0.9 s the first time and 0.3 s after that (or after a change); 30 000 files in 3.1 s and 1.1 s. Drawing the plan takes less than 50 ms; at 10 000 files the data model takes 10 ms and the structure's health 0.2 s the first time (it reads the code to find copies) and 0.06 s after that. Results are kept in `~/.codetac/structure/`, outside the project.
+
+**What the static reading does not see** (so the plan may miss an arrow, or place a file in Unknown):
+- code chosen at run time: `import()` of a computed path, `require(variable)`, functions passed around as values, event emitters, queues, `eval`;
+- a request whose address is in a variable (the plan says “destination unknown”), or made through a client of your own instead of `fetch`, `axios`, `ky` or `ofetch`;
+- routes declared in other ways than `app.get('/path', …)`, `router.post(…)`, `app.use('/prefix', router)`, Fastify's `register(…, { prefix })`, Next.js `route.ts`/`pages/api`;
+- calls to a function not by its name (`obj[name]()`, a method of a class instance);
+- functions inside functions (what they do counts for the function that contains them);
+- the code inside `.vue` and `.svelte` files (they are listed as Interface);
+- pages are files, not routes: only API endpoints are routes;
+- only Node.js projects for now (JavaScript and TypeScript). Python projects get the dossier, not the plan yet;
+- **services:** a call through a client of your own, or an SDK outside the catalogue, is not seen; a service whose address comes from a variable is never matched with what was seen going out (codeTAC does not read the variable's value); field names are recorded only for calls made with `fetch` (not axios/`http`, not from the browser, not in Python apps);
+- **tables:** tables whose name comes from a variable, SQL built in pieces, `rpc`, `$queryRaw`, Knex/Kysely/TypeORM/Sequelize and Mongoose are not seen; migrations written in code are not read; row level security is read from the project's SQL files only (not from the Supabase dashboard or the live database) and the content of the policies is not checked;
+- **structure health:** unused functions inside a used file are not found; `require()`/`import()` count as using everything; copied code counts only when the names are the same; frameworks other than Next.js are known by their usual folders and names only (so “possibly”);
+- **variables:** indirect reads (`const env = process.env; env.X`, `@t3-oss/env`, `zod` schemas, `process.env[name]`) are not seen; in a monorepo, variables are joined by name across packages; Vite's `envPrefix` is read only when written literally in `vite.config`; keys written in the code are recognised only by known shapes (Stripe, OpenAI, Anthropic, AWS, GitHub, Slack, Google, SendGrid, private keys, Supabase `service_role` JWTs).
+
+**Secret values are never shown.** Only names, files and lines: no value of a variable or key is shown on these pages, stored in `~/.codetac/structure/` or sent to an AI, and keys written in the code are masked in every code excerpt (`sk_test_••••••`). A test looks for the secret values of the test projects in everything codeTAC produces and must find none.
+
+The path of an action fills part of that gap: what really ran is lit, and an arrow that was not in the code shows up as observed.
+
+## 6. AI explanations (optional)
 
 With no configuration:
 - if [Ollama](https://ollama.com) is running on this computer, codeTAC uses it, and nothing leaves the machine;
@@ -155,7 +232,7 @@ With a cloud model, excerpts of the functions' code are sent, after secrets are 
 - **“AI”** next to a sentence: the sentence came from the model and matches what was recorded.
 - **“AI rejected”:** the model's sentence said something that was not observed. It was replaced by the sentence built from the facts. Hover over it to see why.
 
-## 6. When something does not work
+## 7. When something does not work
 
 With the app running, in another Terminal window and in the same folder:
 
@@ -187,20 +264,24 @@ codetac report
 
 It saves the diagnosis to a file, with no code or data from the app. Send it with a description of what you did and what you expected at [github.com/deltaxmodules/codetacvibe/issues](https://github.com/deltaxmodules/codetacvibe/issues).
 
-## 7. Privacy
+## 8. Privacy
 
 - Everything stays on your computer, in `~/.codetac` (another folder with `CODETAC_HOME`).
 - Before recording, secrets are removed: passwords, tokens, keys, emails and phone numbers.
 - By default no values are recorded, only names, files and lines. Values are recorded only in the functions where you request detail.
 - The panel only answers on this computer (`127.0.0.1`).
+- Structure reads the project's files on your computer and keeps only paths, names, lines and hashes (in `~/.codetac/structure/`). Of `.env` files it keeps only a hash, and it never shows their contents.
 
-## 8. Commands
+## 9. Commands
 
 | Command | What it does |
 | --- | --- |
 | `codetac [folder]` | Starts the app with codeTAC |
 | `codetac diagnose [folder]` | Explains what works and what does not |
 | `codetac report [folder]` | Saves the diagnosis to attach to an issue |
+| `codetac structure [folder]` | Lists the project's files by block, its tables and a summary of the structure's health |
+| `codetac structure --reclassify <file> <block\|auto>` | Places a file in a block yourself (`auto` gives it back to the rules) |
+| `codetac structure --suggest` | Asks the AI about the Unknown files, showing first what is sent |
 | `codetac help` | All the options |
 | `codetac --version` | The installed version |
 
@@ -217,7 +298,7 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 | `--no-open` | do not open the browser |
 | `-- <command>` | the start command, for example `codetac -- node server.js` or `codetac -- uvicorn main:app --reload` |
 
-## 9. Limits
+## 10. Limits
 
 - The kinds of app that work and those that do not are in [Which apps it works with](#which-apps-it-works-with).
 - It is meant for development, on your computer. It does not work for apps in production.
@@ -254,11 +335,12 @@ Version 0.3.0 is in English and renames the commands and options:
 
 ## Development
 
+This repository holds the published code: the same files as the npm package. The tests and the test projects are kept in the development repository (some of them hold fake keys on purpose, to test the secret alerts, and are not published).
+
 ```sh
 git clone https://github.com/deltaxmodules/codetacvibe.git
 cd codetacvibe
 npm ci
-npm test
 node src/cli.mjs help
 ```
 

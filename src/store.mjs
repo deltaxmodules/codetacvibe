@@ -406,6 +406,26 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
     return db.prepare('select root from runs where run = ?').get(run)?.root ?? null;
   }
 
+  // The server's calls to other hosts in a recording (StructureTAC phase 4):
+  // host, kind, provider and the names of the fields sent (never values),
+  // newest first. Calls to this computer are left out.
+  function outgoing(run, { limit = 2000 } = {}) {
+    const rows = db.prepare(`select e.process, e.type, e.id, e.data, r.request_id, r.at from events e join requests r on r.request_id = e.request_id
+      where r.run = ? and e.type in ('boundary', 'boundary-end') order by r.at desc limit ?`).all(run, limit * 2);
+    const ends = new Map(rows.filter(row => row.type === 'boundary-end').map(row => [`${row.process}:${row.id}`, JSON.parse(row.data)]));
+    const calls = [];
+    for (const row of rows) {
+      if (row.type !== 'boundary') continue;
+      const data = JSON.parse(row.data);
+      if (!data.host || data.local || !['http', 'ia', 'email', 'mensagem', 'pagamento', 'base-de-dados', 'autenticação', 'ficheiros'].includes(data.kind)) continue;
+      const end = ends.get(`${row.process}:${row.id}`) ?? {};
+      calls.push({ host: data.host, kind: data.kind, provider: data.provider ?? null, method: data.method ?? null, path: data.path ?? null,
+        fields: end.fields ?? data.fields ?? null, requestId: row.request_id, at: row.at });
+      if (calls.length >= limit) break;
+    }
+    return calls;
+  }
+
   // Browser positions already resolved to project files, so that a dossier
   // keeps its locations after the application (and its source maps) stops.
   const originGet = db.prepare('select data from origins where key = ?');
@@ -425,5 +445,5 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
     set: (key, value) => purposeSet.run(key, JSON.stringify(value), Date.now()),
   };
 
-  return { ingest, listRuns, cachedOrigin, cacheOrigin, purposeCache, listRequests, listActions, actionDossier, dossier, root, recordedFile, close: () => db.close() };
+  return { ingest, listRuns, cachedOrigin, cacheOrigin, purposeCache, listRequests, listActions, actionDossier, dossier, root, outgoing, recordedFile, close: () => db.close() };
 }
