@@ -56,7 +56,7 @@
       "saida": {
         "operation": "UPDATE",
         "tables": [
-          "public"
+          "notes"
         ],
         "sql": "UPDATE \"public\".\"notes\" SET title=$1 WHERE notes.id = $2"
       }
@@ -214,6 +214,37 @@
           "t"
         ],
         "sql": "select * from t where name = 'unterminated"
+      }
+    },
+    {
+      "entrada": "INSERT INTO `main`.`Invoice` (`customer`, `total`) VALUES (?,?) RETURNING `id` AS `id`",
+      "saida": {
+        "operation": "INSERT",
+        "tables": [
+          "Invoice"
+        ],
+        "sql": "INSERT INTO `main`.`Invoice` (`customer`, `total`) VALUES (?,?) RETURNING `id` AS `id`"
+      }
+    },
+    {
+      "entrada": "select * from \"billing\".\"invoices\" i join public.users u on u.id = i.user_id",
+      "saida": {
+        "operation": "SELECT",
+        "tables": [
+          "billing.invoices",
+          "users"
+        ],
+        "sql": "select * from \"billing\".\"invoices\" i join public.users u on u.id = i.user_id"
+      }
+    },
+    {
+      "entrada": "DELETE FROM [dbo].[Order Lines] WHERE id = @P1",
+      "saida": {
+        "operation": "DELETE",
+        "tables": [
+          "Order Lines"
+        ],
+        "sql": "DELETE FROM [dbo].[Order Lines] WHERE id = @P1"
       }
     },
     {

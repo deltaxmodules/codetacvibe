@@ -6,6 +6,7 @@ import diagnostics from 'node:diagnostics_channel';
 import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
@@ -39,8 +40,11 @@ export function describeSql(sql) {
   if (typeof sql !== 'string') return { operation: 'consulta' };
   const text = sql.replace(/'(?:[^'\\]|\\.|'')*'/g, "'?'").replace(/\s+/g, ' ').trim();
   const operation = (text.match(/^\s*(\w+)/)?.[1] ?? 'consulta').toUpperCase();
-  const tables = [...text.matchAll(/\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+[`"[]?([\w.]+)/gi)]
-    .map(match => match[1]).filter(name => !/^(select|if|not|exists)$/i.test(name));
+  // Names may be quoted ("public"."notes", `main`.`Invoice`, [dbo].[t]); the
+  // default schemas (public, main, dbo) are dropped, others are kept.
+  const tables = [...text.matchAll(/\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+((?:(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+)\.)*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+))/gi)]
+    .map(match => match[1].replace(/["`[\]]/g, '').replace(/^(public|main|dbo)\./i, ''))
+    .filter(name => name && !/^(select|if|not|exists)$/i.test(name));
   return { operation, tables: [...new Set(tables)].slice(0, 10), sql: text.slice(0, 2000) };
 }
 
@@ -349,12 +353,12 @@ function installHttpClients(runtime) {
     try {
       const sent = entry.sent.length ? aiRequestDetails(JSON.parse(Buffer.concat(entry.sent).toString('utf8'))) : {};
       const request = { ...sent, ...Object.fromEntries(Object.entries(entry.request).filter(([, value]) => value !== undefined)) };
-      return { ...request, ...aiResponseDetails(Buffer.concat(entry.received).toString('utf8')) };
+      return { ...request, ...aiResponseDetails(decoded(Buffer.concat(entry.received), entry.encoding)) };
     } catch { return {}; }
   };
   diagnostics.subscribe('undici:request:headers', ({ request, response }) => {
     const entry = pending.get(request);
-    if (entry) entry.status = response.statusCode;
+    if (entry) Object.assign(entry, { status: response.statusCode, encoding: headerMap(response.headers?.map?.(String))['content-encoding'] });
   });
   diagnostics.subscribe('undici:request:trailers', ({ request }) => {
     const entry = pending.get(request);
@@ -382,6 +386,23 @@ function installHttpClients(runtime) {
     const entry = pending.get(request);
     if (entry) { pending.delete(request); entry.end({ error: true }); }
   });
+}
+
+// Captured AI bodies may be compressed on the wire (fetch reports them before
+// decoding). Only the bounded copy is decoded.
+function decoded(buffer, encoding) {
+  const kind = String(encoding ?? '').trim().toLowerCase();
+  try {
+    if (kind === 'gzip' || kind === 'x-gzip') return zlib.gunzipSync(buffer, { finishFlush: zlib.constants.Z_SYNC_FLUSH }).toString('utf8');
+    if (kind === 'br') return zlib.brotliDecompressSync(buffer, { finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH }).toString('utf8');
+    if (kind === 'deflate') {
+      // Servers send it with or without the zlib wrapper.
+      const options = { finishFlush: zlib.constants.Z_SYNC_FLUSH };
+      try { return zlib.inflateSync(buffer, options).toString('utf8'); } catch { return zlib.inflateRawSync(buffer, options).toString('utf8'); }
+    }
+    if (kind === 'zstd' && zlib.zstdDecompressSync) return zlib.zstdDecompressSync(buffer).toString('utf8');
+  } catch { return ''; }
+  return buffer.toString('utf8');
 }
 
 function wrapSync(runtime, owner, name, describe, library) {

@@ -49,7 +49,9 @@ _literal = re.compile(r"'(?:[^'\\]|\\.|'')*'")
 _space = re.compile(r'\s+')
 _S = '[\\t\\n\\v\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]'
 _first = re.compile('^' + _S + '*(\\w+)', re.ASCII)
-_tables = re.compile(r'\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+[`"\[]?([\w.]+)', re.ASCII | re.IGNORECASE)
+_tables = re.compile(r'\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+((?:(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+)\.)*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+))', re.ASCII | re.IGNORECASE)
+_quotes = re.compile(r'["`\[\]]')
+_default_schema = re.compile(r'^(public|main|dbo)\.', re.ASCII | re.IGNORECASE)
 _keywords = re.compile(r'^(select|if|not|exists)$', re.ASCII | re.IGNORECASE)
 _js_trim = re.compile('^' + _S + '+|' + _S + '+$')
 
@@ -64,8 +66,8 @@ def describe_sql(sql):
     operation = (first.group(1) if first else 'consulta').upper()
     tables = []
     for match in _tables.finditer(text):
-        name = match.group(1)
-        if not _keywords.match(name) and name not in tables:
+        name = _default_schema.sub('', _quotes.sub('', match.group(1)), count=1)
+        if name and not _keywords.match(name) and name not in tables:
             tables.append(name)
     return {'operation': operation, 'tables': tables[:10], 'sql': text[:2000]}
 

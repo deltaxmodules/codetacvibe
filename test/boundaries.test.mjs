@@ -196,6 +196,38 @@ const server = http.createServer((req, res) => {
   assert.ok(!JSON.stringify(events).includes('segredo123456'));
 });
 
+test('IA por fetch com resposta comprimida (gzip, br, deflate): tokens e excertos', () => {
+  const { events, stdout } = project({ 'entry.mjs': `import http from 'node:http';
+import zlib from 'node:zlib';
+const answer = JSON.stringify({ choices: [{ message: { content: 'Total: 12 euros.' } }], usage: { prompt_tokens: 21, completion_tokens: 5 } });
+const encoders = { gzip: zlib.gzipSync, br: zlib.brotliCompressSync, deflate: zlib.deflateSync };
+const server = http.createServer((req, res) => {
+  req.resume(); req.on('end', () => {
+    const encoding = req.headers['x-enc'];
+    res.setHeader('content-type', 'application/json');
+    res.setHeader('content-encoding', encoding);
+    res.end(encoders[encoding](answer));
+  });
+}).listen(0, '127.0.0.1', async () => {
+  const results = [];
+  for (const encoding of Object.keys(encoders)) {
+    const r = await fetch('http://127.0.0.1:' + server.address().port + '/v1/chat/completions', { method: 'POST',
+      headers: { authorization: 'Bearer sk-proj-segredo555444', 'x-enc': encoding },
+      body: JSON.stringify({ model: 'gpt-' + encoding, messages: [{ role: 'user', content: 'Soma a fatura' }] }) });
+    results.push((await r.json()).usage.completion_tokens);
+  }
+  console.log(JSON.stringify(results));
+  server.close();
+});` });
+  assert.deepEqual(JSON.parse(stdout), [5, 5, 5]);
+  const calls = events.filter(e => e.type === 'boundary' && e.kind === 'ia');
+  assert.equal(calls.length, 3);
+  const ends = calls.map(call => events.find(e => e.type === 'boundary-end' && e.id === call.id));
+  assert.deepEqual(ends.map(end => [end.model, end.usage, end.answerExcerpt]), ['gzip', 'br', 'deflate'].map(encoding =>
+    [`gpt-${encoding}`, { input: 21, output: 5 }, 'Total: 12 euros.']));
+  assert.ok(!JSON.stringify(events).includes('segredo555444'));
+});
+
 test('IA: formatos Anthropic e Google', () => {
   assert.deepEqual(aiResponseDetails(JSON.stringify({ content: [{ type: 'text', text: 'Olá' }], usage: { input_tokens: 3, output_tokens: 1 } })),
     { usage: { input: 3, output: 1 }, answerExcerpt: 'Olá' });
