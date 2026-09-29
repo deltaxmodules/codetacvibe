@@ -117,6 +117,19 @@ test('frases das fronteiras e resumo dos efeitos', () => {
   assert.equal(none.effects.none, 'No lasting effect observed.');
 });
 
+test('Redis: frases de chaves, não de linhas, e efeitos agrupados por chave', () => {
+  const redis = (id, operation, command, key, result) => ({ id, type: 'boundary', kind: 'base-de-dados', library: 'ioredis', operation, command, tables: [key], result });
+  assert.equal(boundarySentence(redis('a', 'SELECT', 'GET', 'orders:open', { rows: 0 })), 'Reads Redis key orders:open (not found)');
+  assert.equal(boundarySentence(redis('b', 'UPDATE', 'SET', 'lock:{n}', { affectedRows: 0 })), 'SET on Redis key lock:{n}; nothing stored');
+  assert.equal(boundarySentence(redis('c', 'DELETE', 'LPOP', 'jobs', { affectedRows: 1 })), 'Removes items from Redis key jobs (LPOP)');
+  const view = digestRequest(dossier([
+    redis('d', 'UPDATE', 'HSET', 'cart:{n}', { affectedRows: 1 }), redis('e', 'UPDATE', 'EXPIRE', 'cart:{n}', { affectedRows: 1 }),
+    redis('f', 'DELETE', 'DEL', 'orders:open', { affectedRows: 1 }), redis('g', 'UPDATE', 'SETNX', 'lock:{n}', { affectedRows: 0 })]));
+  assert.deepEqual(view.effects.items.map(item => item.text),
+    ['Redis key cart:{n} written (2 commands)', 'Redis key orders:open deleted', 'SETNX on Redis key lock:{n} changed nothing']);
+  assert.equal(view.effects.lasting, 2);
+});
+
 test('ação: pedidos da ferramenta de desenvolvimento agrupados (M8) e resumo de uma linha', () => {
   assert.ok(isDevToolRequest('/_next/static/webpack/abc.webpack.hot-update.json'));
   assert.ok(isDevToolRequest('/@vite/client'));

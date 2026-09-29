@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { classifyHttp, describeSql, safePath, aiResponseDetails } from '../src/boundaries.mjs';
+import { classifyHttp, describeSql, safePath, aiResponseDetails, redisKeyPattern, describeRedis, redisResult } from '../src/boundaries.mjs';
 
 // Runs an entry file inside a temporary project and returns the recorded events.
 function project(files, entry = 'entry.mjs', env = {}) {
@@ -196,6 +196,69 @@ const server = http.createServer((req, res) => {
   assert.ok(!JSON.stringify(events).includes('segredo123456'));
 });
 
+test('IA por http/https (axios, SDKs antigos): tokens e excertos, respostas comprimidas, sem chaves', () => {
+  const { events, stdout } = project({ 'entry.mjs': `import http from 'node:http';
+import zlib from 'node:zlib';
+const answer = JSON.stringify({ choices: [{ message: { content: 'Total: 12 euros.' } }], usage: { prompt_tokens: 21, completion_tokens: 5 } });
+const server = http.createServer((req, res) => {
+  let body = ''; req.on('data', c => body += c); req.on('end', () => {
+    const { stream } = JSON.parse(body);
+    if (stream) {
+      res.setHeader('content-type', 'text/event-stream');
+      res.write('data: {"type":"content_block_delta","delta":{"text":"Bom "}}\\n\\n');
+      setTimeout(() => res.end('data: {"type":"content_block_delta","delta":{"text":"dia"}}\\n\\ndata: {"type":"message_delta","usage":{"input_tokens":9,"output_tokens":2}}\\n\\n'), 20);
+    } else if (req.headers['x-enc'] === 'br') {
+      res.setHeader('content-encoding', 'br'); res.end(zlib.brotliCompressSync(answer));
+    } else {
+      res.setHeader('content-encoding', 'gzip'); res.end(zlib.gzipSync(answer));
+    }
+  });
+}).listen(0, '127.0.0.1', async () => {
+  const port = server.address().port;
+  function post(path, payload, headers = {}) {
+    return new Promise((ok, fail) => {
+      const req = http.request({ host: '127.0.0.1', port, path, method: 'POST',
+        headers: { authorization: 'Bearer sk-proj-segredo987654', 'content-type': 'application/json', ...headers } }, res => {
+        const parts = []; res.on('data', c => parts.push(c)); res.on('end', () => ok(Buffer.concat(parts)));
+      });
+      req.on('error', fail);
+      const text = JSON.stringify(payload);
+      req.write(text.slice(0, 10)); req.end(text.slice(10));
+    });
+  }
+  async function viaHttp() {
+    const raw = await post('/v1/chat/completions', { model: 'gpt-http', messages: [{ role: 'user', content: 'Soma a fatura de ana@example.com' }] });
+    return JSON.parse(zlib.gunzipSync(raw)).choices[0].message.content;
+  }
+  async function viaHttpBrotli() {
+    const raw = await post('/v1/chat/completions', { model: 'gpt-br', messages: [{ role: 'user', content: 'Outra' }] }, { 'x-enc': 'br' });
+    return JSON.parse(zlib.brotliDecompressSync(raw)).usage.prompt_tokens;
+  }
+  async function viaHttpStream() {
+    return (await post('/v1/messages', { model: 'claude-teste', stream: true, messages: [{ role: 'user', content: 'Saúda' }] })).toString();
+  }
+  async function viaFetchGzip() {
+    const r = await fetch('http://127.0.0.1:' + port + '/v1/chat/completions', { method: 'POST',
+      body: JSON.stringify({ model: 'gpt-fetch', messages: [{ role: 'user', content: 'Via fetch' }] }) });
+    return (await r.json()).usage.completion_tokens;
+  }
+  console.log(JSON.stringify([await viaHttp(), await viaHttpBrotli(), (await viaHttpStream()).includes('dia'), await viaFetchGzip()]));
+  server.close();
+});` });
+  assert.deepEqual(JSON.parse(stdout), ['Total: 12 euros.', 21, true, 5]);
+  const calls = events.filter(e => e.type === 'boundary' && e.kind === 'ia');
+  assert.equal(calls.length, 4);
+  const ends = calls.map(call => events.find(e => e.type === 'boundary-end' && e.id === call.id));
+  assert.deepEqual([calls[0].library, ends[0].model, ends[0].usage, ends[0].answerExcerpt, ends[0].status],
+    ['http', 'gpt-http', { input: 21, output: 5 }, 'Total: 12 euros.', 200]);
+  assert.equal(ends[0].promptExcerpt, 'Soma a fatura de a***@e***');
+  assert.deepEqual([ends[1].model, ends[1].usage], ['gpt-br', { input: 21, output: 5 }]);
+  assert.deepEqual([ends[2].model, ends[2].usage, ends[2].answerExcerpt, ends[2].stream], ['claude-teste', { input: 9, output: 2 }, 'Bom dia', true]);
+  assert.ok(ends[2].durationNs >= 15e6, 'a chamada em streaming acaba com o corpo, não com os cabeçalhos');
+  assert.deepEqual([calls[3].library, ends[3].model, ends[3].usage], ['fetch', 'gpt-fetch', { input: 21, output: 5 }]);
+  assert.ok(!JSON.stringify(events).includes('segredo987654'));
+});
+
 test('IA por fetch com resposta comprimida (gzip, br, deflate): tokens e excertos', () => {
   const { events, stdout } = project({ 'entry.mjs': `import http from 'node:http';
 import zlib from 'node:zlib';
@@ -288,4 +351,185 @@ const server = http.createServer(handler).listen(0, '127.0.0.1', async () => {
 ` });
   assert.ok(events.filter(event => event.type === 'enter').length >= 4000);
   assert.deepEqual(events.filter(event => event.type === 'boundary' && event.kind === 'ficheiros'), []);
+});
+
+test('MongoDB: cada comando do driver é uma fronteira, com coleção e nomes dos filtros, sem valores', () => {
+  const execute = `class Find { get commandName() { return 'find'; } constructor(filter) { this.ns = { collection: 'users' }; this.filter = filter; } }
+class Insert { get commandName() { return 'insert'; } constructor() { this.ns = { collection: 'users' }; } }
+class EndSessions { get commandName() { return 'endSessions'; } }
+async function executeOperation(client, operation) {
+  await new Promise(ok => setTimeout(ok, 1));
+  if (operation.commandName === 'find') return { length: 3 };
+  if (operation.commandName === 'insert') return { acknowledged: true, insertedId: 'x' };
+  return { ok: 1 };
+}
+module.exports = { executeOperation, Find, Insert, EndSessions };
+`;
+  const { events, stdout } = project({
+    'node_modules/mongodb/lib/operations/execute_operation.js': execute,
+    'entry.cjs': `const m = require('./node_modules/mongodb/lib/operations/execute_operation.js');
+async function signup() {
+  const found = await m.executeOperation({}, new m.Find({ email: 'jorge@example.com', age: { $gt: 18 } }));
+  await m.executeOperation({}, new m.Insert());
+  await m.executeOperation({}, new m.EndSessions());
+  return found.length;
+}
+signup().then(n => console.log(n));`,
+  }, 'entry.cjs');
+  assert.equal(stdout.trim(), '3');
+  const boundaries = events.filter(e => e.type === 'boundary');
+  assert.deepEqual(boundaries.map(b => [b.library, b.operation, b.command, b.tables]),
+    [['mongodb', 'SELECT', 'find', ['users']], ['mongodb', 'INSERT', 'insert', ['users']]]);
+  assert.deepEqual(boundaries[0].filterKeys, ['email', 'age']);
+  assert.equal(boundaries[0].sql, 'users.find({ email: …, age: … })');
+  assert.equal(boundaries[0].parentId, events.find(e => e.function === 'signup').id);
+  const ends = Object.fromEntries(events.filter(e => e.type === 'boundary-end').map(e => [e.id, e]));
+  assert.equal(ends[boundaries[0].id].rows, 3);
+  assert.equal(ends[boundaries[1].id].affectedRows, 1);
+  assert.ok(!JSON.stringify(events).includes('jorge@example.com'));
+});
+
+test('Prisma com o motor nativo: cada operação do cliente é uma fronteira; com adaptador, não (o SQL já aparece)', () => {
+  const runtimeFile = `module.exports = function operation(method, model, value) {
+  return globalThis.PRISMA_INSTRUMENTATION.helper.runInChildSpan({ name: 'operation', attributes: { method, model, name: model + '.' + method } }, async () => value);
+};
+`;
+  const { events } = project({
+    'node_modules/@prisma/client/runtime/library.js': runtimeFile,
+    'node_modules/@prisma/client/runtime/client.js': runtimeFile,
+    'entry.cjs': `const native = require('./node_modules/@prisma/client/runtime/library.js');
+const adapter = require('./node_modules/@prisma/client/runtime/client.js');
+async function checkout() {
+  await native('findMany', 'Invoice', [{ id: 1 }, { id: 2 }]);
+  await native('updateMany', 'Invoice', { count: 3 });
+  await native('create', 'Payment', { id: 9, card: '4242' });
+  await adapter('create', 'Payment', { id: 10 });
+}
+checkout();`,
+  }, 'entry.cjs');
+  const boundaries = events.filter(e => e.type === 'boundary');
+  assert.deepEqual(boundaries.map(b => [b.library, b.operation, b.tables[0], b.sql]),
+    [['prisma', 'SELECT', 'Invoice', 'Invoice.findMany(…)'], ['prisma', 'UPDATE', 'Invoice', 'Invoice.updateMany(…)'], ['prisma', 'INSERT', 'Payment', 'Payment.create(…)']]);
+  const ends = boundaries.map(b => events.find(e => e.type === 'boundary-end' && e.id === b.id));
+  assert.deepEqual(ends.map(e => e.rows ?? e.affectedRows), [2, 3, 1]);
+  assert.equal(boundaries[0].parentId, events.find(e => e.function === 'checkout').id);
+  assert.ok(!JSON.stringify(events).includes('4242'));
+});
+
+test('postgres.js: a query é uma fronteira quando é enviada, uma só vez, sem valores; as internas não contam', () => {
+  const query = `class Query extends Promise {
+  constructor(strings, args, handler) { let resolve, reject; super((a, b) => { resolve = a; reject = b; });
+    Object.assign(this, { strings, args, handler, executed: false, resolve, reject }); }
+  static get [Symbol.species]() { return Promise; }
+  async handle() { !this.executed && (this.executed = true) && await 1 && this.handler(this); }
+  then() { this.handle(); return super.then.apply(this, arguments); }
+  catch() { this.handle(); return super.catch.apply(this, arguments); }
+}
+module.exports = { Query };
+`;
+  const { events, stdout } = project({
+    'node_modules/postgres/cjs/src/query.js': query,
+    'entry.cjs': `const { Query } = require('./node_modules/postgres/cjs/src/query.js');
+function handler(q) { setTimeout(() => {
+  const text = q.strings.join('?');
+  if (text.startsWith('select')) { const rows = [{ id: 1 }, { id: 2 }]; rows.command = 'SELECT'; rows.count = 2; q.resolve(rows); }
+  else { const rows = []; rows.command = 'UPDATE'; rows.count = 3; q.resolve(rows); }
+}, 1); }
+function execute(q) { handler(q); }
+const sql = (strings, ...args) => new Query(strings, args, handler);
+async function settle(customer) {
+  await new Query(['select b.oid from pg_type'], [], execute);
+  const open = sql\`select id from orders where customer = \${customer} and total > \${10}\`;
+  open.catch(() => {});
+  const rows = await open;
+  const changed = await sql\`update orders set status = 'paid' where customer = \${customer}\`;
+  return rows.length + changed.count;
+}
+settle('Cliente-Secreto-771').then(n => console.log(n));`,
+  }, 'entry.cjs');
+  assert.equal(stdout.trim(), '5');
+  const boundaries = events.filter(e => e.type === 'boundary');
+  assert.deepEqual(boundaries.map(b => [b.library, b.operation, b.tables, b.sql]), [
+    ['postgres', 'SELECT', ['orders'], 'select id from orders where customer = $1 and total > $2'],
+    ['postgres', 'UPDATE', ['orders'], "update orders set status = '?' where customer = $1"]]);
+  assert.equal(boundaries[0].parentId, events.find(e => e.function === 'settle').id);
+  const ends = Object.fromEntries(events.filter(e => e.type === 'boundary-end').map(e => [e.id, e]));
+  assert.deepEqual([ends[boundaries[0].id].rows, ends[boundaries[1].id].affectedRows], [2, 3]);
+  assert.ok(!JSON.stringify(events).includes('Cliente-Secreto-771'));
+});
+
+test('Redis (ioredis e node-redis): comando e padrão da chave, sem valores; comandos internos e reenvios não contam', () => {
+  const ioredis = `class Redis {
+  constructor() { this.queue = []; }
+  sendCommand(command) {
+    if (!this.ready) { this.queue.push(command); return command.promise; }
+    setTimeout(() => command.resolve(command.reply), 1);
+    return command.promise;
+  }
+  connect() { this.ready = true; for (const command of this.queue.splice(0)) this.sendCommand(command); }
+}
+class Command {
+  constructor(name, args, reply) { this.name = name; this.args = args; this.reply = reply;
+    this.promise = new Promise(ok => { this.resolve = ok; }); }
+  getKeys() { return ['auth', 'info'].includes(this.name) ? [] : [this.args[0]]; }
+}
+module.exports = { Redis, Command };
+`;
+  const queue = `class RedisCommandsQueue {
+  addCommand(args, options) { return new Promise(ok => setTimeout(() => ok(args[0] === 'DEL' ? 1 : args[0] === 'GET' ? null : 'OK'), 1)); }
+}
+module.exports = { RedisCommandsQueue };
+`;
+  const { events, stdout } = project({
+    'node_modules/ioredis/built/Redis.js': ioredis,
+    'node_modules/@redis/client/dist/lib/client/commands-queue.js': queue,
+    'entry.cjs': `const { Redis, Command } = require('./node_modules/ioredis/built/Redis.js');
+const { RedisCommandsQueue } = require('./node_modules/@redis/client/dist/lib/client/commands-queue.js');
+const cache = new Redis();
+const queue = new RedisCommandsQueue();
+async function checkout() {
+  const hset = cache.sendCommand(new Command('hset', ['cart:1042', 'email', 'ana@example.com'], 2));
+  cache.connect();
+  await hset;
+  await cache.sendCommand(new Command('auth', ['palavra-passe-redis-99'], 'OK'));
+  await queue.addCommand(['HELLO', '3', 'AUTH', 'default', 'palavra-passe-redis-99']);
+  await queue.addCommand(['SET', 'session:9f8e7d6c5b4a32100123abcd', '{"user":"ana"}', 'EX', '60']);
+  const removed = await queue.addCommand(['DEL', 'session:9f8e7d6c5b4a32100123abcd', 'cart:1042']);
+  const cached = await queue.addCommand(['GET', 'user:ana@example.com:profile']);
+  return removed + String(cached);
+}
+checkout().then(v => console.log(v));`,
+  }, 'entry.cjs');
+  assert.equal(stdout.trim(), '1null');
+  const boundaries = events.filter(e => e.type === 'boundary');
+  assert.deepEqual(boundaries.map(b => [b.library, b.operation, b.command, b.tables]), [
+    ['ioredis', 'UPDATE', 'HSET', ['cart:{n}']],
+    // The secret redaction (Annex B) also covers "session:" followed by a value.
+    ['redis', 'UPDATE', 'SET', ['session:[REDACTED]']],
+    ['redis', 'DELETE', 'DEL', ['session:[REDACTED]', 'cart:{n}']],
+    ['redis', 'SELECT', 'GET', ['user:{email}:profile']]]);
+  assert.equal(boundaries[0].parentId, events.find(e => e.function === 'checkout').id);
+  const ends = Object.fromEntries(events.filter(e => e.type === 'boundary-end').map(e => [e.id, e]));
+  assert.deepEqual(boundaries.map(b => ends[b.id].affectedRows ?? ends[b.id].rows), [1, 1, 1, 0]);
+  const text = JSON.stringify(events);
+  for (const value of ['palavra-passe-redis-99', 'ana@example.com', '9f8e7d6c5b4a32100123abcd', '"user"']) assert.ok(!text.includes(value), value);
+});
+
+test('Redis: padrões das chaves, chaves por comando e resultados', () => {
+  assert.equal(redisKeyPattern('orders:open'), 'orders:open');
+  assert.equal(redisKeyPattern('rate:2026:127'), 'rate:{n}:{n}');
+  assert.equal(redisKeyPattern(Buffer.from('bull:emails:0b6c3f1e-8d2a-4c11-9f00-12ab34cd56ef')), 'bull:emails:{id}');
+  assert.equal(redisKeyPattern('token:eyJhbGciOiJIUzI1NiJ9abc123'), 'token:{id}');
+  assert.deepEqual(describeRedis('mset', ['a:1', 'x', 'b:2', 'y']).tables, ['a:{n}', 'b:{n}']);
+  assert.deepEqual(describeRedis('EVAL', ['return 1', '2', 'lock:7', 'queue', 'arg']).tables, ['lock:{n}', 'queue']);
+  assert.deepEqual(describeRedis('BLPOP', ['jobs', 'retry', '5']).tables, ['jobs', 'retry']);
+  assert.deepEqual([describeRedis('PING', []).operation, describeRedis('PING', []).tables], ['PING', []]);
+  assert.equal(describeRedis('client', ['setinfo', 'lib-name', 'x']), describeRedis('AUTH', ['x']));
+  assert.deepEqual(redisResult(describeRedis('SET', ['k', 'v', 'NX']), null), { affectedRows: 0 });
+  assert.deepEqual(redisResult(describeRedis('SETNX', ['k', 'v']), 0), { affectedRows: 0 });
+  assert.deepEqual(redisResult(describeRedis('HSET', ['k', 'f', 'v']), 0), { affectedRows: 1 });
+  assert.deepEqual(redisResult(describeRedis('DEL', ['a', 'b']), 2), { affectedRows: 2 });
+  assert.deepEqual(redisResult(describeRedis('LPOP', ['q']), null), { affectedRows: 0 });
+  assert.deepEqual(redisResult(describeRedis('EXISTS', ['a']), 0), { rows: 0 });
+  assert.deepEqual(redisResult(describeRedis('HGETALL', ['h']), { a: '1' }), { rows: 1 });
 });

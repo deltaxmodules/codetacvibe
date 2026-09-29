@@ -2,7 +2,7 @@
 // uma frase de finalidade por função e por fronteira, e o resumo dos efeitos
 // permanentes. Tudo deriva dos factos gravados; nada é removido, só agrupado
 // (cada grupo guarda os passos originais para a expansão).
-import { boundarySentence, duration, label, names, texts } from './sentences.mjs';
+import { boundarySentence, duration, label, names, texts, REDIS_LIBRARIES } from './sentences.mjs';
 
 const STRUCTURE = new Set(['CREATE', 'DROP', 'ALTER', 'TRUNCATE']);
 const WRITES = new Set(['INSERT', 'UPDATE', 'DELETE', 'UPSERT', 'REPLACE', 'MERGE']);
@@ -250,6 +250,11 @@ export function effects(dossiers, { cookies = [] } = {}) {
     const table = (step.tables ?? []).join(', ') || '?';
     if (step.kind === 'base-de-dados' && STRUCTURE.has(step.operation)) {
       if (failed) structureFailed++; else structureOk++;
+    } else if (step.kind === 'base-de-dados' && REDIS_LIBRARIES.has(step.library) && WRITES.has(step.operation) && !failed) {
+      const command = step.command ?? step.operation;
+      if (r.affectedRows === 0) add(`none:redis:${command}:${table}`, 'sem-alteracao', item => t.redisNoChange(command, table, item.n));
+      else if (step.operation === 'DELETE') add(`redis:DELETE:${command}:${table}`, 'base-de-dados', item => t.redisDeleted(table, command, item.n));
+      else add(`redis:UPDATE:${table}`, 'base-de-dados', item => t.redisWritten(table, item.n));
     } else if (step.kind === 'base-de-dados' && WRITES.has(step.operation) && !failed) {
       const n = r.affectedRows;
       if (n === 0) add(`none:${step.operation}:${table}`, 'sem-alteracao', (item) => t.noChange(step.operation, table, item.n));

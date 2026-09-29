@@ -179,7 +179,7 @@ export function createRuntime(directory, { flushBytes = FLUSH_BYTES, flushMs = F
     try { result = body(); }
     catch (error) { end({ error: true }); throw error; }
     finally { pendingEnd = previous; }
-    try { return point.after ? point.after(result, end, self, name, api) : (end({}), result); }
+    try { return point.after ? point.after(result, end, self, name, api, args) : (end({}), result); }
     catch { end({}); return result; }
   }
   // Wraps a callback argument of the library call being entered.

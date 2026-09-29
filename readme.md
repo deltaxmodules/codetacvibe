@@ -47,7 +47,7 @@ To follow the app's functions, you need **Python 3.12 or newer**. With Python 3.
 
 | | |
 | --- | --- |
-| Database | Postgres (`pg`), MySQL (`mysql2`), SQLite (`better-sqlite3`, `node:sqlite`), Supabase (with the table and the operation). In Python: `sqlite3`, `psycopg2`, `psycopg`, `asyncpg`, `pymysql` and SQLAlchemy |
+| Database | Postgres (`pg`, `postgres.js`), MySQL (`mysql2`), SQLite (`better-sqlite3`, `node:sqlite`), MongoDB (`mongodb`, Mongoose; the collection and the filter fields, never their values), Redis (`ioredis`, `redis`; the command and the key pattern, such as `cart:{n}`, never the values), Supabase (with the table and the operation). In Python: `sqlite3`, `psycopg2`, `psycopg`, `asyncpg`, `pymysql` and SQLAlchemy |
 | AI | OpenAI, Anthropic, Google, Mistral, Groq, OpenRouter, DeepSeek, Cohere, Together, local models |
 | Email and messages | nodemailer, Resend, SendGrid, Postmark, Mailgun, Brevo, Twilio |
 | Payments | Stripe, showing test or live mode |
@@ -229,7 +229,7 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 - The app is found when `FastAPI(...)` or `Flask(...)` (or a `create_app` factory) is in a `.py` file up to two folder levels below the given folder. Otherwise, give the start command with `codetac -- <command>`.
 - The app's configuration (`.env`, database, Redis…) is yours: without it, codeTAC shows the app's own error.
 - Threads created by hand (`threading.Thread`) are not linked to the request that created them; FastAPI's and `asyncio`'s are.
-- Redis, MongoDB and Celery do not show up as boundaries yet: the time spent in them stays inside the function that called them.
+- In Python, Redis, MongoDB and Celery do not show up as boundaries yet: the time spent in them stays inside the function that called them.
 - Pages sent in chunks (streaming) do not get the bar; the action is still recorded.
 - With many queries per page, the server gets slower: on a page with 52 SQL queries, it went from 1.0 to 2.8 ms. In the other apps tested, the time stayed between 1 and 1.3 times the normal.
 - MySQL through `mysqlclient` and Django have not been tested yet.

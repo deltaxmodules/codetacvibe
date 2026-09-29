@@ -71,7 +71,8 @@ try {
 
 const store = openStore(join(workspace, '.codetac'));
 store.ingest();
-const recorded = store.listRequests({ run: label, limit: 1000 });
+// Oldest first, so that repeated identical requests pair up in order.
+const recorded = store.listRequests({ run: label, limit: 1000 }).reverse();
 const report = { date: new Date().toISOString(), project: config.name, run: label, requests: [], secretsFound: [], passed: true };
 
 for (const item of performed) {
@@ -90,6 +91,7 @@ for (const item of performed) {
     dbWrite: boundaries.some(step => step.kind === 'base-de-dados' && /^(INSERT|UPDATE|DELETE|UPSERT|REPLACE)$/.test(step.operation)),
     dbRead: boundaries.some(step => step.kind === 'base-de-dados'),
     external: boundaries.some(step => ['ia', 'email', 'mensagem', 'pagamento', 'ficheiros', 'autenticação'].includes(step.kind) || (step.kind === 'http' && !step.local)),
+    aiTokens: boundaries.some(step => step.kind === 'ia' && step.result?.usage?.input != null && step.result?.answerExcerpt),
     boundariesFinished: boundaries.every(step => step.finished),
   };
   const required = item.accept ? ['recorded', 'functions', 'order', ...(item.expect ?? config.expect ?? ['dbWrite', 'external']), 'boundariesFinished'] : ['recorded'];

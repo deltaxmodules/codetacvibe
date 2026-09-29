@@ -24,6 +24,9 @@ function duration(ms) {
   return ms < 1 ? ms.toFixed(2) + ' ms' : ms < 1000 ? ms.toFixed(1) + ' ms' : (ms / 1000).toFixed(2) + ' s';
 }
 
+export const REDIS_LIBRARIES = new Set(['ioredis', 'redis']);
+const REDIS_KEY_DELETES = new Set(['DEL', 'UNLINK', 'GETDEL', 'FLUSHDB', 'FLUSHALL', 'JSON.DEL', 'JSON.FORGET']);
+
 const EN = {
   and: 'and',
   rows: n => `${n} ${n === 1 ? 'row' : 'rows'}`,
@@ -35,6 +38,12 @@ const EN = {
   alter: tables => `Changes the structure of ${tables || 'a table'}`,
   drop: tables => `Drops ${tables || 'a table'}`,
   otherDb: (op, tables) => `${op} command on the database${tables ? ` (${tables})` : ''}`,
+  // Redis has keys, not tables or rows.
+  redisKey: keys => `Redis ${keys.includes(', ') ? 'keys' : 'key'} ${keys}`,
+  redisRead: (keys, rows) => `Reads ${EN.redisKey(keys)}${rows === 0 ? ' (not found)' : ''}`,
+  redisWrite: (keys, command, n) => n === 0 ? `${command} on ${EN.redisKey(keys)}; nothing stored` : `Writes ${EN.redisKey(keys)} (${command})`,
+  redisDelete: (keys, command, n) => n === 0 ? `${command} on ${EN.redisKey(keys)}; nothing removed` : `${REDIS_KEY_DELETES.has(command) ? 'Deletes' : 'Removes items from'} ${EN.redisKey(keys)} (${command})`,
+  redisOther: (command, keys) => `${command} command on Redis${keys ? ` (${keys})` : ''}`,
   failed: 'failed',
   http: (method, host, path, status) => `Calls ${host}: ${method} ${path}${status != null ? ` (status ${status})` : ''}`,
   ai: (provider, model, usage) => `Asks ${provider} for a response${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}`,
@@ -74,6 +83,9 @@ const EN = {
     changed: (n, table) => `${n == null ? 'Rows' : EN.rows(n)} changed in ${table}`,
     deleted: (n, table) => `${n == null ? 'Rows' : EN.rows(n)} deleted from ${table}`,
     otherWrite: (op, table) => `${op} on ${table}`,
+    redisWritten: (keys, n) => `${EN.redisKey(keys)} written${n > 1 ? ` (${n} commands)` : ''}`,
+    redisDeleted: (keys, command, n) => `${EN.redisKey(keys)} ${REDIS_KEY_DELETES.has(command) ? 'deleted' : `changed (items removed with ${command})`}${n > 1 ? ` (${n} commands)` : ''}`,
+    redisNoChange: (command, keys, n) => `${command} on ${EN.redisKey(keys)} changed nothing${n > 1 ? ` (${n} times)` : ''}`,
     noChange: (op, table, n) => `${op} on ${table} changed no rows${n > 1 ? ` (${n} times)` : ''}`,
     structure: (ok, failed) => `${ok + failed} database structure commands (${ok} without error${failed ? `, ${failed} failed` : ''}); the recording does not show whether they changed the database`,
     email: (to, subject, failed) => `${failed ? 'Failed email attempt' : 'Email sent'}${to.length ? ` to ${to.join(', ')}` : ''}${subject ? ` “${subject}”` : ''}`,
@@ -113,7 +125,11 @@ export function boundarySentence(step) {
   switch (step.kind) {
     case 'base-de-dados': {
       const op = step.operation;
-      if (op === 'SELECT' || op === 'WITH' || op === 'PRAGMA') text = t.read(tables, r.rows);
+      if (REDIS_LIBRARIES.has(step.library)) {
+        const command = step.command ?? op;
+        text = op === 'SELECT' ? t.redisRead(tables, r.rows) : op === 'UPDATE' ? t.redisWrite(tables, command, r.affectedRows)
+          : op === 'DELETE' ? t.redisDelete(tables, command, r.affectedRows) : t.redisOther(command, tables);
+      } else if (op === 'SELECT' || op === 'WITH' || op === 'PRAGMA') text = t.read(tables, r.rows);
       else if (op === 'INSERT') text = t.insert(tables, r.affectedRows);
       else if (op === 'UPDATE') text = t.update(tables, r.affectedRows);
       else if (op === 'DELETE') text = t.delete(tables, r.affectedRows);

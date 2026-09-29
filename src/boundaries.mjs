@@ -216,6 +216,51 @@ export function installBoundaries(runtime, root, page = {}) {
   installHttpClients(runtime);
   installNodeSqlite(runtime);
   installFiles(runtime, root);
+  installPrisma(runtime);
+}
+
+// Prisma with its native engine runs the SQL in Rust, out of sight. Every
+// client operation goes through the tracing helper Prisma reads from
+// globalThis; ours only marks the operation as a boundary and traces nothing.
+// Clients with a driver adapter (always in Prisma 7) already show their SQL
+// through pg, mysql2 or better-sqlite3, so only the native runtimes count.
+const PRISMA_READS = /^(find|count|aggregate|groupBy)/;
+const PRISMA_NATIVE = /[\\/]runtime[\\/](library|binary)\.m?js\b/;
+export function describePrisma(attributes = {}) {
+  const method = String(attributes.method ?? '');
+  const operation = PRISMA_READS.test(method) ? 'SELECT' : /^create/.test(method) ? 'INSERT'
+    : method === 'upsert' ? 'UPSERT' : /^update/.test(method) ? 'UPDATE' : /^delete/.test(method) ? 'DELETE' : method;
+  return { operation, command: method, tables: attributes.model ? [String(attributes.model)] : [],
+    sql: attributes.model ? `${attributes.model}.${method}(…)` : `${method}(…)` };
+}
+export function prismaResult(operation, value) {
+  if (operation === 'SELECT') return { rows: Array.isArray(value) ? value.length : value == null ? 0 : 1 };
+  if (typeof value?.count === 'number') return { affectedRows: value.count };
+  return Array.isArray(value) ? { affectedRows: value.length } : value == null ? {} : { affectedRows: 1 };
+}
+function installPrisma(runtime) {
+  if (globalThis.PRISMA_INSTRUMENTATION) return;
+  const helper = {
+    isEnabled: () => false,
+    getTraceParent: () => '00-10-10-00',
+    dispatchEngineSpans() {},
+    getActiveContext() {},
+    runInChildSpan(options, callback) {
+      if (options?.name !== 'operation' || !options.attributes?.method) return callback();
+      const limit = Error.stackTraceLimit;
+      Error.stackTraceLimit = 12;
+      const stack = new Error().stack ?? '';
+      Error.stackTraceLimit = limit;
+      if (!PRISMA_NATIVE.test(stack)) return callback();
+      const details = describePrisma(options.attributes);
+      let end;
+      try { end = runtime.startBoundary({ kind: 'base-de-dados', library: 'prisma', ...details }); } catch { return callback(); }
+      let result;
+      try { result = callback(); } catch (error) { end({ error: true }); throw error; }
+      return settle(result, end, value => prismaResult(details.operation, value));
+    },
+  };
+  Object.defineProperty(globalThis, 'PRISMA_INSTRUMENTATION', { value: { helper }, configurable: true, writable: true });
 }
 
 // Files: only operations made directly by project code during a request.
@@ -340,9 +385,9 @@ function installHttpClients(runtime) {
       pending.set(request, entry);
     } catch {}
   });
-  const collect = (list, entry, chunk) => {
+  const collect = (list, entry, chunk, encoding) => {
     if (!entry?.ai || entry.size > 1048576) return;
-    const buffer = Buffer.from(chunk);
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8') : Buffer.from(chunk);
     entry.size += buffer.length;
     list(entry).push(buffer);
   };
@@ -369,27 +414,74 @@ function installHttpClients(runtime) {
     if (entry) { pending.delete(request); entry.end({ status: entry.status, error: true, ...aiDetails(entry) }); }
   });
 
+  // http/https (axios, older SDKs): the bodies are not on the channels, so for
+  // AI calls the request's write/end and the response's push are wrapped on
+  // the instance. The app still gets every byte, in the same order and flow.
+  const describeClient = request => {
+    const headers = headerMap(request.getHeaders?.() ?? {});
+    const host = request.host ?? headers.host ?? 'localhost';
+    const protocol = request.protocol ?? 'http:';
+    return classifyHttp({ method: request.method, url: `${protocol}//${host}${request.path}`, headers, body: null, client: 'http' });
+  };
+  // The body must be caught from the first write: newer Node publishes "start"
+  // only once the request is sent, and "created" (from the constructor) exists
+  // only there; older Node publishes "start" from the constructor.
+  const sentBodies = new WeakMap();
+  const watchBody = (request, details) => {
+    if (details.kind !== 'ia' || sentBodies.has(request)) return;
+    const body = { ai: true, sent: [], size: 0 };
+    sentBodies.set(request, body);
+    for (const name of ['write', 'end']) {
+      const original = request[name];
+      request[name] = function (chunk, encoding) {
+        try { if (chunk != null && typeof chunk !== 'function') collect(item => item.sent, body, chunk, encoding); } catch {}
+        return original.apply(this, arguments);
+      };
+    }
+  };
+  diagnostics.subscribe('http.client.request.created', ({ request }) => {
+    try { watchBody(request, describeClient(request)); } catch {}
+  });
   diagnostics.subscribe('http.client.request.start', ({ request }) => {
     try {
-      const headers = headerMap(request.getHeaders?.() ?? {});
-      const host = request.host ?? headers.host ?? 'localhost';
-      const protocol = request.protocol ?? 'http:';
-      pending.set(request, { end: runtime.startBoundary(classifyHttp({ method: request.method,
-        url: `${protocol}//${host}${request.path}`, headers, body: null, client: 'http' })) });
+      const details = describeClient(request);
+      watchBody(request, details);
+      const entry = { end: runtime.startBoundary(details) };
+      const body = sentBodies.get(request);
+      // Shared with the write wrappers: the size limit counts both directions.
+      if (body) Object.assign(body, { end: entry.end, received: [], request: {} });
+      pending.set(request, body ?? entry);
     } catch {}
   });
   diagnostics.subscribe('http.client.response.finish', ({ request, response }) => {
     const entry = pending.get(request);
-    if (entry) { pending.delete(request); entry.end({ status: response.statusCode }); }
+    if (!entry) return;
+    pending.delete(request);
+    if (!entry.ai) { entry.end({ status: response.statusCode }); return; }
+    // Fired with the headers: the body is still to come.
+    entry.status = response.statusCode;
+    entry.encoding = response.headers?.['content-encoding'];
+    let done = false;
+    const finish = error => {
+      if (done) return;
+      done = true;
+      entry.end({ status: entry.status, ...(error ? { error: true } : {}), ...aiDetails(entry) });
+    };
+    const push = response.push;
+    response.push = function (chunk, encoding) {
+      try { if (chunk === null) finish(); else collect(item => item.received, entry, chunk, encoding); } catch {}
+      return push.apply(this, arguments);
+    };
+    response.once('close', () => finish(!response.complete));
   });
   diagnostics.subscribe('http.client.request.error', ({ request }) => {
     const entry = pending.get(request);
-    if (entry) { pending.delete(request); entry.end({ error: true }); }
+    if (entry) { pending.delete(request); entry.end({ error: true, ...aiDetails(entry) }); }
   });
 }
 
 // Captured AI bodies may be compressed on the wire (fetch reports them before
-// decoding). Only the bounded copy is decoded.
+// decoding; http never decodes). Only the bounded copy is decoded.
 function decoded(buffer, encoding) {
   const kind = String(encoding ?? '').trim().toLowerCase();
   try {
@@ -456,7 +548,169 @@ function settle(result, end, extract = rowsOf) {
   return result;
 }
 
+// MongoDB: every command of the official driver (and of Mongoose, which uses
+// it) goes through executeOperation. Commands take the SQL names so the
+// dossier, the sentences and the effects treat them like any other database.
+// Filters are kept as field names only, never values.
+const MONGO_OPERATIONS = {
+  find: 'SELECT', aggregate: 'SELECT', getMore: 'SELECT', count: 'SELECT', distinct: 'SELECT',
+  insert: 'INSERT', update: 'UPDATE', delete: 'DELETE',
+  createIndexes: 'CREATE', create: 'CREATE', drop: 'DROP', dropIndexes: 'DROP',
+};
+const MONGO_INTERNAL = new Set(['endSessions', 'killCursors', 'bulkWrite', 'commitTransaction', 'abortTransaction']);
+function mongoFilterKeys(operation) {
+  const filters = [operation.filter, operation.query, operation.cmdBase?.query,
+    ...(Array.isArray(operation.statements) ? operation.statements.map(statement => statement?.q) : []),
+    ...(Array.isArray(operation.pipeline) ? operation.pipeline.map(stage => stage?.$match) : [])];
+  const keys = filters.flatMap(filter => filter && typeof filter === 'object' && !Array.isArray(filter) ? Object.keys(filter) : []);
+  return [...new Set(keys)].slice(0, 20);
+}
+export function describeMongo(operation) {
+  let command;
+  try { command = operation?.commandName; } catch {}
+  if (typeof command !== 'string' || MONGO_INTERNAL.has(command)) return SKIP;
+  const remove = command === 'findAndModify' && (operation.cmdBase?.remove || operation.constructor?.name === 'FindOneAndDeleteOperation');
+  const target = operation.target ?? operation.collection?.collectionName;
+  const collection = typeof target === 'string' && target !== '1' ? target : operation.ns?.collection;
+  const filterKeys = mongoFilterKeys(operation);
+  return { operation: command === 'findAndModify' ? (remove ? 'DELETE' : 'UPDATE') : MONGO_OPERATIONS[command] ?? command,
+    command, tables: typeof collection === 'string' && collection !== '$cmd' ? [collection] : [],
+    ...(filterKeys.length ? { filterKeys } : {}),
+    // Shown where SQL templates are: the command and the filter fields, no values.
+    sql: `${typeof collection === 'string' ? `${collection}.` : ''}${command}(${filterKeys.length ? `{ ${filterKeys.map(key => `${key}: …`).join(', ')} }` : ''})` };
+}
+export function mongoResult(operation, value) {
+  if (operation === 'findAndModify') {
+    // Driver 6 returns the document itself unless includeResultMetadata is set.
+    const document = value && ('lastErrorObject' in value || ('value' in value && 'ok' in value)) ? value.value : value;
+    return { affectedRows: document ? 1 : 0 };
+  }
+  if (value == null) return MONGO_OPERATIONS[operation] === 'SELECT' ? { rows: 0 } : {};
+  if (MONGO_OPERATIONS[operation] === 'SELECT') {
+    if (typeof value.length === 'number') return { rows: value.length };
+    if (Array.isArray(value.cursor?.firstBatch)) return { rows: value.cursor.firstBatch.length };
+    if (Array.isArray(value)) return { rows: value.length };
+    return typeof value === 'number' ? { rows: 1 } : {};
+  }
+  const count = value.insertedCount ?? value.modifiedCount ?? value.deletedCount ?? value.nModified ?? value.n;
+  if (typeof count === 'number') return { affectedRows: count };
+  if ('insertedId' in value) return { affectedRows: 1 };
+  return {};
+}
+
+// Observes a promise without taking part in its chain: the caller keeps the
+// original, so a rejection nobody handles stays exactly as it was.
+function observe(promise, end, extract) {
+  if (!promise || typeof promise.then !== 'function') { end({}); return; }
+  Promise.prototype.then.call(promise, value => { try { end(extract(value)); } catch { end({}); } }, () => end({ error: true }));
+}
+
+// postgres.js: a query is a lazy promise, sent on its first then/catch/finally
+// (Query.handle). The template strings give the SQL with $n placeholders; the
+// values never. Queries of the connection itself (types, state) are skipped.
+function postgresSql(query) {
+  const strings = query?.strings;
+  if (!strings || typeof strings.length !== 'number' || !strings.length) return undefined;
+  return Array.from(strings, String).reduce((text, part, index) => `${text}$${index}${part}`);
+}
+function postgresResult(result) {
+  if (!result || typeof result !== 'object') return {};
+  const command = typeof result.command === 'string' ? result.command.toUpperCase() : '';
+  if (/^(INSERT|UPDATE|DELETE|MERGE|COPY)$/.test(command) && typeof result.count === 'number') return { affectedRows: result.count };
+  return typeof result.length === 'number' ? { rows: result.length } : {};
+}
+
+// Redis (ioredis, node-redis): the command and its keys, never the values.
+// Keys become patterns (session:{id}, cart:{n}) so the same kind of key is
+// one "table" and opaque identifiers are not recorded.
+const REDIS_INTERNAL = new Set(['AUTH', 'HELLO', 'CLIENT', 'SELECT', 'INFO', 'READONLY', 'MULTI', 'EXEC', 'DISCARD', 'QUIT', 'RESET']);
+const REDIS_DELETES = new Set(['DEL', 'UNLINK', 'HDEL', 'SREM', 'ZREM', 'LREM', 'LPOP', 'RPOP', 'SPOP', 'BLPOP', 'BRPOP', 'LMPOP', 'BLMPOP',
+  'ZPOPMIN', 'ZPOPMAX', 'BZPOPMIN', 'BZPOPMAX', 'ZMPOP', 'GETDEL', 'XDEL', 'XTRIM', 'LTRIM', 'ZREMRANGEBYSCORE', 'ZREMRANGEBYRANK',
+  'ZREMRANGEBYLEX', 'FLUSHDB', 'FLUSHALL', 'JSON.DEL', 'JSON.FORGET']);
+const REDIS_WRITES = new Set(['SET', 'SETEX', 'PSETEX', 'SETNX', 'MSET', 'MSETNX', 'GETSET', 'GETEX', 'APPEND', 'SETRANGE', 'SETBIT',
+  'INCR', 'INCRBY', 'INCRBYFLOAT', 'DECR', 'DECRBY', 'HSET', 'HSETNX', 'HMSET', 'HINCRBY', 'HINCRBYFLOAT', 'LPUSH', 'RPUSH',
+  'LPUSHX', 'RPUSHX', 'LSET', 'LINSERT', 'LMOVE', 'BLMOVE', 'RPOPLPUSH', 'BRPOPLPUSH', 'SADD', 'SMOVE', 'ZADD', 'ZINCRBY', 'XADD',
+  'EXPIRE', 'PEXPIRE', 'EXPIREAT', 'PEXPIREAT', 'PERSIST', 'RENAME', 'RENAMENX', 'COPY', 'PFADD', 'PFMERGE', 'GEOADD',
+  'SUNIONSTORE', 'SINTERSTORE', 'SDIFFSTORE', 'ZUNIONSTORE', 'ZINTERSTORE', 'ZDIFFSTORE', 'ZRANGESTORE', 'JSON.SET', 'JSON.MERGE']);
+// Writes whose 0 or nil reply means that nothing was stored.
+const REDIS_CONDITIONAL = new Set(['SET', 'SETNX', 'MSETNX', 'HSETNX', 'LPUSHX', 'RPUSHX', 'EXPIRE', 'PEXPIRE', 'EXPIREAT', 'PEXPIREAT',
+  'PERSIST', 'RENAMENX', 'COPY', 'SMOVE', 'GETEX']);
+const REDIS_NO_KEYS = /^(PING|ECHO|TIME|DBSIZE|FLUSHDB|FLUSHALL|SCAN|KEYS|PUBLISH|SPUBLISH|SUBSCRIBE|PSUBSCRIBE|UNSUBSCRIBE|PUNSUBSCRIBE|CONFIG|COMMAND|SCRIPT|FUNCTION|MEMORY|SLOWLOG|LATENCY|WAIT|SAVE|BGSAVE|LASTSAVE|ROLE|MONITOR|DEBUG|OBJECT|CLUSTER|ACL|PUBSUB|WATCH|UNWATCH)$/;
+function redisKeyIndexes(command, args) {
+  if (REDIS_NO_KEYS.test(command)) return [];
+  if (/^(MGET|DEL|UNLINK|EXISTS|TOUCH|SINTER|SUNION|SDIFF|PFCOUNT|WATCH)$/.test(command)) return args.map((_, index) => index);
+  if (/^(MSET|MSETNX)$/.test(command)) return args.map((_, index) => index).filter(index => index % 2 === 0);
+  if (/^(EVAL|EVALSHA|EVAL_RO|EVALSHA_RO|FCALL|FCALL_RO)$/.test(command)) {
+    const count = Number(String(args[1]));
+    return Number.isInteger(count) && count > 0 ? Array.from({ length: Math.min(count, 20) }, (_, index) => index + 2) : [];
+  }
+  if (/^(BLPOP|BRPOP|BZPOPMIN|BZPOPMAX)$/.test(command)) return args.slice(0, -1).map((_, index) => index);
+  if (/^(RENAME|RENAMENX|COPY|SMOVE|LMOVE|BLMOVE|RPOPLPUSH|BRPOPLPUSH)$/.test(command)) return [0, 1];
+  return args.length ? [0] : [];
+}
+export function redisKeyPattern(key) {
+  const text = Buffer.isBuffer(key) ? key.toString('utf8') : String(key);
+  return text.slice(0, 200).split(':').map(part => {
+    if (/^\d+$/.test(part)) return '{n}';
+    if (/@/.test(part)) return '{email}';
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(part) || /^[0-9a-f]{12,}$/i.test(part)
+      || (part.length >= 16 && /\d/.test(part) && /[a-z]/i.test(part) && /^[\w.~+/=-]+$/.test(part))) return '{id}';
+    return part.length > 40 ? '{…}' : part;
+  }).join(':');
+}
+export function describeRedis(name, args, keys) {
+  const command = String(name ?? '').toUpperCase();
+  if (!command || REDIS_INTERNAL.has(command)) return SKIP;
+  const list = Array.isArray(args) ? args : [];
+  const indexes = keys ?? redisKeyIndexes(command, list).map(index => list[index]);
+  const patterns = [...new Set(indexes.filter(key => key != null && typeof key !== 'object' || Buffer.isBuffer(key)).map(redisKeyPattern))].slice(0, 5);
+  const operation = REDIS_DELETES.has(command) ? 'DELETE' : REDIS_WRITES.has(command) ? 'UPDATE'
+    : REDIS_NO_KEYS.test(command) ? command : 'SELECT';
+  return { operation, command, tables: patterns, sql: `${command}${patterns.length ? ` ${patterns.join(' ')}` : ''}` };
+}
+export function redisResult(details, reply) {
+  if (!details || details === SKIP) return {};
+  const { operation, command } = details;
+  if (operation === 'DELETE') {
+    if (typeof reply === 'number') return { affectedRows: reply };
+    if (reply == null || (Array.isArray(reply) && !reply.length)) return { affectedRows: 0 };
+    return { affectedRows: Array.isArray(reply) && !/POP/.test(command) ? reply.length : 1 };
+  }
+  if (operation === 'UPDATE') {
+    const nothing = reply == null || (REDIS_CONDITIONAL.has(command) && (reply === 0 || reply === false));
+    return { affectedRows: nothing ? 0 : Math.max(1, details.tables.length) };
+  }
+  if (operation === 'SELECT') {
+    if (command === 'EXISTS' && typeof reply === 'number') return { rows: reply };
+    return { rows: reply == null ? 0 : Array.isArray(reply) ? reply.length : 1 };
+  }
+  return {};
+}
+// ioredis sends a queued command again when the connection comes back.
+const redisSeen = new WeakMap();
+function ioredisDetails(command) {
+  if (!command || typeof command !== 'object' || redisSeen.has(command)) return SKIP;
+  let keys;
+  try { keys = typeof command.getKeys === 'function' ? command.getKeys() : undefined; } catch {}
+  const details = describeRedis(command.name, command.args, keys);
+  redisSeen.set(command, details);
+  return details;
+}
+
 export const libraryPoints = [
+  { file: /node_modules\/postgres\/(src|cjs\/src|cf\/src)\/query\.js$/, names: ['handle'], kind: 'base-de-dados', library: 'postgres',
+    // handle() runs on every then/catch/finally; only the first one sends.
+    before: (_args, self) => self?.executed || self?.handler?.name === 'execute' ? SKIP : describeSql(postgresSql(self) ?? ''),
+    after: (result, end, self) => { observe(self, end, postgresResult); return result; } },
+  { file: /node_modules\/ioredis\/built\/Redis\.js$/, names: ['sendCommand'], kind: 'base-de-dados', library: 'ioredis',
+    before: ([command]) => ioredisDetails(command),
+    after: (result, end, _self, _name, _api, [command]) => { observe(command?.promise ?? result, end, reply => redisResult(redisSeen.get(command), reply)); return result; } },
+  { file: /node_modules\/@redis\/client\/(dist\/)?lib\/client\/commands-queue\.[jt]s$/, names: ['addCommand'], kind: 'base-de-dados', library: 'redis',
+    before: ([args]) => Array.isArray(args) ? describeRedis(args[0], args.slice(1)) : SKIP,
+    after: (result, end, _self, _name, _api, [args]) => { observe(result, end, reply => redisResult(describeRedis(args?.[0], args?.slice(1)), reply)); return result; } },
+  { file: /node_modules\/mongodb\/(lib|src)\/operations\/execute_operation\.[jt]s$/, names: ['executeOperation'], kind: 'base-de-dados', library: 'mongodb',
+    before: ([, operation]) => describeMongo(operation),
+    after: (result, end, _self, _name, _api, [, operation]) => settle(result, end, value => mongoResult(operation?.commandName, value)) },
   { file: /node_modules\/mysql2\/lib\/base\/connection\.js$/, names: ['query', 'execute'], kind: 'base-de-dados', library: 'mysql2',
     before: args => describeSql(sqlArgument(args[0])),
     after(command, end) {
