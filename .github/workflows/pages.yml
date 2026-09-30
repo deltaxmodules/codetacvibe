@@ -1,6 +1,5 @@
-# GitHub Pages for the manual (block E, step E6). Copied to
-# codetacvibe/.github/workflows/pages.yml together with site/; the product's
-# own package.json is not touched: VitePress is installed only for the build.
+# The manual (site/) on GitHub Pages: https://deltaxmodules.github.io/codetacvibe/
+# The product's package.json is not touched: VitePress is installed only for the build.
 name: Manual
 on:
   push:
