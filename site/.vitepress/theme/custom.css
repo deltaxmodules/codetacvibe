@@ -1,0 +1,16 @@
+/* The mark in the top bar, a little larger than the default 24 px. */
+.VPNavBarTitle .logo {
+  height: 30px;
+}
+/* On the home page it stands on its own, without the blurred glow behind it. */
+.VPHero .image-bg {
+  display: none;
+}
+.VPHero .image-src {
+  max-width: 320px;
+}
+@media (min-width: 960px) {
+  .VPHero .image-src {
+    max-width: 440px;
+  }
+}

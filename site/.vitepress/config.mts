@@ -9,8 +9,15 @@ export default defineConfig({
   base: '/codetacvibe/',
   cleanUrls: true,
   lastUpdated: false,
-  head: [['meta', { name: 'theme-color', content: '#2f5bd3' }]],
+  head: [
+    ['meta', { name: 'theme-color', content: '#2f5bd3' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/codetacvibe/favicon.png' }],
+    ['link', { rel: 'apple-touch-icon', href: '/codetacvibe/apple-touch-icon.png' }],
+  ],
   themeConfig: {
+    // In the top bar, the mark and the name as text (the whole logo is too small to read there).
+    logo: { src: '/logo-mark.png', alt: '' },
+    siteTitle: 'codeTAC',
     nav: [
       { text: 'Get started', link: '/guide/get-started' },
       { text: 'Commands', link: '/reference/commands' },

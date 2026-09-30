@@ -2,7 +2,10 @@
 layout: home
 
 hero:
-  name: codeTAC
+  image:
+    light: /logo.png
+    dark: /logo-dark.png
+    alt: codeTAC
   text: See what your app's code does, one action at a time.
   tagline: For people who build web apps with AI (Lovable, Bolt, v0, Cursor, Replit, Claude Code…) and want to know what the code really does. Free, and everything runs on your computer.
   actions:
