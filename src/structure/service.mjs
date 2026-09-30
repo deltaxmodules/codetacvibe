@@ -10,6 +10,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 import { planView } from './plan.mjs';
 import { blockCard } from './card.mjs';
 import { explanationRequest, explainCard } from './explain.mjs';
+import { blocked, blockedText, guarded } from '../privacy.mjs';
 import { traceAction, traceRequest } from './trace.mjs';
 import { SKIPPED_FOLDERS } from './node/inventory.mjs';
 import { maskKeys } from './node/modules.mjs';
@@ -19,6 +20,13 @@ import { dataView } from './data.mjs';
 import { healthView } from './smells.mjs';
 import { serviceCatalogue } from './services.mjs';
 import { readConfig } from './config.mjs';
+import { listSnapshots, readSnapshot, saveSnapshot } from './snapshots.mjs';
+import { changesView } from './changes.mjs';
+import { alertFacts, planFacts, withKeys } from './facts.mjs';
+import { readPoint, recentCommits } from './commits.mjs';
+import { cleanPrediction, predictionChoices } from './predict.mjs';
+import { answerQuestion, quizQuestions, readResults, withoutAnswers } from './quiz.mjs';
+import { changeSentences, markReviewed, readReview, reviewDebt, sentenceKey } from './review.mjs';
 
 const MAX_SEARCH = 50;
 // While a project is watched, it is still read again after this long (a
@@ -53,6 +61,9 @@ export function isLoopback(address) {
 export function createStructureService({ rootOf, maxAge = 10_000, read = readInWorker, now = () => Date.now(), editor = null, ai = null, recordings = null,
   watch = watchProject, settle = 300 }) {
   const explanations = new Map();
+  // Graphs of commits compared in the Changes view (phase 9): a commit never changes.
+  const commitGraphs = new Map();
+  const MAX_COMMITS = 8;
   const traces = new Map();
   const MAX_SESSION_ACTIONS = 50;
 
@@ -162,6 +173,50 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
     return node ? { focus: { node: node.id, open: reveal(graph, node) } } : { focus: { node: null } };
   }
 
+  // The views with alerts, each alert with its key (phase 10). Structure
+  // health reads the code files (duplication): kept per reading of the project.
+  function secretsOf(entry, root) {
+    const view = secretsView(entry.graph, { root, platform: readConfig(root).env.platform });
+    return { ...view, alerts: withKeys('secrets', view.alerts), warnings: withKeys('secrets', view.warnings) };
+  }
+  function dataOf(entry) {
+    const view = dataView(entry.graph);
+    return { ...view, alerts: withKeys('data', view.alerts), warnings: withKeys('data', view.warnings) };
+  }
+  function healthOf(entry, root) {
+    const thresholds = readConfig(root).smells;
+    const key = `${entry.readAt}:${JSON.stringify(thresholds)}`;
+    if (entry.health?.key !== key) {
+      const view = healthView(entry.graph, { root, thresholds });
+      entry.health = { key, view: { ...view, smells: withKeys('health', view.smells) } };
+    }
+    return entry.health.view;
+  }
+  // Phase 10, step 4: the comprehension debt — the changes against the newest
+  // snapshot not opened yet, plus those carried from before it. The sentences
+  // are kept per reading of the project and snapshot.
+  function debtOf(entry, root) {
+    const newest = listSnapshots(root)[0] ?? null;
+    if (!newest) return { snapshot: null, ...reviewDebt(readReview(root)) };
+    const key = `${entry.readAt}:${newest.id}:${newest.createdAt}`;
+    if (entry.review?.key !== key) {
+      const before = readSnapshot(root, newest.id);
+      entry.review = { key, sentences: before ? changeSentences(before.graph, entry.graph) : [] };
+    }
+    return { snapshot: newest.id, ...reviewDebt(readReview(root), { snapshot: newest.id, sentences: entry.review.sentences }) };
+  }
+  async function alertsOf(entry, root, source, snapshot) {
+    if (source === 'secrets') { const view = secretsOf(entry, root); return [...view.alerts, ...view.warnings]; }
+    if (source === 'data') { const view = dataOf(entry); return [...view.alerts, ...view.warnings]; }
+    if (source === 'health') return healthOf(entry, root).smells;
+    if (source === 'changes') {
+      const side = /^[0-9a-f]{40}$/.test(snapshot ?? '') ? commitGraphs.get(`${root}\n${snapshot}`) : await readPoint(root, snapshot || 'latest', { readSnapshot });
+      if (!side?.graph) return [];
+      return withKeys('changes', changesView(side.graph, entry.graph).sentences);
+    }
+    return [];
+  }
+
   async function handle(pathname, params, { method = 'GET', body = null } = {}) {
     const run = params.get('run');
     const root = run ? rootOf(run) : null;
@@ -198,18 +253,74 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       const catalogue = serviceCatalogue(readConfig(root).services);
       return { status: 200, body: { ...summary(entry), leaks: leaksView(entry.graph, { catalogue, observed: await observedCalls(run) }) } };
     }
-    if (pathname === '/api/structure/secrets') {
-      return { status: 200, body: { ...summary(entry), secrets: secretsView(entry.graph, { root, platform: readConfig(root).env.platform }) } };
+    // Every alert has a key (phase 10): its «Explain» asks for it by that key.
+    if (pathname === '/api/structure/secrets') return { status: 200, body: { ...summary(entry), secrets: secretsOf(entry, root) } };
+    if (pathname === '/api/structure/health') return { status: 200, body: { ...summary(entry), health: healthOf(entry, root) } };
+    if (pathname === '/api/structure/data') return { status: 200, body: { ...summary(entry), data: dataOf(entry) } };
+    // Phase 9: what changed since a snapshot (the newest by default) or a
+    // commit (read from a temporary copy, kept in memory by its hash), and saving a snapshot.
+    if (pathname === '/api/structure/diff') {
+      const snapshots = listSnapshots(root);
+      const commits = recentCommits(root);
+      const wanted = params.get('snapshot') || 'latest';
+      const open = (params.get('open') ?? '').split(',').map(item => item.trim()).filter(Boolean).slice(0, 500);
+      const isCommit = /^[0-9a-f]{40}$/.test(wanted);
+      let side = null;
+      if (isCommit) {
+        const key = `${root}\n${wanted}`;
+        if (!commitGraphs.has(key)) {
+          const read = await readPoint(root, wanted, { readSnapshot });
+          if (read.error) return { status: 404, body: { error: read.error } };
+          commitGraphs.set(key, read);
+          if (commitGraphs.size > MAX_COMMITS) commitGraphs.delete(commitGraphs.keys().next().value);
+        }
+        side = commitGraphs.get(key);
+      } else if (snapshots.length) {
+        const read = await readPoint(root, wanted, { readSnapshot });
+        if (!read.error) side = read;
+      }
+      if (!side) return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, against: null, missing: snapshots.length ? wanted : null }, review: debtOf(entry, root) } };
+      const against = side.point;
+      const key = `${entry.readAt}:${against.id ?? against.commit}:${against.createdAt ?? ''}:${open.join(',')}`;
+      if (entry.changes?.key !== key) entry.changes = { key, view: changesView(side.graph, entry.graph, { expanded: open, prediction: against.prediction ?? null }) };
+      // Each sentence says whether it was opened (against a snapshot), and the
+      // changes carried from before the newest snapshot come along.
+      const reviewed = new Set(against.id ? readReview(root).reviewed[against.id] ?? [] : []);
+      const sentences = withKeys('changes', entry.changes.view.sentences).map(sentence => ({ ...sentence, reviewKey: sentenceKey(sentence),
+        ...(against.id ? { reviewed: reviewed.has(sentenceKey(sentence)) } : {}) }));
+      return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, against, ...entry.changes.view, sentences }, review: debtOf(entry, root) } };
     }
-    if (pathname === '/api/structure/health') {
-      // Duplication reads the code files: kept per reading of the project.
-      const thresholds = readConfig(root).smells;
-      const key = `${entry.readAt}:${JSON.stringify(thresholds)}`;
-      if (entry.health?.key !== key) entry.health = { key, view: healthView(entry.graph, { root, thresholds }) };
-      return { status: 200, body: { ...summary(entry), health: entry.health.view } };
+    if (pathname === '/api/structure/snapshot') {
+      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
+      const label = typeof body?.label === 'string' ? body.label : null;
+      // Phase 10: the user's prediction of the next change, saved with it.
+      const prediction = cleanPrediction(body?.prediction);
+      const saved = await saveSnapshot(root, { label, graph: entry.graph, prediction });
+      return { status: 200, body: { snapshot: saved.snapshot, replaced: saved.replaced, removed: saved.removed } };
     }
-    if (pathname === '/api/structure/data') {
-      return { status: 200, body: { ...summary(entry), data: dataView(entry.graph) } };
+    // What «Predict» offers to choose from (phase 10).
+    if (pathname === '/api/structure/predict/choices') {
+      return { status: 200, body: predictionChoices(entry.graph, serviceCatalogue(readConfig(root).services).services) };
+    }
+    // Phase 10, step 4: the comprehension debt, and opening a change.
+    if (pathname === '/api/structure/review') {
+      if (method === 'POST') {
+        const snapshot = typeof body?.snapshot === 'string' ? body.snapshot : null;
+        markReviewed(root, { snapshot, keys: body?.keys ?? [] });
+      }
+      return { status: 200, body: { review: debtOf(entry, root) } };
+    }
+    // Phase 10: the quiz. Questions go without their answers; an answer comes
+    // back with the right one and its proof, and is counted on this machine.
+    if (pathname === '/api/structure/quiz') {
+      const round = Math.max(0, Math.min(Number.parseInt(params.get('round') ?? '0', 10) || 0, 1e6));
+      return { status: 200, body: { ...summary(entry), quiz: { round, questions: withoutAnswers(quizQuestions(entry.graph, { round })), results: readResults(root) } } };
+    }
+    if (pathname === '/api/structure/quiz/answer') {
+      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
+      const round = Math.max(0, Math.min(Number.parseInt(body?.round ?? 0, 10) || 0, 1e6));
+      const verdict = answerQuestion(entry.graph, root, { round, id: String(body?.id ?? ''), choice: body?.choice });
+      return verdict ? { status: 200, body: verdict } : { status: 404, body: { error: 'changed' } };
     }
     if (pathname === '/api/structure/trace') {
       const wanted = params.get('action') ? { action: params.get('action') } : params.get('request') ? { request: params.get('request') } : null;
@@ -238,19 +349,32 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       return { status: 200, body: { ...card, actions } };
     }
     // Explanations: the preview is the exact request; sending needs its fingerprint.
+    // kind: block (phase 3), plan or alert (phase 10; alert: source + key, and snapshot for a change).
     if (pathname === '/api/structure/explain/preview' || pathname === '/api/structure/explain') {
-      const block = pathname.endsWith('/preview') ? params.get('block') : body?.block;
-      const card = blockCard(entry.graph, block ?? '');
-      if (!card) return { status: 404, body: { error: 'No such block.' } };
+      const preview = pathname.endsWith('/preview');
+      const ask = name => (preview ? params.get(name) : body?.[name]) ?? null;
+      const kind = ask('kind') || 'block';
+      let card = null;
+      if (kind === 'block') card = blockCard(entry.graph, ask('block') ?? '');
+      else if (kind === 'plan') card = planFacts(entry.graph, { secrets: secretsOf(entry, root), data: dataOf(entry), health: healthOf(entry, root) });
+      else if (kind === 'alert') {
+        const source = ask('source');
+        const item = (await alertsOf(entry, root, source, ask('snapshot'))).find(alert => alert.key === ask('key'));
+        card = item ? alertFacts(source, item, entry.graph) : null;
+      } else return { status: 400, body: { error: 'Unknown kind of explanation.' } };
+      if (!card) return { status: 404, body: { error: kind === 'alert' ? 'This finding is no longer there: the project changed.' : 'No such block.' } };
       if (!ai?.config?.provider) return { status: 200, body: { active: false, problem: ai?.config?.problem ?? 'No AI model is configured.' } };
-      const request = explanationRequest(card, entry.graph.project);
+      // Privacy (phase 10, step 5): switched off, or «No AI».
+      const reason = blocked('explanations', ai.config);
+      if (reason) return { status: 200, body: { active: false, blocked: reason, problem: blockedText(reason) } };
+      const request = explanationRequest(card, entry.graph.project, kind);
       const who = { active: true, provider: ai.config.provider, model: ai.config.model, local: Boolean(ai.config.local) };
-      if (pathname.endsWith('/preview')) return { status: 200, body: { ...who, ...request, cached: explanations.get(`${request.hash}:${ai.config.model}`) ?? null } };
+      if (preview) return { status: 200, body: { ...who, ...request, cached: explanations.get(`${request.hash}:${ai.config.model}`) ?? null } };
       if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
       if (body?.hash !== request.hash) return { status: 409, body: { error: 'The facts changed since the preview. Look at the new request before sending it.' } };
       const key = `${request.hash}:${ai.config.model}`;
       if (!explanations.has(key)) {
-        try { explanations.set(key, await explainCard({ config: ai.config, request, card, complete: ai.complete })); } catch (error) {
+        try { explanations.set(key, await explainCard({ config: ai.config, request, card, complete: guarded('explanations', ai.complete) })); } catch (error) {
           return { status: 502, body: { error: `The model did not answer: ${String(error?.message ?? error).slice(0, 200)}` } };
         }
       }

@@ -5,7 +5,8 @@
 // - detect returns null when the folder is not for it, or { types: [...] }
 //   (the project types it recognised, for example next-app-router);
 // - read returns (or resolves to) a graph of schema version 1, with paths
-//   relative to the folder.
+//   relative to the folder. The context is { types, cache } (cache false: do
+//   not read or write the incremental cache).
 // readProject runs every reader that recognises the folder, merges what they
 // return (a Node frontend with a Python backend is one project), puts the
 // result in a stable order and checks it. It never refuses a folder: with no
@@ -81,7 +82,9 @@ function merge(graphs, name) {
 // Reads a project folder. Returns { graph, readers, problems }: problems are
 // integrity failures of the readers' output (a reader bug), reported rather
 // than hidden; the graph is returned anyway.
-export async function readProject(folder, { readers = builtInReaders } = {}) {
+// cache: false reads without the incremental cache (a temporary copy of an old
+// commit, phase 9: nothing is left in CodeTAC's data folder for it).
+export async function readProject(folder, { readers = builtInReaders, cache = true } = {}) {
   const root = realpathSync(folder);
   const name = basename(root);
   const chosen = [];
@@ -99,7 +102,7 @@ export async function readProject(folder, { readers = builtInReaders } = {}) {
   const problems = [];
   for (const { reader, types } of chosen) {
     try {
-      const graph = await reader.read(root, { types });
+      const graph = await reader.read(root, { types, cache });
       if (graph?.schemaVersion !== SCHEMA_VERSION) problems.push(`Reader ${reader.name} returned schema version ${graph?.schemaVersion}, not ${SCHEMA_VERSION}.`);
       graphs.push({ ...graph, project: { ...graph.project, types: [...new Set([...types, ...(graph.project?.types ?? [])])] }, reader: { name: reader.name, version: reader.version } });
     } catch (error) {

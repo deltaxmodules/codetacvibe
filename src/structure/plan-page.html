@@ -39,6 +39,7 @@ aside li { margin:3px 0; }
 .small { font-size:11px; }
 .explain { margin-top:14px; border-top:1px solid var(--line); padding-top:10px; }
 .explain pre { white-space:pre-wrap; max-height:260px; }
+.explain.inline { margin-top:4px; border-top:0; padding-top:0; }
 .explanation { border-left:3px solid var(--accent); padding-left:10px; }
 .proof { all:unset; display:inline-block; cursor:pointer; color:var(--accent); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; overflow-wrap:anywhere; }
 pre { background:var(--code); padding:8px; border-radius:6px; overflow:auto; font-size:12px; margin:6px 0; }
@@ -89,6 +90,7 @@ body.embed h1 { display:none; }
 .findings.alert > li { border-left-color:#d0566a; }
 .findings.warning > li { border-left-color:#d18a3a; }
 header button.plain.on { font-weight:600; text-decoration:underline; }
+header a.plain { color:var(--accent); text-decoration:none; }
 .arrow.inferred { stroke-dasharray:2 4; }
 .arrow.never { stroke-dasharray:7 5; }
 .arrow.observed { stroke-dasharray:4 3; }
@@ -100,6 +102,45 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
 .leaks details > summary { cursor:pointer; font-size:12px; margin:14px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
 .findings.health > li > div:first-child b { font-weight:600; }
 .tbox.sel rect.frame { stroke:var(--accent); stroke-width:2.5; }
+.box.ch-added rect.frame { stroke:#2e9d5b; stroke-width:2.5; }
+.box.ch-removed rect.frame { stroke:#d0566a; stroke-width:2; stroke-dasharray:6 4; }
+.box.ch-removed text { text-decoration:line-through; opacity:.75; }
+.box.ch-changed rect.frame, .box.ch-moved rect.frame { stroke:#d18a3a; stroke-width:2.5; }
+.box.ch-inside rect.frame { stroke:#d18a3a; stroke-width:1.8; stroke-dasharray:2 3; }
+.box.ch-none { opacity:.45; }
+.ch-badge { font-size:11px; font-weight:700; pointer-events:none; }
+.arrow.ch-added { stroke:#2e9d5b !important; opacity:1 !important; }
+.arrow.ch-removed { stroke:#d0566a !important; stroke-dasharray:6 4; opacity:1 !important; }
+.arrow.ch-changed { stroke:#d18a3a !important; opacity:1 !important; }
+.changes { padding:14px 16px 0; max-width:1200px; margin:0 auto; }
+.changes h2 { font-size:14px; margin:0 0 4px; }
+.changes .bar { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin:6px 0; }
+.changes select, .changes input[type=text] { font:inherit; padding:2px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); }
+.findings.info > li { border-left-color:var(--line); }
+.changes .list { max-height:38vh; overflow:auto; }
+.changes .findings > li > div:first-child { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; }
+.changes .findings .fact, aside .findings .fact { display:inline-block; }
+.findings > li.lit { background:var(--hit); }
+.changes .marks i { display:inline-block; width:14px; height:10px; border:2px solid; border-radius:3px; vertical-align:-1px; margin:0 4px 0 8px; }
+.predict { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:8px 0; }
+.predict h3 { font-size:13px; margin:0 0 4px; }
+.predict fieldset { border:0; padding:0; margin:6px 0; }
+.predict legend { font-size:12px; font-weight:600; padding:0; }
+.predict .chips { list-style:none; padding:0; margin:2px 0; display:flex; flex-wrap:wrap; gap:4px; }
+.predict .chips li { border:1px solid var(--line); border-radius:10px; padding:0 2px 0 8px; font-size:12px; }
+.predict .chips button { padding:0 4px; }
+.predict .predicted { margin:2px 0 6px; padding-left:18px; font-size:12px; }
+.predict h4 { font-size:12px; margin:6px 0 0; }
+.changes .findings > li.unread button.fact { font-weight:600; }
+.badge { display:inline-block; min-width:16px; padding:0 5px; margin-left:4px; border-radius:9px; background:#d18a3a; color:#fff; font-size:11px; font-weight:600; text-align:center; line-height:16px; }
+.quiz .findings > li { padding:8px 12px; }
+.quiz .findings > li.right { border-left-color:#2e9d5b; }
+.quiz .findings > li.wrong { border-left-color:#d0566a; }
+.quiz .choices { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 2px; }
+.quiz .choices button { font:inherit; font-size:12px; padding:3px 10px; border:1px solid var(--line); border-radius:12px; background:var(--bg); color:var(--text); cursor:pointer; }
+.quiz .choices button:disabled { cursor:default; opacity:.6; }
+.quiz .choices button.answer { border-color:#2e9d5b; opacity:1; font-weight:600; }
+.quiz .choices button.picked:not(.answer) { border-color:#d0566a; opacity:1; text-decoration:line-through; }
 .tbox { cursor:pointer; } .tbox text { fill:var(--text); font-size:12px; pointer-events:none; } .tbox .sub { fill:var(--muted); font-size:11px; }
 </style>
 </head>
@@ -114,7 +155,11 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   <button class="plain" id="secretsButton" data-t="secretsButton" data-t-title="secretsButtonTitle"></button>
   <button class="plain" id="dataButton" data-t="dataButton" data-t-title="dataButtonTitle"></button>
   <button class="plain" id="healthButton" data-t="healthButton" data-t-title="healthButtonTitle"></button>
+  <button class="plain" id="diffButton" data-t="diffButton" data-t-title="diffButtonTitle"></button>
+  <button class="plain" id="quizButton" data-t="quizButton" data-t-title="quizButtonTitle"></button>
+  <button class="plain" id="explainPlan" data-t="explainPlan" data-t-title="explainPlanTitle"></button>
   <button class="plain" id="collapse" data-t="collapse" data-t-title="collapseTitle"></button>
+  <a class="plain" id="privacyLink" href="/privacy" data-t="privacyLink" data-t-title="privacyLinkTitle"></a>
 </header>
 <div id="tracebar" hidden></div>
 <main>
@@ -151,7 +196,8 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   let coverage = false;
   // Phase 4: the «What leaves the machine» view instead of the plan.
   // Phases 4, 5, 6 and 8: a table, the data model or the structure's health instead of the plan (view=leaks | secrets | data | health).
-  let view = ['leaks', 'secrets', 'data', 'health'].includes(params.get('view')) ? params.get('view') : 'plan';
+  // Phase 9: the plan with what changed since a snapshot (view=diff). Phase 10: the quiz (view=quiz).
+  let view = ['leaks', 'secrets', 'data', 'health', 'diff', 'quiz'].includes(params.get('view')) ? params.get('view') : 'plan';
   let traceInfo = null;
   let openedFor = null;
   let lastText = '';
@@ -194,6 +240,8 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
 
   async function refresh(wait) {
     if (!run) { $('status').textContent = t('noRun'); return; }
+    if (view === 'diff') return refreshDiff(wait);
+    if (view === 'quiz') return refreshQuiz(wait);
     if (view !== 'plan') return refreshTable(wait);
     let response;
     try {
@@ -381,6 +429,7 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
       const slot = html('div');
       proofList(slot, item.proof.slice(0, 6));
       li.appendChild(slot);
+      if (item.key) explainArea(li, { kind: 'alert', source: 'secrets', key: item.key }, { small: true });
       ul.appendChild(li);
     }
     parent.appendChild(ul);
@@ -449,7 +498,9 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   function draw() {
     const canvas = $('canvas');
     canvas.textContent = '';
-    if (!plan.boxes.length) { showStatus(t('noFiles')); return; }
+    if (view === 'diff' && diffPanel) canvas.appendChild(diffPanel);
+    if (!plan.boxes.length) { if (view !== 'diff') showStatus(t('noFiles')); return; }
+    const changeOf = item => (view === 'diff' ? diffMark(item) : null);
     const margin = 24;
     const side = margin + 80; // room for the arrows that go round
     const svg = el('svg', { width: plan.width + side * 2, height: plan.height + margin * 2, viewBox: [-side, -margin, plan.width + side * 2, plan.height + margin * 2].join(' '),
@@ -464,7 +515,9 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
     for (const note of plan.notes) if (note.box) notesOf.set(note.box, (notesOf.get(note.box) || 0) + 1);
     const boxLayer = el('g', {}, svg);
     for (const box of plan.boxes) {
-      const g = el('g', { class: 'box' + (selected?.id === box.id ? ' sel' : '') + (highlight === box.id ? ' hit' : '') + ('lit' in box ? (box.lit ? ' lit' : ' dim') : ''), tabindex: 0, 'data-id': box.id }, boxLayer);
+      const change = changeOf(box);
+      const g = el('g', { class: 'box' + (selected?.id === box.id ? ' sel' : '') + (highlight === box.id ? ' hit' : '') + ('lit' in box ? (box.lit ? ' lit' : ' dim') : '')
+        + (change ? ' ch-' + change : ''), tabindex: 0, 'data-id': box.id, ...(change && change !== 'none' ? { 'data-change': change } : {}) }, boxLayer);
       const layer = layerOf(box);
       const fill = box.kind === 'block' ? css('--l-' + layer) : css('--panel');
       el('rect', { class: 'frame', x: box.x, y: box.y, width: box.w, height: box.h, rx: box.kind === 'block' ? 10 : 6, fill, stroke: css('--b-' + layer) }, g);
@@ -481,7 +534,11 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
         sub.textContent = String(box.count);
       }
       const title2 = el('title', {}, g);
-      title2.textContent = box.path || box.label;
+      title2.textContent = (box.path || box.label) + (change && change !== 'none' ? ' · ' + t(DIFF_MARK[change]) : '');
+      if (change && CHANGE_BADGE[change]) {
+        const badge = el('text', { class: 'ch-badge', x: box.x + box.w - (box.kind === 'file' ? 24 : 8), y: box.y + (box.kind === 'block' ? 42 : box.kind === 'file' ? 21 : 15), 'text-anchor': 'end', fill: CHANGE_COLOUR[change] }, g);
+        badge.textContent = CHANGE_BADGE[change];
+      }
       if (notesOf.has(box.id)) {
         el('circle', { class: 'note', cx: box.x + box.w - 4, cy: box.y + 4, r: 7 }, g);
         const mark = el('text', { class: 'note-text', x: box.x + box.w - 4, y: box.y + 8, 'text-anchor': 'middle' }, g);
@@ -544,7 +601,8 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
       const kind = arrow.kinds.observed && arrow.count === arrow.kinds.observed ? 'observed' : arrow.kinds.calls ? 'calls' : arrow.kinds.imports ? 'imports' : 'data';
       const state = ('lit' in arrow ? (arrow.lit ? ' lit' : arrow.inferred ? ' inferred' : ' dim') : '') + (arrow.ran === false ? ' never' : '') + (kind === 'observed' ? ' observed' : '');
       const isSel = selected?.type === 'arrow' && selected.id === arrow.id;
-      el('path', { class: 'arrow ' + kind + state + (arrow.confidence === 'possible' ? ' possible' : '') + (isSel ? ' sel' : ''), d,
+      const arrowChange = changeOf(arrow);
+      el('path', { class: 'arrow ' + kind + state + (arrow.confidence === 'possible' ? ' possible' : '') + (isSel ? ' sel' : '') + (arrowChange && arrowChange !== 'none' ? ' ch-' + arrowChange : ''), d,
         stroke: css('--a-' + kind), 'stroke-width': Math.min(6, 1.2 + Math.log2(arrow.count)), 'marker-end': 'url(#head-' + (isSel ? 'sel' : kind) + ')', opacity: 0.85 }, arrowLayer);
       const hit = el('path', { class: 'arrow-hit', d, 'data-arrow': arrow.id }, arrowLayer);
       const tip = el('title', {}, hit);
@@ -592,6 +650,7 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
       const slot = html('div');
       proofList(slot, item.proof.slice(0, 6));
       li.appendChild(slot);
+      if (item.key) explainArea(li, { kind: 'alert', source: 'data', key: item.key }, { small: true });
       ul.appendChild(li);
     }
     parent.appendChild(ul);
@@ -820,9 +879,491 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
         slot.appendChild(more);
       }
       li.appendChild(slot);
+      if (item.key) explainArea(li, { kind: 'alert', source: 'health', key: item.key }, { small: true });
       list.appendChild(li);
     }
     canvas.appendChild(box);
+  }
+
+  // Phase 10: the quiz. The questions come without their answers; each answer
+  // is sent to the panel, which says whether it is right, with the proof, and
+  // counts it on this machine. A new reading of the project only redraws the
+  // quiz when its questions changed.
+  let quizRound = 0;
+  let lastQuiz = '';
+  let quizVerdicts = new Map();
+  let quizResults = null;
+  async function refreshQuiz(wait) {
+    let response;
+    try { response = await fetch('/api/structure/quiz?run=' + encodeURIComponent(run) + '&round=' + quizRound + (wait ? '&wait=5000' : ''), { cache: 'no-store' }); }
+    catch { showStatus(t('panelSilent')); return; }
+    const body = await response.json().catch(() => ({}));
+    if (view !== 'quiz') return;
+    if (response.status === 202) { showStatus(t('reading')); setTimeout(() => refreshQuiz(true), 500); return; }
+    if (!response.ok) { showStatus(body.error || t('unreadable')); return; }
+    shownReadAt = body.readAt;
+    $('tracebar').hidden = true;
+    const text = quizRound + JSON.stringify(body.quiz.questions);
+    if (text === lastQuiz) return;
+    lastQuiz = text;
+    quizVerdicts = new Map();
+    quizResults = body.quiz.results;
+    drawQuiz(body.quiz.questions);
+  }
+  function quizScore() {
+    const parts = [];
+    const round = [...quizVerdicts.values()].filter(verdict => verdict.right != null);
+    if (round.length) parts.push(t('quizThisRound', { right: round.filter(verdict => verdict.right).length, answered: round.length }));
+    if (quizResults?.answered) parts.push(t('quizScore', { count: quizResults.answered, right: quizResults.right, answered: quizResults.answered }));
+    $('quizScore').textContent = parts.join(' · ');
+  }
+  function drawQuiz(questions) {
+    const canvas = $('canvas');
+    canvas.textContent = '';
+    const box = html('div', null, { className: 'leaks' });
+    box.classList.add('quiz');
+    box.appendChild(html('h2', t('quizTitle')));
+    box.appendChild(html('p', t('quizIntro'), { className: 'muted small' }));
+    const bar = html('p', null, { className: 'muted' });
+    bar.appendChild(html('span', '', { id: 'quizScore' }));
+    const again = html('button', t('quizNew'), { className: 'plain', id: 'quizNew' });
+    again.style.marginLeft = '12px';
+    again.addEventListener('click', () => { quizRound += 1; lastQuiz = ''; refreshQuiz(); });
+    bar.appendChild(again);
+    box.appendChild(bar);
+    if (!questions.length) { box.appendChild(html('p', t('quizNone'))); canvas.appendChild(box); quizScore(); return; }
+    const list = html('ol', null, { className: 'findings' });
+    for (const question of questions) {
+      const li = html('li');
+      li.dataset.question = question.id;
+      li.appendChild(html('div', question.text));
+      const choices = html('div', null, { className: 'choices' });
+      const buttons = question.choices.map((choice, index) => {
+        const button = html('button', choice.text);
+        button.addEventListener('click', () => answer(question, index, li, buttons));
+        choices.appendChild(button);
+        return button;
+      });
+      li.appendChild(choices);
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    canvas.appendChild(box);
+    quizScore();
+  }
+  async function answer(question, choice, li, buttons) {
+    if (quizVerdicts.has(question.id)) return;
+    quizVerdicts.set(question.id, {});
+    for (const button of buttons) button.disabled = true;
+    let response;
+    try {
+      response = await fetch('/api/structure/quiz/answer?run=' + encodeURIComponent(run), { method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ round: quizRound, id: question.id, choice }) });
+    } catch { quizVerdicts.delete(question.id); for (const button of buttons) button.disabled = false; return; }
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { li.appendChild(html('div', t('quizChanged'), { className: 'muted small' })); return; }
+    quizVerdicts.set(question.id, body);
+    quizResults = body.results;
+    buttons[choice].classList.add('picked');
+    buttons[body.answer].classList.add('answer');
+    li.classList.add(body.right ? 'right' : 'wrong');
+    li.appendChild(html('div', body.right ? t('quizRight') : t('quizWrong', { answer: question.choices[body.answer].text }), { className: 'small' }));
+    li.appendChild(html('div', t('quizProof'), { className: 'muted small' }));
+    proofList(li, body.proof);
+    quizScore();
+  }
+
+  // Phase 9: the «Changes» view — the plan of the union of both versions,
+  // with its boxes and arrows marked, and the sentences of the summary above it.
+  const DIFF_MARK = { added: 'diffMark_added', removed: 'diffMark_removed', changed: 'diffMark_changed', moved: 'diffMark_moved', inside: 'diffMark_inside' };
+  const CHANGE_BADGE = { added: '+', removed: '−', changed: '~', moved: '→', inside: '•' };
+  const CHANGE_COLOUR = { added: '#2e9d5b', removed: '#d0566a', changed: '#d18a3a', moved: '#d18a3a', inside: '#d18a3a' };
+  let diffSnapshot = params.get('snapshot') || 'latest';
+  let diffOnly = false;
+  let diffShown = null;
+  let diffPanel = null;
+  let diffOpenedFor = null;
+  let diffLit = null;
+  let lastDiff = '';
+  // The mark of a box or arrow: its change, or none when the filter hides it.
+  function diffMark(item) {
+    if (!item.change) return null;
+    if (!diffOnly || !diffShown) return item.change;
+    const allowed = new Set(diffShown.sentences.filter(sentence => sentence.touches.length).flatMap(sentence => sentence.boxes));
+    const inPlay = item.from ? allowed.has(item.from) || allowed.has(item.to) : allowed.has(item.id);
+    return inPlay ? item.change : 'none';
+  }
+  function snapshotText(item) {
+    if (item.type === 'commit' || !item.createdAt) return t('diffCommit', { commit: item.commit.slice(0, 12), date: (item.date || '').slice(0, 10), subject: item.subject || '' });
+    const when = item.createdAt.replace('T', ' ').slice(0, 16) + ' UTC';
+    const source = item.source === 'commit' ? t('diffSnapshotCommit', { commit: item.commit.slice(0, 12) })
+      : item.commit ? t('diffSnapshotChanges', { commit: item.commit.slice(0, 12) }) : t('diffSnapshotNoGit');
+    return (item.label ? '«' + item.label + '» · ' : '') + when + ' · ' + source;
+  }
+  async function saveSnapshotNow(label, prediction = null) {
+    const response = await fetch('/api/structure/snapshot?run=' + encodeURIComponent(run), { method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ label: label || null, ...(prediction ? { prediction } : {}) }) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { showStatus(body.error || t('unreadable')); return; }
+    diffSnapshot = body.snapshot.id;
+    lastDiff = '';
+    return refreshDiff();
+  }
+  function saveControls(parent) {
+    const input = html('input', null, { type: 'text', placeholder: t('diffLabelPlaceholder'), id: 'diffLabel', value: predictLabel });
+    input.setAttribute('aria-label', t('diffLabelPlaceholder'));
+    input.addEventListener('input', () => { predictLabel = input.value; });
+    const button = html('button', t('diffSave'), { className: 'plain', title: t('diffSaveTitle'), id: 'diffSave' });
+    button.addEventListener('click', () => { predictLabel = ''; saveSnapshotNow(input.value.trim()); });
+    const predict = html('button', t('predictButton'), { className: 'plain', title: t('predictButtonTitle'), id: 'predictButton' });
+    predict.addEventListener('click', () => (predicting ? closePredict() : openPredict()));
+    parent.append(input, button, predict);
+  }
+
+  // Phase 10: «Predict» — before asking the AI for a change, the user writes
+  // what they expect it to do (files, blocks that start depending on others,
+  // new services), chosen from the graph's lists or written. It is saved with
+  // a snapshot (outside the project) and compared with what changed: rules, no AI.
+  let predicting = false;
+  let predictChoices = null;
+  let predictLabel = '';
+  const emptyDraft = () => ({ added: [], changed: [], removed: [], dependsOn: [], services: [] });
+  let predictDraft = emptyDraft();
+  let predictProblem = '';
+  const blockName = id => (predictChoices?.blocks || []).find(block => block.id === id)?.name || LAYER_NAMES[id.replace(/^block:/, '')] || id;
+  async function openPredict() {
+    if (!predictChoices) {
+      const response = await fetch('/api/structure/predict/choices?run=' + encodeURIComponent(run), { cache: 'no-store' }).catch(() => null);
+      predictChoices = response?.ok ? await response.json().catch(() => null) : null;
+      predictChoices ||= { files: [], blocks: Object.keys(LAYER_NAMES).filter(layer => layer !== 'support').map(layer => ({ id: 'block:' + layer, name: LAYER_NAMES[layer] })), services: [] };
+    }
+    predicting = true;
+    lastDiff = '';
+    return refreshDiff();
+  }
+  function closePredict() {
+    predicting = false;
+    predictProblem = '';
+    lastDiff = '';
+    return refreshDiff();
+  }
+  function choicesList(id, values) {
+    const list = html('datalist', null, { id });
+    for (const value of values) list.appendChild(html('option', null, { value }));
+    return list;
+  }
+  // A list of the draft (key) the user adds to and removes from.
+  function draftField(key, legend, entry) {
+    const field = html('fieldset', null, { id: 'predict-' + key });
+    field.appendChild(html('legend', t(legend)));
+    const chips = html('ul', null, { className: 'chips' });
+    const drawChips = () => {
+      chips.replaceChildren();
+      predictDraft[key].forEach((value, index) => {
+        const li = html('li', typeof value === 'string' ? value : blockName(value.from) + ' → ' + blockName(value.to));
+        const remove = html('button', '×', { className: 'plain', title: t('predictRemove') });
+        remove.setAttribute('aria-label', t('predictRemove'));
+        remove.addEventListener('click', () => { predictDraft[key].splice(index, 1); drawChips(); });
+        li.appendChild(remove);
+        chips.appendChild(li);
+      });
+    };
+    const row = html('div', null, { className: 'bar' });
+    const add = html('button', t('predictAdd'), { className: 'plain' });
+    const take = value => {
+      if (!value) return;
+      const same = item => JSON.stringify(item) === JSON.stringify(value);
+      if (!predictDraft[key].some(same)) predictDraft[key].push(value);
+      predictProblem = '';
+      drawChips();
+    };
+    for (const node of entry(take, add)) row.appendChild(node);
+    row.appendChild(add);
+    field.append(row, chips);
+    drawChips();
+    return field;
+  }
+  function textEntry(listId, placeholder, label) {
+    return (take, add) => {
+      const input = html('input', null, { type: 'text', placeholder: t(placeholder) });
+      input.setAttribute('aria-label', t(label));
+      if (listId) input.setAttribute('list', listId);
+      const done = () => { take(input.value.trim()); input.value = ''; input.focus(); };
+      add.addEventListener('click', done);
+      input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); done(); } });
+      return [input];
+    };
+  }
+  function blockEntry(take, add) {
+    const pick = () => {
+      const select = html('select');
+      for (const block of predictChoices.blocks) select.appendChild(html('option', block.name, { value: block.id }));
+      return select;
+    };
+    const from = pick();
+    const to = pick();
+    from.setAttribute('aria-label', t('predictDepends') + ' (from)');
+    to.setAttribute('aria-label', t('predictDepends') + ' (to)');
+    if (to.options.length > 2) to.selectedIndex = 2;
+    add.addEventListener('click', () => { if (from.value !== to.value) take({ from: from.value, to: to.value }); });
+    return [from, html('span', '→'), to];
+  }
+  function predictForm() {
+    const form = html('div', null, { className: 'predict', id: 'predictForm' });
+    form.appendChild(html('h3', t('predictTitle')));
+    form.appendChild(html('p', t('predictIntro'), { className: 'muted small' }));
+    form.append(choicesList('predictFiles', predictChoices.files), choicesList('predictServiceList', predictChoices.services));
+    form.appendChild(draftField('added', 'predictAdded', textEntry(null, 'predictPathPlaceholder', 'predictAdded')));
+    form.appendChild(draftField('changed', 'predictChanged', textEntry('predictFiles', 'predictPathPlaceholder', 'predictChanged')));
+    form.appendChild(draftField('removed', 'predictRemoved', textEntry('predictFiles', 'predictPathPlaceholder', 'predictRemoved')));
+    form.appendChild(draftField('dependsOn', 'predictDepends', blockEntry));
+    form.appendChild(draftField('services', 'predictServices', textEntry('predictServiceList', 'predictServicePlaceholder', 'predictServices')));
+    const bar = html('div', null, { className: 'bar' });
+    const save = html('button', t('predictSave'), { className: 'plain', id: 'predictSave' });
+    save.addEventListener('click', async () => {
+      const draft = predictDraft;
+      if (!['added', 'changed', 'removed', 'dependsOn', 'services'].some(key => draft[key].length)) {
+        predictProblem = t('predictNothing');
+        lastDiff = '';
+        return refreshDiff();
+      }
+      const label = predictLabel.trim();
+      predicting = false;
+      predictDraft = emptyDraft();
+      predictLabel = '';
+      await saveSnapshotNow(label, { files: { added: draft.added, changed: draft.changed, removed: draft.removed }, dependsOn: draft.dependsOn, services: draft.services });
+    });
+    const cancel = html('button', t('predictCancel'), { className: 'plain', id: 'predictCancel' });
+    cancel.addEventListener('click', () => closePredict());
+    bar.append(save, cancel);
+    if (predictProblem) bar.appendChild(html('span', predictProblem, { className: 'muted', id: 'predictProblem' }));
+    form.appendChild(bar);
+    return form;
+  }
+  // The prediction saved with the snapshot, against what changed.
+  function predictionResult(result) {
+    const section = html('div', null, { className: 'predict', id: 'predictResult' });
+    section.appendChild(html('h3', t('predictYours')));
+    if (!result.score.changed) {
+      // Nothing changed yet: what was predicted is waiting, not wrong.
+      section.appendChild(html('p', t('predictWaiting'), { className: 'muted small', id: 'predictScore' }));
+      section.appendChild(html('h4', t('predictPredicted')));
+      const list = html('ul', null, { className: 'predicted', id: 'predict-waiting' });
+      for (const item of result.wrong) list.appendChild(html('li', item.text));
+      section.appendChild(list);
+      return section;
+    }
+    section.appendChild(html('p', t('predictScore', result.score), { className: 'muted small', id: 'predictScore' }));
+    for (const [list, mark, heading] of [['hits', '✓', 'predict_hits'], ['missed', '+', 'predict_missed'], ['wrong', '✗', 'predict_wrong']]) {
+      if (!result[list].length) continue;
+      section.appendChild(html('h4', t(heading)));
+      const items = html('ul', null, { className: 'predicted', id: 'predict-' + list });
+      for (const item of result[list]) items.appendChild(html('li', mark + ' ' + item.text + (item.insteadText ? ' (' + item.insteadText + ')' : '')));
+      section.appendChild(items);
+    }
+    return section;
+  }
+  function sentenceItem(sentence, onPlan) {
+    const li = html('li');
+    const head = html('div');
+    const text = html('button', sentence.text, { className: 'fact', title: t('diffShowOnPlan') });
+    text.dataset.kind = sentence.kind;
+    text.addEventListener('click', () => {
+      // Phase 10, step 4: opening a change marks it reviewed.
+      if (sentence.reviewed === false && diffShown?.against?.id) { sentence.reviewed = true; li.classList.remove('unread'); markReviewed(diffShown.against.id, [sentence.reviewKey]); }
+      if (!sentence.target) return;
+      for (const id of sentence.target.open) open.add(id);
+      save();
+      highlight = sentence.target.id;
+      diffLit = sentence;
+      selected = { type: 'box', id: sentence.target.id };
+      lastDiff = '';
+      refreshDiff().then(() => details());
+    });
+    head.appendChild(text);
+    if (sentence.reviewed === false) { li.classList.add('unread'); head.appendChild(html('span', t('reviewNew'), { className: 'tag' })); }
+    for (const touch of sentence.touches) head.appendChild(html('span', t(touch === 'leaks' ? 'diffTagLeaks' : 'diffTagSecrets'), { className: 'tag client' }));
+    li.appendChild(head);
+    const slot = html('div');
+    if (sentence.side === 'before') {
+      // What is gone is proven by the snapshot: the lines are not in the project any more.
+      const list = html('ul');
+      for (const proof of sentence.proof) list.appendChild(html('li', proof.file + ':' + proof.line + ' ' + t('diffInSnapshot'), { className: 'muted small' }));
+      slot.appendChild(list);
+    } else proofList(slot, sentence.proof);
+    li.appendChild(slot);
+    if (sentence.key && diffShown?.against) {
+      const snapshot = diffShown.against.type === 'commit' ? diffShown.against.commit : diffShown.against.id;
+      explainArea(li, { kind: 'alert', source: 'changes', key: sentence.key, snapshot }, { small: true });
+    }
+    if (onPlan && diffLit === sentence) li.classList.add('lit');
+    return li;
+  }
+  function buildDiffPanel(data) {
+    const box = html('div', null, { className: 'changes' });
+    if (!data.against) {
+      box.appendChild(html('h2', t('diffTitleNone')));
+      box.appendChild(html('p', data.missing ? t('diffMissing', { id: data.missing }) : t('diffNoSnapshot'), { className: 'muted' }));
+      const bar = html('div', null, { className: 'bar' });
+      saveControls(bar);
+      if ((data.commits || []).length) {
+        const pick = html('select', null, { id: 'diffSnapshot' });
+        pick.setAttribute('aria-label', t('diffOrCommit'));
+        pick.appendChild(html('option', t('diffOrCommit'), { value: '' }));
+        for (const item of data.commits) pick.appendChild(html('option', snapshotText({ ...item, type: 'commit' }), { value: item.commit }));
+        pick.addEventListener('change', () => { if (!pick.value) return; diffSnapshot = pick.value; lastDiff = ''; refreshDiff(); });
+        bar.appendChild(pick);
+      }
+      box.appendChild(bar);
+      if (predicting) box.appendChild(predictForm());
+      carriedList(box);
+      return box;
+    }
+    box.appendChild(html('h2', t('diffTitle', { snapshot: snapshotText(data.against) })));
+    const bar = html('div', null, { className: 'bar' });
+    const pick = html('select', null, { id: 'diffSnapshot' });
+    pick.setAttribute('aria-label', t('diffCompareWith'));
+    const snapshotsGroup = html('optgroup');
+    snapshotsGroup.label = t('diffSnapshots');
+    data.snapshots.forEach((item, index) => {
+      const option = html('option', (index === 0 ? t('diffNewest') + ' · ' : '') + snapshotText(item), { value: item.id });
+      if (item.id === data.against.id) option.selected = true;
+      snapshotsGroup.appendChild(option);
+    });
+    if (data.snapshots.length) pick.appendChild(snapshotsGroup);
+    // Commits are read from a temporary copy (git archive): the folder and .git are not touched.
+    const commitsGroup = html('optgroup');
+    commitsGroup.label = t('diffCommits');
+    for (const item of data.commits || []) {
+      const option = html('option', snapshotText({ ...item, type: 'commit' }), { value: item.commit });
+      if (data.against.type === 'commit' && item.commit === data.against.commit) option.selected = true;
+      commitsGroup.appendChild(option);
+    }
+    if ((data.commits || []).length) pick.appendChild(commitsGroup);
+    pick.addEventListener('change', () => { diffSnapshot = pick.value; diffLit = null; lastDiff = ''; if (/^[0-9a-f]{40}$/.test(pick.value)) showReadingCommit(); refreshDiff(); });
+    const label = html('label', t('diffCompareWith') + ' ');
+    label.appendChild(pick);
+    bar.appendChild(label);
+    const only = html('label');
+    const check = html('input', null, { type: 'checkbox', checked: diffOnly, id: 'diffOnly' });
+    check.addEventListener('change', () => { diffOnly = check.checked; lastDiff = ''; refreshDiff(); });
+    only.append(check, ' ' + t('diffOnlyLeaks'));
+    bar.appendChild(only);
+    saveControls(bar);
+    box.appendChild(bar);
+    if (predicting) box.appendChild(predictForm());
+    const c = data.counts;
+    const shown = diffOnly ? data.sentences.filter(sentence => sentence.touches.length) : data.sentences;
+    box.appendChild(html('p', data.sentences.length ? [t('diffCount', { count: data.sentences.length }), ...(c.alert ? [t('diffAlerts', { count: c.alert })] : []),
+      ...(c.warning ? [t('diffWarnings', { count: c.warning })] : []), t('diffTouching', { count: c.touching })].join(' · ') : t('diffNone'), { className: 'muted', id: 'diffSummary' }));
+    if (data.against.id) box.appendChild(html('p', reviewDebt?.total ? t('reviewDebt', { count: reviewDebt.total }) : t('reviewNone'), { className: 'small', id: 'reviewDebt' }));
+    const marks = html('p', null, { className: 'marks' });
+    marks.classList.add('muted', 'small');
+    for (const change of ['added', 'removed', 'changed', 'inside']) {
+      const swatch = html('i');
+      swatch.style.borderColor = CHANGE_COLOUR[change];
+      if (change === 'removed' || change === 'inside') swatch.style.borderStyle = 'dashed';
+      marks.append(swatch, t(DIFF_MARK[change]));
+    }
+    box.appendChild(marks);
+    if (data.prediction) box.appendChild(predictionResult(data.prediction));
+    if (diffOnly && !shown.length && data.sentences.length) box.appendChild(html('p', t('diffNoneTouching')));
+    const lists = html('div', null, { className: 'list' });
+    for (const severity of ['alert', 'warning', 'info']) {
+      const group = shown.filter(sentence => sentence.severity === severity);
+      if (!group.length) continue;
+      const list = html('ol', null, { className: 'findings ' + severity, id: 'diff-' + severity });
+      for (const sentence of group) list.appendChild(sentenceItem(sentence, true));
+      lists.appendChild(list);
+    }
+    if (lists.childNodes.length) box.appendChild(lists);
+    carriedList(box);
+    return box;
+  }
+  // Phase 10, step 4: the comprehension debt. The number of changes not
+  // opened yet is on the Changes button; the changes from before the newest
+  // snapshot not opened are listed under the sentences, until opened.
+  let reviewDebt = null;
+  function carriedList(box) {
+    const carried = reviewDebt?.carried ?? [];
+    if (!carried.length) return;
+    const group = html('details', null, { id: 'reviewCarried' });
+    group.open = true;
+    group.appendChild(html('summary', t('reviewCarried', { count: carried.length })));
+    group.appendChild(html('p', t('reviewCarriedWhy'), { className: 'muted small' }));
+    const list = html('ol', null, { className: 'findings' });
+    list.classList.add('info');
+    for (const item of carried) {
+      const li = html('li');
+      li.classList.add('unread');
+      const text = html('button', item.text, { className: 'fact', title: t('reviewMark') });
+      text.dataset.kind = item.kind;
+      text.addEventListener('click', () => { li.remove(); markReviewed(null, [item.key]); });
+      li.appendChild(text);
+      li.appendChild(html('div', t('reviewFrom', { snapshot: item.from }), { className: 'muted small' }));
+      list.appendChild(li);
+    }
+    group.appendChild(list);
+    box.appendChild(group);
+  }
+  async function markReviewed(snapshot, keys) {
+    try {
+      const response = await fetch('/api/structure/review?run=' + encodeURIComponent(run), { method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ snapshot, keys }) });
+      if (response.ok) showDebt((await response.json()).review);
+    } catch {}
+  }
+  async function refreshDebt() {
+    if (!run) return;
+    try {
+      const response = await fetch('/api/structure/review?run=' + encodeURIComponent(run), { cache: 'no-store' });
+      if (response.status === 200) showDebt((await response.json()).review);
+    } catch {}
+  }
+  function showDebt(review) {
+    reviewDebt = review;
+    showButtons();
+    const note = $('reviewDebt');
+    if (note) note.textContent = review?.total ? t('reviewDebt', { count: review.total }) : t('reviewNone');
+  }
+  function showReadingCommit() {
+    const note = document.getElementById('diffSummary');
+    if (note) note.textContent = t('diffReadingCommit');
+  }
+  async function refreshDiff(wait) {
+    let response;
+    try {
+      response = await fetch('/api/structure/diff?run=' + encodeURIComponent(run) + '&snapshot=' + encodeURIComponent(diffSnapshot) + '&open=' + encodeURIComponent([...open].join(',')) + (wait ? '&wait=5000' : ''), { cache: 'no-store' });
+    } catch { showStatus(t('panelSilent')); return; }
+    const body = await response.json().catch(() => ({}));
+    if (view !== 'diff') return;
+    if (response.status === 202) { showStatus(t('reading')); setTimeout(() => refreshDiff(true), 500); return; }
+    if (!response.ok) { showStatus(body.error || t('unreadable')); return; }
+    shownReadAt = body.readAt;
+    $('tracebar').hidden = true;
+    const data = body.diff;
+    if (body.review) { reviewDebt = body.review; showButtons(); }
+    $('project').textContent = body.project.name;
+    // A block is opened the first time it has changes (against this snapshot);
+    // after that, the user's choice to close it stays.
+    if (data.against) {
+      const key = data.against.type === 'commit' ? data.against.commit : data.against.id + data.against.createdAt;
+      if (diffOpenedFor?.key !== key) diffOpenedFor = { key, blocks: new Set() };
+      let changed = false;
+      for (const id of data.touchedBlocks) {
+        if (diffOpenedFor.blocks.has(id)) continue;
+        diffOpenedFor.blocks.add(id);
+        if (!open.has(id)) { open.add(id); changed = true; }
+      }
+      if (changed) { save(); lastDiff = ''; return refreshDiff(); }
+    }
+    const text = JSON.stringify(data) + JSON.stringify(body.review ?? null) + diffOnly + (diffLit?.text || '') + highlight + predicting + predictProblem;
+    if (text === lastDiff) return;
+    lastDiff = text;
+    diffShown = data.against ? data : null;
+    diffPanel = buildDiffPanel(data);
+    plan = data.plan || { boxes: [], arrows: [], notes: [], width: 0, height: 0 };
+    draw();
   }
 
   function mark() {
@@ -869,6 +1410,16 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
     side.textContent = '';
     if (!selected || !plan) { side.classList.remove('on'); return; }
     side.classList.add('on');
+    if (selected.type === 'plan-explain') {
+      const close = html('button', '✕', { className: 'plain', title: t('close') });
+      close.style.float = 'right';
+      close.addEventListener('click', () => { selected = null; details(); });
+      side.appendChild(close);
+      side.appendChild(html('h2', t('explainPlanHeading')));
+      side.appendChild(html('p', t('explainPlanIntro'), { className: 'muted small' }));
+      explainArea(side, { kind: 'plan' }, { open: true });
+      return;
+    }
     if (selected.type === 'unmatched') {
       side.appendChild(html('h2', t('unmatchedTitle')));
       side.appendChild(html('p', t('unmatchedText'), { className: 'muted' }));
@@ -892,6 +1443,20 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
     }
     const box = plan.boxes.find(item => item.id === selected.id);
     if (!box) return;
+    if (view === 'diff') {
+      const here = (diffShown?.sentences || []).filter(sentence => sentence.boxes.includes(box.id));
+      if (here.length || box.change) {
+        if (box.change === 'removed') side.appendChild(html('h2', box.path || box.label));
+        if (box.change) side.appendChild(html('p', t(DIFF_MARK[box.change]), { className: 'tag' }));
+        if (here.length) {
+          side.appendChild(html('h3', t('diffHere')));
+          const list = html('ul', null, { className: 'findings' });
+          for (const sentence of here) list.appendChild(sentenceItem(sentence, false));
+          side.appendChild(list);
+        }
+        if (box.change === 'removed') { side.appendChild(html('p', t('diffRemovedBox'), { className: 'muted' })); return; }
+      }
+    }
     if (box.kind === 'block') { blockDetails(side, box); return; }
     side.appendChild(html('h2', box.label));
     const kind = box.kind === 'block' ? t('blockKind', { files: t('files', { count: box.count }) }) : box.kind === 'file' ? t('fileKind', { path: box.path })
@@ -970,11 +1535,17 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   }
 
   // Optional AI explanation: preview of the exact request, then consent.
-  function explainArea(side, box) {
-    const area = html('div', null, { className: 'explain' });
-    const start = html('button', t('explain'), { className: 'plain', title: t('explainTitle') });
+  // subject: { kind: 'block', block } (phase 3), { kind: 'plan' } or
+  // { kind: 'alert', source, key, snapshot } (phase 10). The answer is always
+  // labelled as an explanation written by AI from the facts shown.
+  function explainArea(side, subject, { open: startOpen = false, small = false } = {}) {
+    if (subject.id) subject = { kind: 'block', block: subject.id };
+    const area = html('div', null, { className: 'explain' + (small ? ' inline' : '') });
+    const start = html('button', t(small ? 'explainAlert' : 'explain'), { className: 'plain', title: t('explainTitle') });
+    if (small) start.classList.add('small');
     area.appendChild(start);
     side.appendChild(area);
+    const query = Object.entries(subject).filter(([, value]) => value != null).map(([name, value]) => '&' + name + '=' + encodeURIComponent(value)).join('');
     const show = result => {
       const out = html('div', null, { className: 'explanation' });
       out.appendChild(html('h3', t('explanationBy', { model: result.model })));
@@ -984,9 +1555,17 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
     };
     start.addEventListener('click', async () => {
       area.textContent = '';
-      const response = await fetch('/api/structure/explain/preview?run=' + encodeURIComponent(run) + '&block=' + encodeURIComponent(box.id), { cache: 'no-store' });
+      const response = await fetch('/api/structure/explain/preview?run=' + encodeURIComponent(run) + query, { cache: 'no-store' });
       const preview = await response.json().catch(() => ({}));
       if (!response.ok) { area.appendChild(html('p', preview.error || t('previewFailed'), { className: 'muted' })); return; }
+      // Privacy (phase 10, step 5): switched off there, with a link to it.
+      if (!preview.active && preview.blocked) {
+        const note = html('p', preview.problem + ' ', { className: 'muted' });
+        note.classList.add('blocked');
+        note.appendChild(html('a', t('privacyLink'), { href: $('privacyLink').href }));
+        area.appendChild(note);
+        return;
+      }
       if (!preview.active) { area.appendChild(html('p', preview.problem ? t('noModelBecause', { problem: preview.problem }) : t('noModel'), { className: 'muted' })); return; }
       if (preview.cached) { area.appendChild(show({ ...preview.cached, model: preview.model })); return; }
       area.appendChild(html('h3', t(preview.local ? 'willSendLocal' : 'willSend', { provider: preview.provider, model: preview.model })));
@@ -1000,7 +1579,7 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
         send.disabled = true;
         send.textContent = t('waiting');
         const answer = await fetch('/api/structure/explain?run=' + encodeURIComponent(run), { method: 'POST', cache: 'no-store',
-          headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ block: box.id, hash: preview.hash }) });
+          headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ ...subject, hash: preview.hash }) });
         const result = await answer.json().catch(() => ({}));
         area.textContent = '';
         if (!answer.ok) { area.appendChild(html('p', result.error || t('explainFailed'), { className: 'muted' })); area.appendChild(start); return; }
@@ -1008,6 +1587,7 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
       });
       area.append(send, cancel);
     });
+    if (startOpen) start.click();
   }
 
   // Search by name: opens what is needed to show the result.
@@ -1042,21 +1622,27 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   document.addEventListener('click', event => { if (!event.target.closest('.search')) $('results').hidden = true; });
   $('coverage').addEventListener('click', () => { coverage = !coverage; $('coverage').textContent = coverage ? t('hideNeverRan') : t('neverRan'); lastText = ''; refresh(); });
   function showButtons() {
-    for (const [name, key] of [['leaks', 'leaksButton'], ['secrets', 'secretsButton'], ['data', 'dataButton'], ['health', 'healthButton']]) {
+    for (const [name, key] of [['leaks', 'leaksButton'], ['secrets', 'secretsButton'], ['data', 'dataButton'], ['health', 'healthButton'], ['diff', 'diffButton'], ['quiz', 'quizButton']]) {
       $(name + 'Button').classList.toggle('on', view === name);
       $(name + 'Button').textContent = view === name ? t('leaksBack') : t(key);
     }
-    for (const id of ['coverage', 'collapse', 'legend']) $(id).hidden = view !== 'plan';
+    if (reviewDebt?.total && view !== 'diff') {
+      $('diffButton').appendChild(html('span', String(reviewDebt.total), { className: 'badge', title: t('reviewDebt', { count: reviewDebt.total }) }));
+      $('diffButton').title = t('reviewDebt', { count: reviewDebt.total });
+    } else $('diffButton').title = t('diffButtonTitle');
+    for (const id of ['coverage', 'collapse', 'legend', 'explainPlan']) $(id).hidden = view !== 'plan' && !(view === 'diff' && id === 'collapse');
   }
   function setView(next) {
     view = next;
     dataSelected = null;
+    lastDiff = ''; diffLit = null;
     selected = null;
     details();
     showButtons();
-    lastText = ''; lastTable = '';
+    lastText = ''; lastTable = ''; lastQuiz = '';
     const url = new URL(location.href);
     if (view !== 'plan') url.searchParams.set('view', view); else url.searchParams.delete('view');
+    if (view !== 'diff') url.searchParams.delete('snapshot');
     history.replaceState(null, '', url);
     return refresh();
   }
@@ -1064,18 +1650,24 @@ header button.plain.on { font-weight:600; text-decoration:underline; }
   $('secretsButton').addEventListener('click', () => setView(view === 'secrets' ? 'plan' : 'secrets'));
   $('dataButton').addEventListener('click', () => setView(view === 'data' ? 'plan' : 'data'));
   $('healthButton').addEventListener('click', () => setView(view === 'health' ? 'plan' : 'health'));
+  $('diffButton').addEventListener('click', () => setView(view === 'diff' ? 'plan' : 'diff'));
+  $('quizButton').addEventListener('click', () => setView(view === 'quiz' ? 'plan' : 'quiz'));
+  $('explainPlan').addEventListener('click', () => { selected = { type: 'plan-explain' }; details(); });
   $('collapse').addEventListener('click', () => { open.clear(); save(); selected = null; highlight = null; details(); lastText = ''; refresh(); });
 
+  // Phase 10, step 5: the Privacy screen, and back here after it.
+  $('privacyLink').href = '/privacy?back=' + encodeURIComponent(location.pathname + location.search);
   legend();
   showButtons();
   refresh(true);
-  setInterval(() => { if (!document.hidden) refresh(); }, 10000);
+  refreshDebt();
+  setInterval(() => { if (!document.hidden) { refresh(); if (view !== 'diff') refreshDebt(); } }, 10000);
   // Watch mode: a light look every 2 s; a new reading of the project redraws the plan at once.
   setInterval(async () => {
     if (document.hidden || !run || !shownReadAt) return;
     try {
       const body = await (await fetch('/api/structure?run=' + encodeURIComponent(run), { cache: 'no-store' })).json();
-      if (body.readAt && body.readAt !== shownReadAt) refresh();
+      if (body.readAt && body.readAt !== shownReadAt) { refresh(); if (view !== 'diff') refreshDebt(); }
     } catch {}
   }, 2000);
 })();

@@ -287,7 +287,114 @@
     "smell_large_file": "{file} has {lines} lines (the limit is {limit}).",
     "smell_large_file_why": "Large files are hard to review, and an AI editing them tends to rewrite or cut parts it was not asked to touch.",
     "smell_unused_export": "{name} in {file} is exported, but no file of the project imports it.",
-    "smell_unused_export_why": "It is probably left over from an earlier version; removing it makes the file easier to follow."
+    "smell_unused_export_why": "It is probably left over from an earlier version; removing it makes the file easier to follow.",
+    "diffButton": "Changes",
+    "diffButtonTitle": "What changed in the structure since a snapshot: the plan with additions and removals marked",
+    "diffTitle": "Changes since {snapshot}",
+    "diffTitleNone": "Changes",
+    "diffNoSnapshot": "There is no snapshot of this project yet. Save one now (for example before asking the AI for a change) and come back here after: this view will show what changed in the structure. Snapshots are kept in CodeTAC's data folder, never in the project.",
+    "diffMissing": "There is no snapshot {id} of this project. Save one now, or pick another.",
+    "diffSave": "Save a snapshot now",
+    "diffSaveTitle": "Keep the structure as it is now, to compare with later (outside the project)",
+    "diffLabelPlaceholder": "Label (optional)",
+    "diffCompareWith": "Compare with",
+    "diffNewest": "newest",
+    "diffOnlyLeaks": "Only leaks and secrets",
+    "diffCount": {
+      "one": "{count} change",
+      "other": "{count} changes"
+    },
+    "diffAlerts": {
+      "one": "{count} alert",
+      "other": "{count} alerts"
+    },
+    "diffWarnings": {
+      "one": "{count} warning",
+      "other": "{count} warnings"
+    },
+    "diffTouching": {
+      "one": "{count} touches leaks or secrets",
+      "other": "{count} touch leaks or secrets"
+    },
+    "diffNone": "No change in the structure since this snapshot.",
+    "diffNoneTouching": "None of the changes touches data leaving the machine or secrets.",
+    "diffShowOnPlan": "Show it on the plan",
+    "diffInSnapshot": "(in the snapshot; no longer in the project)",
+    "diffTagLeaks": "leaks",
+    "diffTagSecrets": "secrets",
+    "diffHere": "Changes here",
+    "diffRemovedBox": "Removed since the snapshot: it is no longer in the project.",
+    "diffMark_added": "added",
+    "diffMark_removed": "removed",
+    "diffMark_changed": "changed",
+    "diffMark_moved": "moved (same content)",
+    "diffMark_inside": "has changes inside",
+    "diffSnapshotCommit": "commit {commit}",
+    "diffSnapshotChanges": "changes on top of commit {commit}",
+    "diffSnapshotNoGit": "no git",
+    "diffCommit": "commit {commit} · {date} · {subject}",
+    "diffSnapshots": "Snapshots",
+    "diffCommits": "Commits (read from a temporary copy; your folder is not touched)",
+    "diffReadingCommit": "Reading the commit from a temporary copy…",
+    "diffOrCommit": "…or compare with a commit",
+    "explainAlert": "Explain with AI…",
+    "explainPlan": "Explain the plan",
+    "explainPlanTitle": "An explanation of the whole plan in five lines, written by AI from the facts of the structure (you see what is sent first)",
+    "explainPlanHeading": "The plan, explained",
+    "explainPlanIntro": "The AI gets only facts read from the structure (blocks, links, routes, services, tables and the number of alerts), never code. You see the exact request before anything is sent.",
+    "predictButton": "Predict…",
+    "predictButtonTitle": "Before asking the AI for a change, write what you expect it to do; it is saved with a snapshot and compared afterwards",
+    "predictTitle": "Predict before you ask",
+    "predictIntro": "What do you expect the change you are about to ask for to do to the structure? It is saved with a snapshot, outside the project; after the change, this view says what you got right.",
+    "predictAdded": "Files that will be added",
+    "predictChanged": "Files that will change",
+    "predictRemoved": "Files that will be removed",
+    "predictDepends": "Blocks that will start depending on another",
+    "predictServices": "New external services",
+    "predictPathPlaceholder": "path, for example lib/mailer.js",
+    "predictServicePlaceholder": "for example Stripe",
+    "predictAdd": "Add",
+    "predictRemove": "Remove",
+    "predictSave": "Save the snapshot with my prediction",
+    "predictCancel": "Cancel",
+    "predictNothing": "Add at least one thing you expect to change.",
+    "predictYours": "Your prediction",
+    "predictWaiting": "Nothing you predicted about has changed yet: make the change, then come back to this view.",
+    "predictPredicted": "You predicted",
+    "predict_hits": "Predicted and changed",
+    "predict_missed": "Changed, not predicted",
+    "predict_wrong": "Predicted, did not change",
+    "predictScore": "You predicted {predicted}; {hits} of the {changed} structural changes were in your prediction.",
+    "quizButton": "Quiz",
+    "quizButtonTitle": "Questions about this project's structure, answered from the plan itself",
+    "quizTitle": "Quiz: do you know this project's structure?",
+    "quizIntro": "Each question and its answer come from the plan, by rules (no AI). Your results stay on this machine.",
+    "quizNone": "The plan has nothing to ask about yet: no tables written, services, dependencies between blocks, routes or variables read.",
+    "quizRight": "Right.",
+    "quizWrong": "Not quite: the answer is {answer}.",
+    "quizProof": "Where the plan shows it:",
+    "quizNew": "New questions",
+    "quizScore": {
+      "one": "{right} of {answered} answer right on this machine",
+      "other": "{right} of {answered} answers right on this machine"
+    },
+    "quizThisRound": "This round: {right} of {answered}",
+    "quizChanged": "The project changed and this question is no longer in the plan. Ask new questions.",
+    "reviewNew": "not opened",
+    "reviewDebt": {
+      "one": "1 structural change you have not opened yet",
+      "other": "{count} structural changes you have not opened yet"
+    },
+    "reviewNone": "You have opened every change since the newest snapshot.",
+    "reviewCarried": {
+      "one": "1 change from before the newest snapshot, not opened",
+      "other": "{count} changes from before the newest snapshot, not opened"
+    },
+    "reviewCarriedWhy": "They were not opened before a new snapshot was saved, so they still count. Press one to mark it as seen.",
+    "reviewMark": "Mark as seen",
+    "reviewFrom": "Against snapshot {snapshot}",
+    "privacyLink": "Privacy",
+    "privacyLinkTitle": "What CodeTAC can send to an AI model, with a switch for each"
   },
   "bar": {
     "structure": "Structure",
@@ -298,7 +405,9 @@
     "openPanel": "panel ↗",
     "openPanelTitle": "Open in the panel",
     "close": "Close",
-    "frameTitle": "Project structure"
+    "frameTitle": "Project structure",
+    "reviewDebtOne": "CodeTAC: 1 structural change you have not opened yet (Structure → Changes)",
+    "reviewDebt": "CodeTAC: {count} structural changes you have not opened yet (Structure → Changes)"
   },
   "card": {
     "list": "{items} and {more} more",
@@ -368,5 +477,276 @@
     "whyLoaded": "loaded by a page",
     "whyServer": "starts the server",
     "whyNext": "a Next.js entry"
+  },
+  "diff": {
+    "publicSecret": "The secret variable {variable} now has a public name: its value goes into the browser code ({files}).",
+    "secretInBrowser": "The secret variable {variable} is now read in code that runs in the browser ({files}).",
+    "noRlsBrowser": "Table {table} has row level security off and is now used from the browser ({files}).",
+    "literalKey": "A key is now written in the code: {message}",
+    "newService": {
+      "one": "1 new external service: {list}.",
+      "other": "{count} new external services: {list}."
+    },
+    "service": "{name} ({category})",
+    "sendsData": "{from} now sends data to {service}.",
+    "stopsSending": "{from} no longer sends data to {service}.",
+    "serviceGone": {
+      "one": "1 external service is no longer used: {list}.",
+      "other": "{count} external services are no longer used: {list}."
+    },
+    "destination": "{name} now goes to {after} (was {before}).",
+    "newCycle": "New import loop: {files}.",
+    "cycleGone": "The import loop {files} is gone.",
+    "newSecretVariable": "New secret variable {variable}, read in {files}.",
+    "usesSecret": "{from} now uses the secret {variable}.",
+    "exposureGone": "The secret variable {variable} no longer reaches the browser.",
+    "rlsOff": "Row level security of table {table} is now off.",
+    "rlsOn": "Row level security of table {table} is now on.",
+    "rlsGone": "Table {table} is no longer used from the browser with row level security off: the alert is gone.",
+    "newTable": {
+      "one": "1 new table: {list}.",
+      "other": "{count} new tables: {list}."
+    },
+    "tableGone": {
+      "one": "1 table is gone: {list}.",
+      "other": "{count} tables are gone: {list}."
+    },
+    "columns": "Table {table}: {changes}.",
+    "columnsAdded": "columns added {list}",
+    "columnsRemoved": "columns removed {list}",
+    "columnsChanged": "columns changed {list}",
+    "newWrite": "{from} now writes to table {table}.",
+    "newRoute": {
+      "one": "1 new route: {list}.",
+      "other": "{count} new routes: {list}."
+    },
+    "routeGone": {
+      "one": "1 route is gone: {list}.",
+      "other": "{count} routes are gone: {list}."
+    },
+    "dependsOn": "The {from} block now depends on {to}.",
+    "noLongerDependsOn": "The {from} block no longer depends on {to}.",
+    "newBlock": "New block: {block}.",
+    "blockGone": "The {block} block is now empty.",
+    "movedBlock": "{file} moved from {before} to {after}.",
+    "runsOn": "{file} now runs on the {after} (was {before}).",
+    "filesAdded": {
+      "one": "1 file added: {list}.",
+      "other": "{count} files added: {list}."
+    },
+    "filesRemoved": {
+      "one": "1 file removed: {list}.",
+      "other": "{count} files removed: {list}."
+    },
+    "filesChanged": {
+      "one": "1 file changed: {list}.",
+      "other": "{count} files changed: {list}."
+    },
+    "filesRenamed": {
+      "one": "1 file moved: {list}.",
+      "other": "{count} files moved: {list}."
+    },
+    "variableGone": {
+      "one": "1 variable is no longer read: {list}.",
+      "other": "{count} variables are no longer read: {list}."
+    },
+    "newVariable": {
+      "one": "1 new variable read: {list}.",
+      "other": "{count} new variables read: {list}."
+    },
+    "projectTypes": "The project is now also {types}.",
+    "projectTypesGone": "The project is no longer {types}.",
+    "more": "{list} and {more} more",
+    "nothing": "No change in the structure.",
+    "runsOnPlace": {
+      "client": "browser",
+      "server": "server",
+      "both": "browser and server",
+      "unknown": "unknown side"
+    },
+    "serviceFrom": "{name} ({category}, from {from})",
+    "touching": {
+      "one": "{count} of these touches data leaving the machine or secrets.",
+      "other": "{count} of these touch data leaving the machine or secrets."
+    }
+  },
+  "explainFacts": {
+    "smellNames": {
+      "cycle": "import loops",
+      "skipped-layer": "browser shortcuts past the server",
+      "coupling": "too many links",
+      "duplicate": "copied code",
+      "dead-file": "files nothing uses",
+      "large-file": "large files",
+      "unused-export": "exports nothing imports"
+    },
+    "kinds": {
+      "public-secret": [
+        "A variable with a secret's name has the framework's public prefix.",
+        "The build puts its value in the code sent to every browser, so anyone can read it."
+      ],
+      "secret-in-browser": [
+        "A variable with a secret's name is read in code that runs in the browser.",
+        "There its value is empty; adding the public prefix to fix it would expose the secret."
+      ],
+      "env-tracked": [
+        ".env file followed by git.",
+        "Its values are in the repository's history, and in every copy of it."
+      ],
+      "env-not-ignored": [
+        ".env file not ignored by git.",
+        "The next 'git add' would put its values in the repository."
+      ],
+      "env-no-git": [
+        ".env files in a folder without git.",
+        "Nothing says which files must stay private when the project is shared."
+      ],
+      "literal-key": [
+        "A key is written in the code.",
+        "Anyone who sees the code can use it; keys belong in variables set outside the code."
+      ],
+      "no-rls-browser": [
+        "A table with row level security off is read or written directly from the browser.",
+        "With the public key, anyone can read or change every row of it."
+      ],
+      "used-not-defined": [
+        "The code uses a table that no schema file defines.",
+        "The table may be missing, misspelled, or created by hand outside the project."
+      ],
+      "defined-never-used": [
+        "A schema file defines a table that no code uses.",
+        "It may be left over, or used by something outside the project."
+      ],
+      "cycle": [
+        "Files import each other in a loop.",
+        "A change in one can break the other, and an AI editing one rarely sees the loop."
+      ],
+      "skipped-layer": [
+        "Browser code uses the data or outside-service layer directly although the project has its own server routes.",
+        "Its keys and logic are shown to anyone; going through the server keeps them private."
+      ],
+      "coupling": [
+        "A block or file is linked to too many others.",
+        "A change there reaches many places, or it mixes too many jobs."
+      ],
+      "duplicate": [
+        "The same code is copied in several places.",
+        "A fix made in one copy is easily missed in the others."
+      ],
+      "dead-file": [
+        "A file that no file imports and nothing starts.",
+        "Dead code misleads people and AI assistants: it gets read, copied and fixed although it never runs."
+      ],
+      "large-file": [
+        "A very large file.",
+        "It is hard to review, and an AI editing it tends to rewrite parts it was not asked to touch."
+      ],
+      "unused-export": [
+        "Something exported that no file of the project imports.",
+        "It may be dead code, or used from outside the project."
+      ],
+      "change": "A difference between two versions of the project's structure, found by comparing them."
+    }
+  },
+  "predict": {
+    "file-added": "New file: {file}",
+    "file-changed": "Changed file: {file}",
+    "file-removed": "Removed file: {file}",
+    "depends-on": "{from} starts depending on {to}",
+    "service": "New external service: {service}",
+    "instead": {
+      "added": "it was added instead",
+      "changed": "it was changed instead",
+      "removed": "it was removed instead"
+    },
+    "hits": "Predicted and changed",
+    "missed": "Changed, not predicted",
+    "wrong": "Predicted, did not change",
+    "score": "You predicted {predicted}; {hits} of the {changed} structural changes were in your prediction.",
+    "waiting": "Nothing you predicted about has changed yet: make the change, then compare again.",
+    "predicted": "You predicted"
+  },
+  "quiz": {
+    "question": {
+      "writes-table": "Which block writes to the table {subject}?",
+      "sends-to": "Which file sends data to {subject}?",
+      "depends-on": "Which block does {subject} depend on?",
+      "route-file": "Where is the route {subject} defined?",
+      "reads-env": "Which variable does {subject} read?"
+    }
+  },
+  "privacy": {
+    "blocked": {
+      "no-ai": "AI is off: “No AI” is on in Privacy (panel → Privacy, or codetac privacy --ai).",
+      "off": "This kind of request to the AI is turned off in Privacy (panel → Privacy, or codetac privacy --on <kind>).",
+      "off-not-local": "Off by default, because the AI model is not on this computer: this request would carry code. Turn it on in Privacy if you want it (panel → Privacy, or codetac privacy --on purposes).",
+      "unknown-kind": "Unknown kind of request."
+    },
+    "kinds": {
+      "purposes": {
+        "name": "Purpose sentences of the dossiers",
+        "carries": "The code of each function that ran in an action (keys and secrets masked) and the facts observed when it ran. Never the recorded values."
+      },
+      "questions": {
+        "name": "Questions about a step",
+        "carries": "The code of the step (masked), the facts observed, the lines run and your question. The recorded values only when the model is on this computer."
+      },
+      "suggestions": {
+        "name": "Suggestions for Unknown files (terminal, --suggest)",
+        "carries": "The paths of the files the rules leave Unknown and the signatures of their exports (names and parameters). Never code."
+      },
+      "explanations": {
+        "name": "Explanations: a block, the plan, an alert",
+        "carries": "Only facts read from the structure: names of blocks, files, routes, services, tables and variables, and where the findings are. Never code, never values."
+      }
+    },
+    "page": {
+      "back": "← Back",
+      "title": "Privacy",
+      "intro": "Everything CodeTAC can send to an AI model, what each request carries, and a switch for each. The rest of CodeTAC works the same with every switch off.",
+      "modelActive": "AI model: {model} ({provider})",
+      "modelNone": "No AI model configured: nothing is sent to any AI.",
+      "modelNoneWhy": "See “AI explanations” in the README to configure one.",
+      "modelLocal": "On this computer: nothing leaves it.",
+      "modelRemote": "Outside this computer: what is switched on below is sent over the internet.",
+      "noAi": "No AI",
+      "noAiWhy": "Turns every request below off, in the panel and in the terminal, at once.",
+      "kindsTitle": "What can be sent",
+      "colKind": "Request",
+      "colCarries": "What it carries",
+      "colWhen": "When",
+      "colOn": "Switch",
+      "whenAutomatic": "Automatically, in the background",
+      "whenClick": "Only when you ask, after you see it",
+      "on": "On",
+      "off": "Off",
+      "byDefaultOn": "On by default",
+      "byDefaultOff": "Off by default unless the model is on this computer: this request carries code",
+      "yourChoice": "Your choice",
+      "reset": "Back to the default",
+      "previewNote": "Requests you ask for show the exact text first, and what is sent is exactly what you saw. Purpose sentences are automatic: they are not shown before, but each one is in the log below.",
+      "logTitle": "What was sent",
+      "logIntro": "Kept only on this computer (ai-log.jsonl in CodeTAC’s data folder), newest first, with the exact instructions and text of each request.",
+      "clearLog": "Clear the log",
+      "logEmpty": "Nothing was sent.",
+      "local": "on this computer",
+      "chars": {
+        "one": "1 character",
+        "other": "{count} characters"
+      },
+      "instructions": "Instructions to the model:",
+      "sentText": "Text sent:",
+      "cut": "Very long: only the first 20 000 characters are kept here."
+    },
+    "cli": {
+      "cleared": "The log of what was sent is cleared.",
+      "noAiOn": "No AI: ON — nothing is sent to any AI (codetac privacy --ai turns requests back on).",
+      "noAiOff": "No AI: off (codetac privacy --no-ai turns every request off).",
+      "logTitle": {
+        "one": "The last request sent:",
+        "other": "The last {count} requests sent, newest first:"
+      },
+      "hint": "Switch: codetac privacy --on <kind> | --off <kind> | --default <kind>. What was sent: codetac privacy --log [n] (kept only here: {path})."
+    }
   }
 }

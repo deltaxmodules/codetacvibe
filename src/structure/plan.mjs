@@ -28,8 +28,10 @@ const byProof = (a, b) => byText(a.file, b.file) || a.line - b.line;
 // trace (phase 7): { nodes, edges, inferred, observed } of an action; the
 // boxes and arrows it went through are marked lit, the observed arrows join
 // the plan. covered (optional): the edge ids any action of the session went
-// through, to mark the static arrows that never ran.
-export function planView(graph, { expanded = [], trace = null, covered = null } = {}) {
+// through, to mark the static arrows that never ran. edgeStatus (phase 9,
+// optional): Map(edge id → 'added' | 'removed'); each arrow then says whether
+// it is added, removed, or changed (some of its links are).
+export function planView(graph, { expanded = [], trace = null, covered = null, edgeStatus = null } = {}) {
   const open = new Set(expanded);
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const files = graph.nodes.filter(node => node.kind === 'file').sort((a, b) => byText(a.path, b.path));
@@ -138,19 +140,22 @@ export function planView(graph, { expanded = [], trace = null, covered = null } 
     const to = visible(edge.to);
     if (!from || !to || from === to) continue;
     const id = `${from}->${to}`;
-    if (!arrows.has(id)) arrows.set(id, { id, from, to, count: 0, kinds: {}, proof: [], runsOn: new Set(), certain: false, lit: false, inferred: false, ran: false });
+    if (!arrows.has(id)) arrows.set(id, { id, from, to, count: 0, kinds: {}, proof: [], runsOn: new Set(), certain: false, lit: false, inferred: false, ran: false, added: 0, removed: 0 });
     const arrow = arrows.get(id);
     if (litEdges.has(edge.id) || edge.kind === 'observed') arrow.lit = true;
     if (inferredEdges.has(edge.id)) arrow.inferred = true;
     if (coveredEdges?.has(edge.id) || edge.kind === 'observed') arrow.ran = true;
     arrow.count += 1;
+    const status = edgeStatus?.get(edge.id);
+    if (status === 'added' || status === 'removed') arrow[status] += 1;
     arrow.kinds[edge.kind] = (arrow.kinds[edge.kind] ?? 0) + 1;
     arrow.proof.push(...edge.proof);
     if (edge.runsOn) arrow.runsOn.add(edge.runsOn);
     if (edge.confidence !== 'possible') arrow.certain = true;
   }
-  const arrowList = [...arrows.values()].sort((a, b) => byText(a.id, b.id)).map(({ runsOn, certain, proof, lit, inferred, ran, ...arrow }) => ({
+  const arrowList = [...arrows.values()].sort((a, b) => byText(a.id, b.id)).map(({ runsOn, certain, proof, lit, inferred, ran, added, removed, ...arrow }) => ({
     ...arrow,
+    ...(edgeStatus && (added || removed) ? { change: added === arrow.count ? 'added' : removed === arrow.count ? 'removed' : 'changed' } : {}),
     ...(trace ? { lit, ...(inferred && !lit ? { inferred: true } : {}) } : {}),
     ...(coveredEdges ? { ran } : {}),
     proof: [...new Map(proof.map(item => [`${item.file}:${item.line}`, item])).values()].sort(byProof).slice(0, MAX_ARROW_PROOFS),

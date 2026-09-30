@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeTAC · Privacy</title>
+<style>
+:root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e3de; --accent:#2f5bd3; --code:#f0efeb; --warn:#d18a3a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --panel:#1f1f1d; --text:#ecebe6; --muted:#9a9993; --line:#33332f; --accent:#7ea2ff; --code:#2a2a27; } }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:980px; margin:0 auto; padding:16px; }
+h1 { font-size:18px; margin:0 0 4px; } h2 { font-size:14px; margin:22px 0 6px; }
+.muted { color:var(--muted); } .small { font-size:12px; }
+a, button.plain { color:var(--accent); } button.plain { all:unset; cursor:pointer; color:var(--accent); }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:8px 0; }
+.card.off { border-left:3px solid var(--warn); }
+label.switch { display:flex; gap:8px; align-items:flex-start; cursor:pointer; }
+label.switch input { margin-top:3px; }
+table { width:100%; border-collapse:collapse; background:var(--panel); table-layout:fixed; }
+th, td { text-align:left; vertical-align:top; padding:8px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+col.c1 { width:26%; } col.c2 { width:42%; } col.c3 { width:14%; } col.c4 { width:18%; }
+.tag { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; border:1px solid var(--line); color:var(--muted); }
+ol.log { list-style:none; padding:0; margin:0; }
+ol.log li { background:var(--panel); border:1px solid var(--line); border-radius:6px; margin:4px 0; padding:6px 10px; }
+ol.log summary { cursor:pointer; }
+pre { background:var(--code); padding:8px; border-radius:6px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; max-height:360px; overflow:auto; }
+</style>
+</head>
+<body>
+<main>
+<p class="small"><a id="back" href="/" data-t="back"></a></p>
+<h1 data-t="title"></h1>
+<p class="muted" data-t="intro"></p>
+<div class="card" id="model"></div>
+<div class="card" id="noAiCard"><label class="switch"><input type="checkbox" id="noAi"><span><b data-t="noAi"></b><br><span class="muted small" data-t="noAiWhy"></span></span></label></div>
+<h2 data-t="kindsTitle"></h2>
+<table><colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
+<thead><tr><th data-t="colKind"></th><th data-t="colCarries"></th><th data-t="colWhen"></th><th data-t="colOn"></th></tr></thead>
+<tbody id="kinds"></tbody></table>
+<p class="muted small" data-t="previewNote"></p>
+<h2 data-t="logTitle"></h2>
+<p class="muted small" data-t="logIntro"></p>
+<p><button class="plain" id="clearLog" data-t="clearLog"></button></p>
+<ol class="log" id="log"></ol>
+</main>
+<script>
+(() => {
+  const TEXT = /*CODETAC_TEXT*/null;
+  const t = (key, vars = {}) => {
+    let value = key.split('.').reduce((node, part) => node?.[part], TEXT.privacy);
+    if (value && typeof value === 'object' && 'other' in value) value = vars.count === 1 ? value.one : value.other;
+    return String(value ?? key).replace(/\{(\w+)\}/g, (hole, name) => (name in vars ? String(vars[name]) : hole));
+  };
+  const $ = id => document.getElementById(id);
+  const html = (tag, text, attrs = {}) => { const node = document.createElement(tag); if (text != null) node.textContent = text; Object.assign(node, attrs); return node; };
+  for (const node of document.querySelectorAll('[data-t]')) node.textContent = t('page.' + node.dataset.t);
+  document.title = 'CodeTAC · ' + t('page.title');
+  const back = new URLSearchParams(location.search).get('back');
+  if (back && back.startsWith('/') && !back.startsWith('//')) $('back').href = back;
+  let lastLog = '';
+
+  async function change(body) {
+    const response = await fetch('/api/privacy', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify(body) });
+    if (response.ok) draw(await response.json());
+  }
+  function draw(state) {
+    const model = $('model');
+    model.textContent = '';
+    model.appendChild(html('b', state.config.active ? t('page.modelActive', { model: state.config.model || state.config.provider, provider: state.config.provider })
+      : t('page.modelNone')));
+    model.appendChild(html('div', state.config.active ? (state.config.local ? t('page.modelLocal') : t('page.modelRemote')) : (state.config.problem || t('page.modelNoneWhy')), { className: 'muted small' }));
+    $('noAi').checked = state.noAi;
+    $('noAiCard').classList.toggle('off', state.noAi);
+    const body = $('kinds');
+    body.textContent = '';
+    for (const kind of state.kinds) {
+      const row = html('tr');
+      row.dataset.kind = kind.id;
+      const name = html('td');
+      name.appendChild(html('b', t('kinds.' + kind.id + '.name')));
+      row.appendChild(name);
+      row.appendChild(html('td', t('kinds.' + kind.id + '.carries')));
+      row.appendChild(html('td', kind.automatic ? t('page.whenAutomatic') : t('page.whenClick')));
+      const cell = html('td');
+      const label = html('label', null, { className: 'switch' });
+      const box = html('input', null, { type: 'checkbox', checked: kind.on, disabled: state.noAi });
+      box.addEventListener('change', () => change({ kinds: { [kind.id]: box.checked } }));
+      label.append(box, html('span', kind.on ? t('page.on') : t('page.off')));
+      cell.appendChild(label);
+      const note = kind.chosen === null ? (kind.byDefault ? t('page.byDefaultOn') : t('page.byDefaultOff')) : t('page.yourChoice');
+      cell.appendChild(html('div', note, { className: 'muted small' }));
+      if (kind.chosen !== null) {
+        const reset = html('button', t('page.reset'), { className: 'plain small' });
+        reset.addEventListener('click', () => change({ kinds: { [kind.id]: null } }));
+        cell.appendChild(reset);
+      }
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+    drawLog(state.log);
+  }
+  function drawLog(log) {
+    const text = JSON.stringify(log.map(entry => entry.at + entry.hash));
+    if (text === lastLog) return;
+    lastLog = text;
+    const list = $('log');
+    list.textContent = '';
+    if (!log.length) { list.appendChild(html('li', t('page.logEmpty'), { className: 'muted' })); return; }
+    for (const entry of log) {
+      const item = html('li');
+      const details = html('details');
+      details.appendChild(html('summary', [new Date(entry.at).toLocaleString(), t('kinds.' + entry.kind + '.name'),
+        (entry.model || entry.provider || '') + (entry.local ? ' · ' + t('page.local') : ''), t('page.chars', { count: entry.chars })].join(' · ')));
+      details.appendChild(html('div', t('page.instructions'), { className: 'muted small' }));
+      details.appendChild(html('pre', entry.system));
+      details.appendChild(html('div', t('page.sentText'), { className: 'muted small' }));
+      details.appendChild(html('pre', entry.text));
+      if (entry.cut) details.appendChild(html('div', t('page.cut'), { className: 'muted small' }));
+      item.appendChild(details);
+      list.appendChild(item);
+    }
+  }
+  async function load() {
+    try { draw(await (await fetch('/api/privacy', { cache: 'no-store' })).json()); } catch {}
+  }
+  $('noAi').addEventListener('change', () => change({ noAi: $('noAi').checked }));
+  $('clearLog').addEventListener('click', () => change({ clearLog: true }));
+  load();
+  setInterval(() => { if (!document.hidden) load(); }, 5000);
+})();
+</script>
+</body>
+</html>

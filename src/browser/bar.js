@@ -528,8 +528,9 @@
       '.top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#18181b;color:#f4f4f5}.top b{margin-right:auto}' +
       '.top button,.top a{all:unset;cursor:pointer;padding:2px 8px;border-radius:5px;color:#e4e4e7}.top button:hover,.top a:hover{background:#3f3f46}' +
       '.top .tab{color:#a1a1aa}.top .tab.on{background:#3f3f46;color:#fff}.sheet.wide{width:min(1100px,calc(100vw - 24px));height:min(760px,calc(100vh - 72px))}' +
-      'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}</style>' +
-      '<div class="row"><button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '</button>' +
+      'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}' +
+      '.debt{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.debt[hidden]{display:none}</style>' +
+      '<div class="row"><button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
       '<button class="pill main" part="pill" title="CodeTAC: click to see the dossier of the last action"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
     shadow.querySelector('.pill.main').addEventListener('click', () => { if (shown && view === 'structure') { view = 'action'; shown.remove(); shown = null; } toggleSheet(); });
     shadow.querySelector('.pill.structure').addEventListener('click', () => {
@@ -538,6 +539,25 @@
     });
     document.documentElement.appendChild(host);
     updateBar(false);
+    pollDebt();
+    setInterval(pollDebt, 15000);
+    document.addEventListener('visibilitychange', pollDebt);
+  }
+  // Comprehension debt (phase 10, step 4): the structural changes not opened
+  // yet in Structure → Changes, as a number on the Structure pill. Asked of
+  // the app's own server (/__codetac/review), which asks the panel on 127.0.0.1.
+  async function pollDebt() {
+    if (!shadow || document.hidden) return;
+    let total = 0;
+    try {
+      const response = await originalFetch.call(window, '/__codetac/review', { cache: 'no-store', credentials: 'same-origin' });
+      if (response.ok) total = Number((await response.json()).total) || 0;
+    } catch {}
+    const badge = shadow.querySelector('.debt');
+    const pill = shadow.querySelector('.pill.structure');
+    badge.hidden = !total;
+    badge.textContent = total ? String(total) : '';
+    pill.title = total ? (total === 1 ? barText('reviewDebtOne') : barText('reviewDebt').replace('{count}', total)) : barText('structureTitle');
   }
   function updateBar(flash) {
     if (!shadow) return;

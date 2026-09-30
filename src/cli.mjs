@@ -5,7 +5,7 @@
 //   codetac [folder] [options] [-- start command]
 //   codetac diagnose [folder]
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { arch, homedir, release } from 'node:os';
 import http from 'node:http';
 import { basename, join, resolve } from 'node:path';
@@ -26,6 +26,8 @@ const captor = join(workspace, 'src', 'python', 'codetac_py');
 const started = Date.now();
 const seconds = () => `${Math.round((Date.now() - started) / 1000)} s`;
 const say = text => process.stdout.write(`${text}\n`);
+// Output cut short (codetac structure --diff | head): stop quietly, like other commands.
+process.stdout.on('error', error => { if (error.code === 'EPIPE') process.exit(0); throw error; });
 const HELP = `Usage:
   codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)
   codetac diagnose [folder]                  explains what is and what is not working
@@ -34,6 +36,16 @@ const HELP = `Usage:
   codetac structure [folder] --reclassify <file> <block|auto>
                                              places a file in a block yourself (saved in codetac.structure.json)
   codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)
+  codetac structure [folder] --snapshot [label]
+                                             saves the structure as it is now, to compare with later (kept outside the project);
+                                             with --predict, first asks what you expect the next change to do, and --diff
+                                             then says what you got right
+  codetac structure [folder] --snapshots     lists the saved snapshots
+  codetac structure [folder] --diff [from] [to]
+                                             what changed in the structure: since the newest snapshot, or between two
+                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)
+  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]
+                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent
   codetac help                               this help
   codetac --version                          installed version
 
@@ -64,8 +76,29 @@ function parseArgs(argv) {
     else if (!options.sub && !options.folder && arg === 'diagnose') options.sub = 'diagnose';
     else if (!options.sub && !options.folder && arg === 'report') options.sub = 'report';
     else if (!options.sub && !options.folder && arg === 'structure') options.sub = 'structure';
+    else if (!options.sub && !options.folder && arg === 'privacy') options.sub = 'privacy';
+    else if (options.sub === 'privacy' && (arg === '--no-ai' || arg === '--ai')) options.noAi = arg === '--no-ai';
+    else if (options.sub === 'privacy' && ['--on', '--off', '--default'].includes(arg)) (options[arg.slice(2)] ??= []).push(value());
+    else if (options.sub === 'privacy' && arg === '--log') options.log = /^\d+$/.test(argv[index + 1] ?? '') ? Number(value()) : 5;
+    else if (options.sub === 'privacy' && arg === '--clear-log') options.clearLog = true;
     else if (options.sub === 'structure' && arg === '--reclassify') options.reclassify = [value(), value()];
     else if (options.sub === 'structure' && arg === '--suggest') options.suggest = true;
+    else if (options.sub === 'structure' && arg === '--snapshots') options.snapshots = true;
+    else if (options.sub === 'structure' && arg === '--predict') options.predict = true;
+    else if (options.sub === 'structure' && arg === '--diff') {
+      // Up to two points (a snapshot, a commit, or now); a folder that exists is the project's folder.
+      const points = [];
+      while (points.length < 2 && argv[index + 1] !== undefined && !argv[index + 1].startsWith('-')
+        && (options.folder || !(() => { try { return statSync(resolve(argv[index + 1])).isDirectory(); } catch { return false; } })())) points.push(value());
+      options.diff = { points };
+    }
+    else if (options.sub === 'structure' && arg === '--snapshot') {
+      // The label is optional: the next word is the label unless it is an
+      // option or a folder that exists (then it is the project's folder).
+      const next = argv[index + 1];
+      const folder = next !== undefined && !options.folder && (() => { try { return statSync(resolve(next)).isDirectory(); } catch { return false; } })();
+      options.snapshot = { label: next !== undefined && !next.startsWith('-') && !folder ? value() : null };
+    }
     else if (arg === '-v' || arg === '--version') options.sub = 'version';
     else if (!options.folder && !arg.startsWith('-')) options.folder = arg;
     else { say(`Unknown option: ${arg}\n\n${HELP}`); process.exit(2); }
@@ -450,10 +483,20 @@ async function main() {
     say('  https://github.com/deltaxmodules/codetacvibe/issues/new');
     return;
   }
+  if (options.sub === 'privacy') {
+    const { privacyCommand } = await import('./privacy.mjs');
+    const { loadConfig } = await import('./ai.mjs');
+    process.exitCode = privacyCommand({ noAi: options.noAi, on: options.on, off: options.off, reset: options.default, log: options.log ?? null, clearLog: options.clearLog },
+      { config: await loadConfig({ directory: recordings }) });
+    return;
+  }
   if (options.sub === 'structure') {
     const { structureCommand } = await import('./structure/cli.mjs');
+    if (options.predict && !options.snapshot) { say('--predict goes with --snapshot: codetac structure --snapshot [label] --predict'); process.exitCode = 2; return; }
     const confirm = interactive ? async question => /^y(es)?$/i.test(String(await ask(question) ?? '').trim()) : null;
-    process.exitCode = await structureCommand(root, { reclassify: options.reclassify, suggest: options.suggest, yes: options.yes, confirm });
+    process.exitCode = await structureCommand(root, { reclassify: options.reclassify, suggest: options.suggest, yes: options.yes, confirm,
+      snapshot: options.snapshot ?? null, snapshots: options.snapshots ?? false, diff: options.diff ?? null,
+      predict: options.predict ?? false, ask: interactive ? ask : null });
     return;
   }
   if (options.sub === 'diagnose') {

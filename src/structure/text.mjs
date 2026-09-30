@@ -13,6 +13,11 @@ export function planPageWithText(page, text = TEXT) {
   return page.replace('/*CODETAC_TEXT*/null', () => json);
 }
 
+// The Privacy page (phase 10, step 5) with its sentences.
+export function privacyPageWithText(page, text = TEXT) {
+  return page.replace('/*CODETAC_TEXT*/null', () => JSON.stringify({ privacy: text.privacy }).replace(/</g, '\\u003c'));
+}
+
 // t('card.files', { count: 2 }) → "2 files". An unknown key is a bug: it throws.
 export function t(key, vars = {}, text = TEXT) {
   let value = key.split('.').reduce((node, part) => node?.[part], text);

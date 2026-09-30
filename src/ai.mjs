@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRedactor } from './redact.mjs';
+import { blocked, blockedText, guarded, requestHash, send } from './privacy.mjs';
 
 // 7: English (0.3.0); the Portuguese answers in the cache are not reused.
 const PROMPT_VERSION = 7;
@@ -256,14 +257,16 @@ function questionInstructions() {
   ].join('\n');
 }
 
-// One step of a request dossier (with its digest) and a question. Values
-// and executed lines go to the model only when it runs on this machine.
-export async function answerQuestion({ config, dossier, stepId, question, readCode, redact = createRedactor() }) {
-  if (!config?.provider) return { available: false, text: 'Questions need an AI model (see “AI explanations” in the README).' };
+// The exact request for a question about one step of a request dossier (with
+// its digest): { system, text, hash } plus what the answer is checked
+// against. Values go to the model only when it runs on this machine. The
+// panel shows it before sending (Privacy, phase 10 of StructureTAC), and the
+// request sent must have the same fingerprint.
+export function questionRequest({ config, dossier, stepId, question, readCode, redact = createRedactor() }) {
   let step = null;
   let parent = null;
   walk(dossier.digest.nodes, (node, holder) => { if (node.id === stepId) { step = node; parent = holder; } });
-  if (!step) return { available: true, known: false, text: 'This step was not found in the dossier.' };
+  if (!step) return null;
   const target = step.type === 'function' ? step : parent?.type === 'function' ? parent : null;
   const code = target ? readCode(dossier.request.run, target.file, target.line, target.endLine) : null;
   const facts = target ? subtree(target) : { boundaries: [step], functions: [] };
@@ -286,7 +289,23 @@ export async function answerQuestion({ config, dossier, stepId, question, readCo
   }
   if (code) lines.push('', `Code (${target.function}, from line ${code.start}):`, redact(code.lines.join('\n')).slice(0, config.local ? 6000 : 12000));
   lines.push('', `Question: ${String(question).slice(0, 1000)}`);
-  const result = await complete(config, questionInstructions(), redact(lines.filter(line => line !== '').join('\n')), ANSWER_SCHEMA);
+  const system = questionInstructions();
+  const text = redact(lines.filter(line => line !== '').join('\n'));
+  return { system, text, hash: requestHash(system, text), valuesSent: Boolean(detail && withValues), valuesWithheld: Boolean(detail && !withValues),
+    check: { code, lines, facts } };
+}
+
+// Asks the question. With `hash`, only when the request is still the one the
+// user saw. `call` is the AI layer's complete (injected in tests).
+export async function answerQuestion({ config, dossier, stepId, question, readCode, redact = createRedactor(), hash = null, call = complete }) {
+  if (!config?.provider) return { available: false, text: 'Questions need an AI model (see “AI explanations” in the README).' };
+  const reason = blocked('questions', config);
+  if (reason) return { available: false, blocked: reason, text: blockedText(reason) };
+  const request = questionRequest({ config, dossier, stepId, question, readCode, redact });
+  if (!request) return { available: true, known: false, text: 'This step was not found in the dossier.' };
+  if (hash !== null && hash !== request.hash) return { available: true, changed: true, text: 'The request changed since you saw it. Look at it again before sending.' };
+  const { code, lines, facts } = request.check;
+  const result = await send('questions', call, config, request.system, request.text, ANSWER_SCHEMA);
   const text = String(result?.answer ?? '');
   const knownTables = new Set([...dossier.digest.nodes.flatMap(node => { const all = []; walk([node], item => all.push(...(item.tables ?? []))); return all; }), ...tablesInCode(code?.lines.join('\n'))].map(name => name.toLowerCase()));
   const knownHosts = new Set();
@@ -296,11 +315,15 @@ export async function answerQuestion({ config, dossier, stepId, question, readCo
   const rejected = validateSentence(text, { boundaries: facts.boundaries, allowedWords, knownTables, knownHosts, maxLength: 1500, conditionals: true });
   // With a model outside this machine, the answer says the recorded values were not sent.
   return { available: true, known: Boolean(result?.known), text, rejected, model: config.model, local: Boolean(config.local),
-    valuesSent: Boolean(detail && withValues), valuesWithheld: Boolean(detail && !withValues) };
+    valuesSent: request.valuesSent, valuesWithheld: request.valuesWithheld };
 }
 
-export function createPurposes({ config, cache, readCode, redact = createRedactor(), limit = Number(process.env.CODETAC_AI_LIMIT || 40) }) {
+// Purpose sentences are sent automatically, in the background: only while
+// their switch is on in Privacy (off by default with a model outside this
+// computer), and each request is logged there.
+export function createPurposes({ config, cache, readCode, redact = createRedactor(), limit = Number(process.env.CODETAC_AI_LIMIT || 40), call = complete }) {
   const jobs = new Map();
+  const ask = guarded('purposes', call);
 
   function key(...parts) {
     return createHash('sha256').update(JSON.stringify([PROMPT_VERSION, config.provider, config.model, ...parts])).digest('hex');
@@ -384,7 +407,7 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
     const cacheKey = task.signature;
     let answer = cache.get(cacheKey);
     if (!answer) {
-      const result = await complete(config, instructions(), prompt(task), SCHEMA);
+      const result = await ask(config, instructions(), prompt(task), SCHEMA);
       answer = { finalidade: String(result?.purpose ?? ''), fronteiras: (result?.boundaries ?? []).map(item => ({ id: String(item.id), finalidade: String(item.purpose ?? '') })) };
       cache.set(cacheKey, answer);
     }
@@ -418,7 +441,7 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
     const cacheKey = key('action', facts.replace(/\d+/g, 'N'));
     let answer = cache.get(cacheKey);
     if (!answer) {
-      answer = { finalidade: String((await complete(config, actionInstructions(), redact(facts), ACTION_SCHEMA))?.purpose ?? '') };
+      answer = { finalidade: String((await ask(config, actionInstructions(), redact(facts), ACTION_SCHEMA))?.purpose ?? '') };
       cache.set(cacheKey, answer);
     }
     const boundaries = dossiers.flatMap(dossier => { const all = []; walk(dossier.digest.nodes, node => { if (node.type === 'boundary') all.push(node); }); return all; });
@@ -432,6 +455,9 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
   // Starts (or continues) the generation for a dossier and returns what is
   // ready. The work goes on in the background between calls.
   function status(id, build) {
+    // Switched off (now, or since the job started): nothing more is sent.
+    const reason = blocked('purposes', config);
+    if (reason) return { purposes: {}, done: 0, total: 0, finished: true, errors: [], blocked: reason, blockedText: blockedText(reason) };
     let job = jobs.get(id);
     if (!job) {
       job = { purposes: {}, done: 0, total: null, errors: [], finished: false };

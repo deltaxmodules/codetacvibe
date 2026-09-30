@@ -148,6 +148,10 @@ The dossier shows one action. **Structure** shows the whole project: a floor pla
 
 - **Data model** (button next to it): the project's tables, read from its schema — Prisma, Drizzle, SQL migrations or the types Supabase generates, in that order — and from the code that uses them (`supabase.from('t')`, SQL in `query(…)`, `prisma.model.findMany()`, Drizzle's `db.select().from(t)`). A diagram with zoom shows each table with its columns (◆ key, → a column pointing to another table) and the links between tables; a table known only from its use in the code is dashed. Click a table for its card: **who reads it and who writes it** (the function, file, block and line, in the browser or on the server, and the operation: `select`, `insert`, `update`, `upsert`, `delete`), where it is defined and its **row level security** (on or off, and how many policies, when the project's SQL files say it — information, not an audit). **Alert:** a table whose row level security is off and that code running in the browser reads or writes directly (anyone with the project's public key can then read or change it). **Warnings:** a table used but not defined, and one defined but never used (only when the project has a schema).
 - **Structure health** (button next to it): organisation problems that AI-written code tends to pile up — files that import each other in a loop; browser code that talks straight to the database or an outside service although the project has its own server routes; a block or file everything depends on (or that depends on everything); copied code; files nothing imports and no framework or script starts; very large files; exports no file imports. Each one says what it is and why it matters, with its proof, and **Show in the plan** opens it on the plan. Entry points of frameworks (Next.js pages, layouts, routes and middleware, tests, config files, what `package.json` starts) are never called dead; when in doubt (a folder frameworks load by themselves, a `public/` file, a module loaded at run time from that folder) it says **possibly**, and why. Nothing blocks: it is information.
+- **Changes** (button next to it): what changed in the structure since a snapshot. Press **Save a snapshot now** (with a label if you like) before asking the AI for a change, and come back after: the view lists the changes in sentences made by rules, the most important first — a secret that now reaches the browser, a table with row level security off now used from the browser, a new external service and who sends it data, a new import loop, a block that now depends on another, tables, routes, variables and files added or removed — each with its proof (what is gone is proven by the snapshot). The plan below marks what was added (green), removed (red, dashed: removed files keep their box), changed (orange) and the blocks and files with changes inside; press a sentence to see it on the plan. **Only leaks and secrets** keeps the changes about data leaving the machine or secrets. Pick an older snapshot, or one of the latest commits, in **Compare with** (a commit is read from a temporary copy made with `git archive`, never by a checkout: your folder and `.git` are not touched; `codetac.structure.json` and the `.env` files are taken from the folder now, so both sides are read by the same rules). Snapshots are kept in `~/.codetac/structure/snapshots/`, never in the project; the same can be done in the terminal with `codetac structure --snapshot` and `--diff`.
+  **Predict…** (next to **Save a snapshot now**): before asking the AI for a change, write what you expect it to do to the structure — files added, changed or removed, blocks that will start depending on another, new external services — and save it with the snapshot. After the change, the view shows your prediction against what happened: predicted and changed, changed but not predicted, predicted but did not change. It is worked out by rules, with no AI, and kept beside the snapshot. In the terminal: `codetac structure --snapshot [label] --predict` asks the same questions, and `--diff` prints the comparison.
+- **Quiz** (button next to it): multiple-choice questions about your own project — which block writes to a table, which file sends data to a service, which block another depends on, where a route is defined, which variable a file reads. The questions, the right answer and the other choices all come from the plan, by rules (no AI), and each answer is checked again against the plan before the question is asked. After you answer you see the right one and where the plan shows it (press it to see the code); **New questions** asks others. Your results are kept on this machine only, in `~/.codetac/structure/quiz/`.
+- **Changes you have not opened yet:** the Changes button (and the **Structure** pill of the bar in your app) shows how many structural changes since the newest snapshot you have not opened yet. Opening a sentence in Changes marks it as seen (sentences not opened are in bold, marked *not opened*). If you save a new snapshot before opening them, they are not lost: they are listed under the sentences, as changes from before the newest snapshot, until you open them. This count stays on your machine (`~/.codetac/structure/review/`) and is never sent to the AI.
 
 **Where each arrow comes from:**
 
@@ -173,7 +177,8 @@ A file placed by the optional AI suggestions (`codetac structure --suggest`, onl
     { "id": "acme", "name": "Acme CRM", "category": "http", "hosts": ["api.acme.example"], "jurisdiction": "EU (Frankfurt)" }
   ],
   "env": { "platform": ["PORT", "DATABASE_URL"] },
-  "smells": { "largeFileLines": 600, "off": ["unused-export"] }
+  "smells": { "largeFileLines": 600, "off": ["unused-export"] },
+  "snapshots": { "keep": 20 }
 }
 ```
 
@@ -184,6 +189,7 @@ A file placed by the optional AI suggestions (`codetac structure --suggest`, onl
 - `services`: the **jurisdiction** of a service (where it keeps the data — codeTAC never fills it in), or a service of your own (`id`, `name`, a `category` among `ai`, `database`, `payments`, `analytics`, `monitoring`, `email`, `messaging`, `storage`, `auth`, `http`, and its `hosts` or its SDK: `"sdk": [{ "package": "@acme/sdk", "create": ["Acme"] }]`). About 50 services are known out of the box;
 - `env.platform`: variables set outside the `.env` files (your hosting platform, the CI), so they are not listed as “used but never defined”;
 - `smells` sets the limits of the structural smells (`largeFileLines` 400, `duplicateTokens` 80, `duplicateLines` 8, `couplingFiles` 25, `couplingBlocks` 4) and turns kinds off (`"off": ["unused-export"]`). Nothing blocks: smells are information.
+- `snapshots.keep`: how many snapshots of the structure are kept for this project (default 20; the oldest go first).
 
 A mistake in the file is shown on the plan and never stops it.
 
@@ -202,6 +208,14 @@ A mistake in the file is shown on the plan and never stops it.
 - **tables:** tables whose name comes from a variable, SQL built in pieces, `rpc`, `$queryRaw`, Knex/Kysely/TypeORM/Sequelize and Mongoose are not seen; migrations written in code are not read; row level security is read from the project's SQL files only (not from the Supabase dashboard or the live database) and the content of the policies is not checked;
 - **structure health:** unused functions inside a used file are not found; `require()`/`import()` count as using everything; copied code counts only when the names are the same; frameworks other than Next.js are known by their usual folders and names only (so “possibly”);
 - **variables:** indirect reads (`const env = process.env; env.X`, `@t3-oss/env`, `zod` schemas, `process.env[name]`) are not seen; in a monorepo, variables are joined by name across packages; Vite's `envPrefix` is read only when written literally in `vite.config`; keys written in the code are recognised only by known shapes (Stripe, OpenAI, Anthropic, AWS, GitHub, Slack, Google, SendGrid, private keys, Supabase `service_role` JWTs).
+
+**What Changes, Predict, Quiz and the count of changes do not do** (0.7.0):
+- **Changes:** a moved file is marked “moved”, but its arrows and functions show as removed and added (moved *and* changed shows as removed + added); services, variables and tables have no box of their own (their sentences light the file that uses them); what was removed is proven by the snapshot and its code does not open. Commits are read with the `codetac.structure.json` and `.env` files of the folder now; in the panel, the 15 latest commits against now (two commits against each other only in the terminal).
+- **Predict:** compares files added, changed and removed, blocks that start depending on another and new external services — not functions, routes, tables or variables. Services match by the catalogue's id or name.
+- **Quiz:** five kinds of question, nothing about functions or columns; the wrong choices are drawn from the project, not the most similar ones (in a Next.js app, “where is the route defined” is easy to guess from the path).
+- **Changes not opened:** a change is the same while its sentence says the same thing (“3 files changed” becoming “4 files changed” counts as new); only against the newest snapshot; the number on the bar is not shown in Python apps yet.
+- **Explanations:** the check is on names, not on statements: read the answer as an explanation, not as a finding.
+- **Privacy:** the switches are for the computer, not per project; purpose sentences are not shown before they are sent (they are in the log); the log keeps up to 20 000 characters of each text.
 
 **Secret values are never shown.** Only names, files and lines: no value of a variable or key is shown on these pages, stored in `~/.codetac/structure/` or sent to an AI, and keys written in the code are masked in every code excerpt (`sk_test_••••••`). A test looks for the secret values of the test projects in everything codeTAC produces and must find none.
 
@@ -227,10 +241,14 @@ Other options in the same file:
 
 Instead of the file, you can use the variables `CODETAC_AI_PROVIDER`, `CODETAC_AI_MODEL`, `CODETAC_AI_KEY` and `CODETAC_AI_URL`, which take priority over it. `CODETAC_AI_CONFIG` points to another file.
 
-With a cloud model, excerpts of the functions' code are sent, after secrets are removed. Recorded values are never sent. The panel shows what is being used.
+With a cloud model, excerpts of the functions' code are sent, after secrets are removed. Recorded values are never sent. The panel shows what is being used. Because they are sent automatically and carry code, **the purpose sentences are off by default with a model that is not on this computer**: turn them on in **Privacy** (see section 8) if you want them.
+
+**Questions about a step** (in a dossier, under the code of a step): you see the exact request first — the code, the facts and your question — and it is sent only when you press **Send**.
 
 - **“AI”** next to a sentence: the sentence came from the model and matches what was recorded.
 - **“AI rejected”:** the model's sentence said something that was not observed. It was replaced by the sentence built from the facts. Hover over it to see why.
+
+**In Structure** the AI only explains, and only when you ask: a block's card (**Explain with AI…**), the whole plan (**Explain the plan**: five lines) and each alert of Secrets and variables, Data model, Structure health and Changes (**Explain with AI…** under it). It gets only facts read from the structure — names of blocks, files, routes, services, tables and variables, and the places of the findings — never code and never a value. You see the exact request first, and what is sent is exactly what you saw. An answer that names a file, route, table or anything else that is not in those facts is rejected; the answer is always marked as written by AI. (The check is on names: the AI can still draw a conclusion the facts do not state, so read it as an explanation, not as a finding.)
 
 ## 7. When something does not work
 
@@ -271,6 +289,16 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 - By default no values are recorded, only names, files and lines. Values are recorded only in the functions where you request detail.
 - The panel only answers on this computer (`127.0.0.1`).
 - Structure reads the project's files on your computer and keeps only paths, names, lines and hashes (in `~/.codetac/structure/`). Of `.env` files it keeps only a hash, and it never shows their contents.
+- **What can go to an AI model: the Privacy screen** (the **Privacy** link at the top of the panel and of Structure, or `codetac privacy` in the terminal). It lists every kind of request CodeTAC can make to an AI model and what each one carries:
+
+  | Request | What it carries | When |
+  | --- | --- | --- |
+  | Purpose sentences of the dossiers | the code of each function that ran (secrets masked) and the facts observed; never the recorded values | automatically, in the background — **off by default with a model outside this computer** |
+  | Questions about a step | the code of the step (masked), the facts, the lines run and your question; the recorded values only with a model on this computer | when you ask, after you see the request |
+  | Suggestions for Unknown files | paths and export signatures, never code | `codetac structure --suggest`, after you see the request |
+  | Explanations (a block, the plan, an alert) | only facts read from the structure, never code or values | when you ask, after you see the request |
+
+  Each has a switch, and **No AI** turns them all off at once. The choice is kept in `~/.codetac/privacy.json` and counts at once, in the panel and in the terminal. Every request sent is written to a log on this computer (`~/.codetac/ai-log.jsonl`) with its exact instructions and text; the screen shows it (and can clear it). The requests you ask for are shown before they are sent, and what is sent is exactly what you saw (checked by an automatic test for every kind).
 
 ## 9. Commands
 
@@ -282,6 +310,11 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 | `codetac structure [folder]` | Lists the project's files by block, its tables and a summary of the structure's health |
 | `codetac structure --reclassify <file> <block\|auto>` | Places a file in a block yourself (`auto` gives it back to the rules) |
 | `codetac structure --suggest` | Asks the AI about the Unknown files, showing first what is sent |
+| `codetac structure --snapshot [label]` | Saves the structure as it is now, to compare with later. Named by the commit when the folder has no changes to commit, otherwise by a hash of the files; kept in `~/.codetac/structure/snapshots/`, never in the project |
+| `codetac structure --snapshot [label] --predict` | Asks first what you expect the next change to do (files, blocks that start depending on another, new services) and saves it with the snapshot; `--diff` then says what you got right, what you missed and what did not happen |
+| `codetac structure --snapshots` | Lists the saved snapshots, newest first |
+| `codetac structure --diff [from] [to]` | What changed in the structure since the newest snapshot, or between two points — a snapshot id, a commit (`HEAD~3`, a branch, a tag, a hash) or the folder now (`codetac structure --diff v1.2 HEAD`). A commit is read from a temporary copy made with `git archive` and removed at the end: no checkout, your folder and `.git` are not touched. sentences made by rules, the most important first (`!!` alert, `!` warning, `·` information), each with the file and line; `[leaks]` / `[secrets]` mark what touches data leaving the machine or secrets |
+| `codetac privacy` | What CodeTAC may send to an AI model: each kind of request with its switch, and **No AI**. `--no-ai` / `--ai`, `--on <kind>`, `--off <kind>`, `--default <kind>` (kinds: `purposes`, `questions`, `suggestions`, `explanations`); `--log [n]` shows the last requests sent, `--clear-log` clears them |
 | `codetac help` | All the options |
 | `codetac --version` | The installed version |
 

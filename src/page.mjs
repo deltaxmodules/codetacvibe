@@ -3,6 +3,7 @@
 // answered here without ever reaching the application. Works for any server
 // built on node:http (Next.js, Vite, Express...), with no proxy or extension.
 import { readFileSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
 import { splitUrl } from './boundaries.mjs';
 import { TEXT } from './structure/text.mjs';
 
@@ -49,13 +50,24 @@ export function handleOwnRoute(request, response, runtime, options) {
     response.end(barScript(options));
     return true;
   }
+  // Comprehension debt (phase 10, step 4): the number on the bar's Structure
+  // pill, asked of the panel on this computer. Only the page itself may ask.
+  if (path === `${PREFIX}review` && request.method === 'GET') {
+    if (!sameOrigin(request) || request.headers['sec-fetch-site'] === 'cross-site') {
+      response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end('CodeTAC: origin refused.');
+      return true;
+    }
+    reviewTotal(options).then(total => {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({ total }));
+    });
+    return true;
+  }
   if (path === `${PREFIX}events` && request.method === 'POST') {
     // Only the page itself may report actions: another site open in the
     // browser cannot write into the recording (browsers always send Origin here).
-    const origin = request.headers.origin;
-    let sameOrigin = !origin;
-    try { sameOrigin = sameOrigin || new URL(origin).host === request.headers.host; } catch {}
-    if (!sameOrigin) {
+    if (!sameOrigin(request)) {
       response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('CodeTAC: origin refused.');
       return true;
@@ -78,6 +90,32 @@ export function handleOwnRoute(request, response, runtime, options) {
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
   response.end('CodeTAC: rota desconhecida.');
   return true;
+}
+
+function sameOrigin(request) {
+  const origin = request.headers.origin;
+  if (!origin) return true;
+  try { return new URL(origin).host === request.headers.host; } catch { return false; }
+}
+
+// The panel's count of changes not opened, or null. Only a panel on this
+// computer is asked (the number never leaves it), with a short wait.
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+export function reviewTotal({ panel, run }, timeout = 3000) {
+  let url;
+  try { url = new URL(`/api/structure/review?run=${encodeURIComponent(run ?? '')}`, panel); } catch { return Promise.resolve(null); }
+  if (url.protocol !== 'http:' || !LOOPBACK.has(url.hostname) || !run) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const ask = httpGet(url, { timeout, headers: { [INTERNAL_HEADER]: '1' } }, answer => {
+      const chunks = [];
+      answer.on('data', chunk => chunks.push(chunk));
+      answer.on('end', () => {
+        try { resolve(answer.statusCode === 200 ? Number(JSON.parse(Buffer.concat(chunks).toString('utf8')).review?.total ?? 0) : null); } catch { resolve(null); }
+      });
+    });
+    ask.on('timeout', () => ask.destroy());
+    ask.on('error', () => resolve(null));
+  });
 }
 
 // Only known fields are kept; URLs lose their query values, and everything

@@ -32,10 +32,10 @@ export const nodeReader = {
   detect(folder) {
     return existsSync(join(folder, 'package.json')) ? { types: [] } : null;
   },
-  read(folder, { types }) {
+  read(folder, { types, cache = true }) {
     const config = readConfig(folder);
-    const { files } = inventory(folder, { ignored: config.ignore.length ? path => config.ignore.some(rule => rule.test(path)) : null });
-    const modules = projectModules(folder, files, { packages: describeProject(folder).packages });
+    const { files } = inventory(folder, { cache, ignored: config.ignore.length ? path => config.ignore.some(rule => rule.test(path)) : null });
+    const modules = projectModules(folder, files, { packages: describeProject(folder).packages, cache });
     const imported = importedPackages(modules);
     const project = describeProject(folder, { importedBy: member => imported.get(member) ?? new Set() });
     const classes = new Map(classify(files, modules, { types: project.types }).map(item => [item.path, item]));

@@ -10,9 +10,10 @@ import { dataDirectory } from './home.mjs';
 import { createActionView } from './action-view.mjs';
 import { digestAction, digestRequest } from './digest.mjs';
 import { LABELS } from './sentences.mjs';
-import { answerQuestion, complete, createPurposes, describeConfig, loadConfig } from './ai.mjs';
+import { answerQuestion, complete, createPurposes, describeConfig, loadConfig, questionRequest } from './ai.mjs';
+import { blocked, blockedText, clearLog, privacyState, readLog, writeSettings } from './privacy.mjs';
 import { createStructureService, isLoopback } from './structure/service.mjs';
-import { planPageWithText } from './structure/text.mjs';
+import { privacyPageWithText, planPageWithText } from './structure/text.mjs';
 import { maskKeys } from './structure/node/modules.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -49,7 +50,8 @@ function source(run, file, line, endLine) {
 const view = createActionView(store);
 const ai = await loadConfig({ directory });
 const purposes = ai.provider ? createPurposes({ config: ai, cache: store.purposeCache, readCode: source }) : null;
-if (ai.provider) console.log(`Purpose sentences: ${ai.model} (${ai.provider}${ai.local ? ', local: nothing leaves this computer' : ', redacted excerpts are sent'}).`);
+if (ai.provider && blocked('purposes', ai)) console.log(`Purpose sentences: fixed, built from the facts (${ai.model}: ${blockedText(blocked('purposes', ai))})`);
+else if (ai.provider) console.log(`Purpose sentences: ${ai.model} (${ai.provider}${ai.local ? ', local: nothing leaves this computer' : ', redacted excerpts are sent'}).`);
 else console.log(`Purpose sentences: fixed, built from the facts${ai.problem ? ` (${ai.problem})` : ' (no AI model configured)'}.`);
 
 // Editor links (Phase 4): CODETAC_EDITOR = vscode (default), cursor, windsurf, none.
@@ -58,6 +60,7 @@ const editor = String(process.env.CODETAC_EDITOR ?? 'vscode').toLowerCase();
 const editorScheme = EDITORS[editor] ?? null;
 
 // The project's structure (StructureTAC): the folder of each recording.
+const privacyPage = privacyPageWithText(readFileSync(new URL('./privacy-page.html', import.meta.url), 'utf8'));
 const structurePage = planPageWithText(readFileSync(new URL('./structure/plan-page.html', import.meta.url), 'utf8'));
 const structure = createStructureService({ rootOf: run => { store.ingest(); return store.root(run); }, editor: editorScheme, ai: { config: ai, complete },
   recordings: { actions: run => { store.ingest(); return store.listActions({ run, limit: 50 }); }, action: id => view.resolvedAction(id), request: id => requestWithDigest(id),
@@ -113,6 +116,12 @@ const server = http.createServer(async (request, response) => {
       response.end(structurePage);
       return;
     }
+    if (url.pathname === '/privacy') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+        'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
+      response.end(privacyPage);
+      return;
+    }
     if (url.pathname === '/favicon.ico') {
       response.writeHead(204);
       response.end();
@@ -139,9 +148,10 @@ const server = http.createServer(async (request, response) => {
       json(response, 200, store.listActions({ limit: Number(url.searchParams.get('limit') || 200), run: url.searchParams.get('run') || undefined }));
       return;
     }
-    // Structure: read-only, and only for the panel's own pages on this computer.
+    // Structure: read-only (the POSTs ask the AI, save a snapshot, a quiz answer or a reviewed change outside the project),
+    // and only for the panel's own pages on this computer.
     if (url.pathname === '/api/structure' || url.pathname.startsWith('/api/structure/')) {
-      const post = request.method === 'POST' && url.pathname === '/api/structure/explain';
+      const post = request.method === 'POST' && ['/api/structure/explain', '/api/structure/snapshot', '/api/structure/quiz/answer', '/api/structure/review'].includes(url.pathname);
       if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
         || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
         || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {
@@ -183,11 +193,34 @@ const server = http.createServer(async (request, response) => {
       json(response, 200, spec);
       return;
     }
-    if (url.pathname === '/api/pergunta' && request.method === 'POST') {
+    // Privacy (StructureTAC phase 10, step 5): the switches, «No AI» and the log of what was sent.
+    if (url.pathname === '/api/privacy') {
+      if (request.method === 'POST') {
+        const change = await body(request);
+        if (change?.clearLog === true) clearLog();
+        writeSettings({ noAi: change?.noAi, kinds: change?.kinds && typeof change.kinds === 'object' ? change.kinds : {} });
+      }
+      json(response, 200, { config: describeConfig(ai), ...privacyState(ai), log: readLog({ limit: 100 }) });
+      return;
+    }
+    // A question about a step: first the exact request (preview), then the
+    // question is sent only with the same fingerprint.
+    if ((url.pathname === '/api/pergunta' || url.pathname === '/api/pergunta/preview') && request.method === 'POST') {
       const asked = await body(request);
       const dossier = requestWithDigest(String(asked.requestId ?? ''));
       if (!dossier) { json(response, 404, { error: 'Request not found.' }); return; }
-      json(response, 200, await answerQuestion({ config: ai, dossier, stepId: String(asked.stepId ?? ''), question: String(asked.question ?? ''), readCode: source }));
+      const question = { config: ai, dossier, stepId: String(asked.stepId ?? ''), question: String(asked.question ?? ''), readCode: source };
+      if (url.pathname.endsWith('/preview')) {
+        if (!ai.provider) { json(response, 200, { available: false, text: 'Questions need an AI model (see “AI explanations” in the README).' }); return; }
+        const reason = blocked('questions', ai);
+        if (reason) { json(response, 200, { available: false, blocked: reason, text: blockedText(reason) }); return; }
+        const preview = questionRequest(question);
+        json(response, 200, preview ? { available: true, system: preview.system, text: preview.text, hash: preview.hash, model: ai.model, provider: ai.provider,
+          local: Boolean(ai.local), valuesSent: preview.valuesSent, valuesWithheld: preview.valuesWithheld } : { available: true, known: false, text: 'This step was not found in the dossier.' });
+        return;
+      }
+      if (typeof asked.hash !== 'string') { json(response, 409, { error: 'Look at the request before sending it.' }); return; }
+      json(response, 200, await answerQuestion({ ...question, hash: asked.hash }));
       return;
     }
     // Purpose sentences of the AI model: generated in the background, the
@@ -308,6 +341,7 @@ pre.code span.n { display:inline-block; width:48px; text-align:right; padding-ri
 .src-rej { color:var(--muted); }
 .summary { font-size:14.5px; margin:2px 0 4px; }
 #ai { color:var(--muted); font-size:12px; margin:0 0 6px; }
+header a.privacy { margin-left:12px; color:var(--accent); font-size:13px; }
 .toolbar { display:flex; gap:8px; margin:0 0 8px; }
 .acts { display:none; margin-left:8px; }
 .step:hover .acts { display:inline; }
@@ -331,7 +365,7 @@ pre.code span.idle { opacity:.45; }
 </head>
 <body>
 <header><h1>CodeTAC</h1><div class="tabs"><button data-tab="actions" class="on">Actions</button><button data-tab="requests">Requests without an action</button></div>
-<label class="runs">Recording <select id="run"></select></label></header>
+<label class="runs">Recording <select id="run"></select></label> <a class="privacy" href="/privacy" title="What CodeTAC can send to an AI model, with a switch for each">Privacy</a></header>
 <main>
   <nav id="list"><p class="empty" style="padding:14px">Loading…</p></nav>
   <article id="detail"><p class="empty">Choose an action or a request on the left to see what it did.</p></article>
@@ -589,6 +623,7 @@ async function startPurposes(kind, id) {
     return;
   }
   const r = await (await fetch('/api/' + kind + '/' + encodeURIComponent(id) + '/finalidades')).json();
+  if (r.blocked) { box.textContent = 'Fixed sentences, built only from the recorded facts. ' + r.blockedText; return; }
   known[id] = r.purposes;
   applyPurposes(r.purposes);
   const who = aiConfig.model + (aiConfig.local ? ' (local model: nothing leaves this computer)' : ' (' + aiConfig.provider + ': redacted code excerpts are sent)');
@@ -848,13 +883,33 @@ async function askQuestion(id) {
   const question = input.value.trim();
   if (!question) return;
   const { c } = stepData.get(id);
+  // Privacy: the exact request first; it is sent only after «Send», with the same fingerprint.
+  let preview;
+  try {
+    preview = await (await fetch('/api/pergunta/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' },
+      body: JSON.stringify({ requestId: c.req, stepId: id, question }) })).json();
+  } catch (error) { out.innerHTML = '<p class="note">Failed: ' + esc(error.message) + '</p>'; return; }
+  if (preview.error || !preview.available || !preview.hash) {
+    out.innerHTML = '<p class="note">' + esc(preview.error || preview.text) + (preview.blocked ? ' <a href="/privacy">Privacy</a>' : '') + '</p>';
+    return;
+  }
+  out.innerHTML = '<div class="preview"><p class="note" style="margin:0 0 4px">This is exactly what will be sent to ' + esc(preview.model) +
+    (preview.local ? ' (on this computer: nothing leaves it)' : ' (' + esc(preview.provider) + ', outside this computer)') + ':</p>' +
+    '<pre class="code" id="perguntaTexto">' + esc(preview.text) + '</pre><details><summary class="note">Instructions to the model</summary><pre class="code">' + esc(preview.system) + '</pre></details>' +
+    '<button id="enviarPergunta">Send</button> <button id="cancelarPergunta">Cancel</button></div>';
+  document.getElementById('cancelarPergunta').addEventListener('click', () => { out.innerHTML = ''; });
+  document.getElementById('enviarPergunta').addEventListener('click', () => sendQuestion(id, question, preview.hash));
+}
+async function sendQuestion(id, question, hash) {
+  const out = document.getElementById('resposta');
+  const { c } = stepData.get(id);
   out.innerHTML = '<p class="note">Thinking…</p>';
   try {
     const response = await fetch('/api/pergunta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' },
-      body: JSON.stringify({ requestId: c.req, stepId: id, question }) });
+      body: JSON.stringify({ requestId: c.req, stepId: id, question, hash }) });
     const a = await response.json();
     if (a.error) { out.innerHTML = '<p class="note">' + esc(a.error) + '</p>'; return; }
-    if (!a.available) { out.innerHTML = '<p class="note">' + esc(a.text) + '</p>'; return; }
+    if (!a.available || a.changed) { out.innerHTML = '<p class="note">' + esc(a.text) + '</p>'; return; }
     const source = a.model ? 'Answer from ' + a.model + (a.local ? ' (local model)' : '') + (a.valuesSent ? ', with the recorded values.'
       : a.valuesWithheld ? ', without the recorded values: they are not sent to models outside this computer (only the lines run and the redacted code).' : '.') : '';
     out.innerHTML = '<div class="answer' + (a.known ? '' : ' unknown') + (a.rejected ? ' rejected' : '') + '">' +

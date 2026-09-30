@@ -24,8 +24,8 @@ export function pathPattern(pattern) {
   return path => regex.test(path);
 }
 
-const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells']);
-const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, problems: [] });
+const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells', 'snapshots']);
+const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, snapshots: {}, problems: [] });
 
 // The project's configuration:
 //   ignore: [pattern]           files left out of the plan (on top of .gitignore)
@@ -34,6 +34,7 @@ const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env
 //   services                    extra services and their jurisdiction (phase 4, services.mjs)
 //   env: { platform: [names] }  variables set outside the .env files (hosting, CI): never "undefined"
 //   smells: { limit: n, off: [kinds] }  thresholds of the structural smells (phase 8, smells.mjs), and smells turned off
+//   snapshots: { keep: n }      how many snapshots of the structure are kept (phase 9, snapshots.mjs; default 20)
 // A broken file or entry is reported in problems, never fatal: the plan is
 // still drawn, with what is valid.
 export function readConfig(root) {
@@ -101,6 +102,17 @@ export function readConfig(root) {
           problems.push(`${CONFIG_FILE}: "smells.${key}" is not a setting (${[...Object.keys(DEFAULT_THRESHOLDS), 'off'].join(', ')}); it is ignored.`);
         } else if (Number.isInteger(value) && value > 0) config.smells[key] = value;
         else problems.push(`${CONFIG_FILE}: "smells.${key}" must be a whole number above 0; the default (${DEFAULT_THRESHOLDS[key]}) is used.`);
+      }
+    }
+  }
+  if (raw.snapshots !== undefined) {
+    const keep = raw.snapshots?.keep;
+    if (!raw.snapshots || typeof raw.snapshots !== 'object' || Array.isArray(raw.snapshots)) problems.push(`${CONFIG_FILE}: "snapshots" must be { "keep": n }; it is ignored.`);
+    else {
+      for (const key of Object.keys(raw.snapshots)) if (key !== 'keep') problems.push(`${CONFIG_FILE}: "snapshots.${key}" is not a setting (keep); it is ignored.`);
+      if (keep !== undefined) {
+        if (Number.isInteger(keep) && keep > 0) config.snapshots.keep = keep;
+        else problems.push(`${CONFIG_FILE}: "snapshots.keep" must be a whole number above 0; the default (20) is used.`);
       }
     }
   }

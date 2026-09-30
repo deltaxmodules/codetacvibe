@@ -470,11 +470,14 @@ function installHttpClients(runtime) {
       };
     }
   };
+  // CodeTAC's own requests (the bar's count asked of the panel) are not the app's.
+  const own = request => { try { return Boolean(request.getHeader?.(INTERNAL_HEADER)); } catch { return false; } };
   diagnostics.subscribe('http.client.request.created', ({ request }) => {
-    try { watchBody(request, describeClient(request)); } catch {}
+    try { if (!own(request)) watchBody(request, describeClient(request)); } catch {}
   });
   diagnostics.subscribe('http.client.request.start', ({ request }) => {
     try {
+      if (own(request)) return;
       const details = describeClient(request);
       watchBody(request, details);
       const entry = { end: runtime.startBoundary(details) };
