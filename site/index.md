@@ -1,0 +1,57 @@
+---
+layout: home
+
+hero:
+  name: codeTAC
+  text: See what your app's code does, one action at a time.
+  tagline: For people who build web apps with AI (Lovable, Bolt, v0, Cursor, Replit, Claude Code…) and want to know what the code really does. Free, and everything runs on your computer.
+  actions:
+    - theme: brand
+      text: Get started in 5 minutes
+      link: /guide/get-started
+    - theme: alt
+      text: What happens when I click?
+      link: /guide/what-happens-when-i-click
+
+features:
+  - title: Click, and see what ran
+    details: Press a button in your app. codeTAC shows a dossier of that action — the server functions that ran, the database, emails, payments and AI calls — each with its file and line.
+    link: /guide/what-happens-when-i-click
+  - title: See the whole project
+    details: A floor plan of what your project is made of, read from the code. The path of your last click is lit on it.
+    link: /guide/the-floor-plan
+  - title: What leaves your computer
+    details: Every outside service your code sends data to, where it is called, and whether the browser calls it directly.
+    link: /guide/what-leaves-my-computer
+  - title: Are your secrets safe?
+    details: Keys that reach the browser, .env files in git, keys written in the code — by name only, never the value.
+    link: /guide/are-my-secrets-safe
+  - title: What did the AI change?
+    details: Save a snapshot before you ask the AI for a change. Afterwards, codeTAC tells you what changed in the structure, in plain sentences.
+    link: /guide/what-did-the-ai-change
+  - title: Nothing leaves without you
+    details: No account, no cloud. AI explanations are optional, and you see exactly what would be sent before it goes.
+    link: /guide/privacy-and-ai
+---
+
+![A click on “Add user” in an app, then Structure: the floor plan of the project opens with the path of that click lit](/img/path-of-a-click.gif)
+
+## Who is it for?
+
+You made an app with an AI tool, or someone made it for you. It works — mostly. But when you press **Save**, you are not sure what happens:
+
+- Which functions run?
+- Which table changes?
+- Does an email go out?
+- Is the payment in test mode or live mode?
+- Does my secret key end up in the browser?
+
+codeTAC answers these questions by **watching your app while you use it** and by **reading your project's code**. You do not need to know how to program to read the answers: every step comes with a plain sentence, and every fact comes with the file and line that prove it.
+
+## Which apps?
+
+Web apps in **Node.js** (JavaScript or TypeScript — Next.js, Vite + React, Express…) or **Python** (FastAPI or Flask), running on your computer. [More detail](/guide/get-started#which-apps-work).
+
+## Your code is not changed
+
+codeTAC starts your app for you and watches it from the inside while it runs. It does not edit your files, and it does not need an account. When you stop it (Ctrl+C), your app is exactly as it was.

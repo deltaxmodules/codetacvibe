@@ -1,0 +1,40 @@
+# GitHub Pages for the manual (block E, step E6). Copied to
+# codetacvibe/.github/workflows/pages.yml together with site/; the product's
+# own package.json is not touched: VitePress is installed only for the build.
+name: Manual
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-save --no-package-lock --no-audit --no-fund vitepress@1.6.4
+        working-directory: site
+      - run: npx vitepress build .
+        working-directory: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/.vitepress/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
