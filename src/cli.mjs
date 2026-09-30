@@ -244,6 +244,13 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
     };
     child.stdout.on('data', show);
     child.stderr.on('data', show);
+    // A command that cannot start (not found, not executable): said in words, never a crash.
+    // The exit code is already set (negative), so the waits below see the part as stopped.
+    child.on('error', error => {
+      const hint = bin === 'python' ? ' On macOS and Linux it is usually python3 (or the .venv\'s python).' : '';
+      child.spawnError = error.code === 'ENOENT' ? `Could not start "${bin}": the command was not found.${hint}` : `Could not start "${bin}": ${error.message}`;
+      show(child.spawnError);
+    });
     child.part = part;
     children.push(child);
   }
@@ -745,6 +752,14 @@ async function main() {
     const codes = stopped.map(child => describeFailure({ ...child, part: child.part.part }, parts.length > 1)).join(', ');
     // A Python error raised by the app's own code: minimal mode would fail the same way.
     const own = !minimal && stopped.map(child => ({ child, where: ownError(child.traceback, child.part.folder) })).find(item => item.where);
+    // A start command that does not exist: minimal mode would fail the same way.
+    const missing = stopped.find(child => child.spawnError);
+    if (missing) {
+      say(`✗ ${missing.spawnError}`);
+      say('  Give the command as it is typed in this Terminal: codetac . -- <command>');
+      cleanup();
+      process.exit(1);
+    }
     if (own) {
       say(`✗ The app itself failed while starting: ${describeFailure({ ...own.child, part: own.child.part.part }, parts.length > 1)}`);
       say(`  Raised in ${own.where.file}:${own.where.line}, in the app's code (the full error is above). Running without CodeTAC would fail the same way.`);

@@ -202,7 +202,7 @@
       "one": "row level security on in {count} of {known}",
       "other": "row level security on in {count} of {known}"
     },
-    "dataNone": "No tables found: no schema file (Prisma, Drizzle, SQL migrations, Supabase types) and no table used in the code.",
+    "dataNone": "No tables found: no schema file (Prisma, Drizzle, SQL migrations, Supabase types, SQLAlchemy models, Alembic migrations) and no table used in the code.",
     "dataNoProblems": "No alerts or warnings.",
     "dataZoomIn": "Zoom in",
     "dataZoomOut": "Zoom out",
@@ -214,6 +214,8 @@
     "dataSourceDrizzle": "Drizzle schema",
     "dataSourceSql": "SQL migrations",
     "dataSourceTypes": "Supabase generated types",
+    "dataSourceSqlalchemy": "SQLAlchemy models",
+    "dataSourceAlembic": "Alembic migrations",
     "dataRlsOn": {
       "one": "RLS on · {count} policy",
       "other": "RLS on · {count} policies"

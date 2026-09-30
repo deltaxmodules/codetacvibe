@@ -77,7 +77,7 @@ export interface TableNode extends Common<'table'> {
   /** Known only from use in the code, not from a schema. */
   inferred?: boolean;
   /** Where the table is defined (phase 6). Absent when inferred. */
-  source?: 'prisma' | 'drizzle' | 'sql' | 'supabase-types';
+  source?: 'prisma' | 'drizzle' | 'sql' | 'supabase-types' | 'sqlalchemy' | 'alembic';
   columns?: Column[];
   /** Row level security from the SQL files (phase 6). */
   rls?: { enabled: boolean; policies: number; proof: [Proof, ...Proof[]] };

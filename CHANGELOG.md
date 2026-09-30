@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+**The structure of Python projects: FastAPI and Flask, and a Node frontend with a Python API as one plan.**
+
+- **Python projects get the plan:** files by block, functions (with the same names the Python dossier uses, so the path of an action lights them), routes of FastAPI (`@app.get`, `APIRouter(prefix=…)`, `include_router`, `Depends`) and Flask (`@app.route(…, methods=…)`, Blueprints, `register_blueprint`, app factories), and every view of Structure: What leaves the machine, Secrets and variables, Data model, Structure health, Changes, Quiz.
+- The Python files are read by a small helper that ships with codeTAC and uses only Python's standard library: it reads the syntax and never imports or runs your code. Any Python 3.8 or newer does (the project's `.venv` first, else `python3`; `CODETAC_PYTHON` to choose). Only changed files are read again. Without Python, the files are listed and the plan says why.
+- **Data model in Python:** SQLAlchemy models (SQLModel too), Alembic migrations and `CREATE TABLE` in `execute(…)`; who reads and writes each table (`session.query`, `Model.query`, `select`, `add`, `delete`, SQL in `execute`).
+- **Services and variables in Python:** `requests`, `httpx`, `urllib` and the Python SDKs of the catalogue (a `python` entry per service, also in `codetac.structure.json`); `os.environ`, `os.getenv` and pydantic-settings `BaseSettings` fields; a SQLAlchemy engine is the database service.
+- **A Node frontend and a Python API are one plan:** the page's `fetch('/api/…')` points to the Python routes, and the path of an action goes from the button to the Python functions.
+- The number of changes not opened now shows on the bar of Python apps too.
+- `codetac structure --suggest` now sends the public names of Python files (`class Cache; def normalise`), not "exports nothing".
+- **Fix:** in a folder outside git (or without a `.gitignore`), virtual environments (`.venv`, any folder with a `pyvenv.cfg`), `__pycache__` and the caches of pytest, mypy and ruff were listed as files of the project. They are left out now, also when committed.
+- The graph's tables can have `source` `sqlalchemy` or `alembic` (schema version unchanged).
+- **Fix:** a start command that does not exist (`codetac -- python …` on a Mac, where it is `python3`) made `codetac` stop with an error trace. It now says “Could not start "python": the command was not found”, once, without retrying in minimal mode.
+
 ## 0.7.0
 
 **What changed in the structure, and learning it: compare versions, predict, quiz, and control what goes to the AI.**

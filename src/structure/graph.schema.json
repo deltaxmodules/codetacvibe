@@ -472,12 +472,12 @@
           "type": "boolean"
         },
         "source": {
-          "description": "Where the table is defined (phase 6): prisma, drizzle, sql (migrations) or supabase-types. Absent when inferred.",
+          "description": "Where the table is defined (phase 6): prisma, drizzle, sql (migrations) or supabase-types; phase 11 (Python): sqlalchemy (declarative models, SQLModel included) or alembic (migrations). Absent when inferred.",
           "enum": [
             "prisma",
             "drizzle",
             "sql",
-            "supabase-types"
+            "supabase-types", "sqlalchemy", "alembic"
           ]
         },
         "rls": {

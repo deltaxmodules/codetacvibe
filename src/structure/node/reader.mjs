@@ -13,7 +13,7 @@ import { environment, literalKeyNotes } from './env.mjs';
 import { dataModel, tableGraph } from './datamodel.mjs';
 import { serviceCatalogue } from '../services.mjs';
 import { readConfig } from '../config.mjs';
-import { readSuggestions } from '../suggest.mjs';
+import { applyUserLayers } from '../layers.mjs';
 import { t } from '../text.mjs';
 
 
@@ -39,31 +39,9 @@ export const nodeReader = {
     const imported = importedPackages(modules);
     const project = describeProject(folder, { importedBy: member => imported.get(member) ?? new Set() });
     const classes = new Map(classify(files, modules, { types: project.types }).map(item => [item.path, item]));
-    // The user's layer rules come before the reader's (first match wins), and
-    // a file's reclassification wins over both.
+    // The user's layer rules, reclassifications and AI suggestions (layers.mjs).
     const notes = config.problems.map(message => ({ message }));
-    const unusedLayers = new Set(config.layers.map(rule => rule.pattern));
-    for (const [path, item] of classes) {
-      const rule = config.layers.find(candidate => candidate.test(path));
-      if (!rule) continue;
-      unusedLayers.delete(rule.pattern);
-      classes.set(path, { ...item, layer: rule.layer, rule: `config:${rule.pattern}` });
-    }
-    for (const pattern of unusedLayers) notes.push({ message: `codetac.structure.json: the layer rule ${pattern} matches no file of the project.` });
-    for (const [path, layer] of Object.entries(config.reclassify)) {
-      if (classes.has(path)) classes.set(path, { ...classes.get(path), layer, rule: 'manual' });
-      else notes.push({ message: `codetac.structure.json reclassifies ${path}, which is not a file of the project.` });
-    }
-    // AI suggestions (codetac structure --suggest) only fill what is still
-    // Unknown, and only while the file is unchanged.
-    const suggestions = readSuggestions(folder);
-    for (const file of files) {
-      const item = classes.get(file.path);
-      const suggestion = suggestions[file.path];
-      if (item.layer === 'unknown' && item.rule !== 'manual' && suggestion?.hash === file.hash && suggestion.block !== 'unknown') {
-        classes.set(file.path, { ...item, layer: suggestion.block, rule: 'ai-suggestion', suggested: true });
-      }
-    }
+    notes.push(...applyUserLayers(folder, files, classes, config));
     const nodes = files.map(file => {
       const { layer, rule, runsOn, suggested } = classes.get(file.path);
       return { id: `file:${file.path}`, kind: 'file', name: basename(file.path), path: file.path, language: file.language, size: file.size, lines: file.lines,
@@ -127,6 +105,9 @@ export const nodeReader = {
       nodes,
       edges,
       ...(notes.length ? { notes } : {}),
+      // Not part of the graph: requests no route of this reader answers, for
+      // readProject to link to the routes of another reader (phase 11).
+      pending: { requests: found.unanswered },
     };
   },
 };

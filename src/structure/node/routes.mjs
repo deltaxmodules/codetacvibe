@@ -200,6 +200,7 @@ export function projectRoutes(modules, symbolsOf, { next = false, runsOn = new M
   // note ("unknown destination"), never a guess. A call from client code to a
   // function of a 'use server' file is a Server Action.
   const notes = [];
+  const unanswered = [];
   const routeList = [...routes.values()];
   const index = routeIndex(routeList);
   const from = (path, line) => {
@@ -216,7 +217,10 @@ export function projectRoutes(modules, symbolsOf, { next = false, runsOn = new M
       }
       const matches = matchRoutes(index, request);
       if (!matches.length) {
-        notes.push({ message: `No route of the project answers ${request.method ?? 'a request to'} ${request.path} (${request.client}() call).`, proof });
+        const note = { message: `No route of the project answers ${request.method ?? 'a request to'} ${request.path} (${request.client}() call).`, proof };
+        notes.push(note);
+        // Another reader of the same project may have the route (a Python API behind a Node frontend, phase 11).
+        unanswered.push({ from: from(path, request.line), method: request.method ?? null, path: request.path, proof, ...edgeRunsOn(path), note });
         continue;
       }
       for (const route of matches) {
@@ -242,5 +246,5 @@ export function projectRoutes(modules, symbolsOf, { next = false, runsOn = new M
     }
   }
   const sorted = list => list.map(item => ({ ...item, proof: item.proof.sort(byProof) }));
-  return { routes: sorted(routeList), edges: sorted([...edges.values()]), handlers: extraSymbols, notes };
+  return { routes: sorted(routeList), edges: sorted([...edges.values()]), handlers: extraSymbols, notes, unanswered };
 }

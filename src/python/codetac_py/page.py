@@ -6,7 +6,8 @@ at the protocol level (WSGI and ASGI), for any framework on top of them.
 - the action of a request: the x-codetac-action header set by the page script
   on fetch and XHR, or the short cookie it sets before a full navigation;
 - /__codetac/bar.js serves the same bar.js as the Node side (CODETAC_BAR_JS),
-  and /__codetac/events records the page's actions (`browser-action`);
+  /__codetac/events records the page's actions (`browser-action`), and
+  /__codetac/review gives the panel's count of changes not opened (phase 11);
 - the script tag goes into complete HTML documents: known length (or a body
   given whole), not compressed, not a file, 1 MB at most. The length is
   adjusted, and validators (ETag, Last-Modified) are dropped only when the
@@ -255,22 +256,73 @@ def browser_action(event):
     })
 
 
-def own_route(method, path, origin, host, read_body):
+def _same_origin(origin, host):
+    if not origin:
+        return True
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(origin).netloc == host
+    except ValueError:
+        return False
+
+
+_LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+
+
+def review_total(timeout=3):
+    """src/page.mjs reviewTotal: the panel's count of changes not opened, or None. Only
+    a panel on this computer is asked (the number never leaves it), with a short wait,
+    and the request is not recorded as a call of the app."""
+    run = os.environ.get('CODETAC_RUN', '')
+    from urllib.parse import quote, urlsplit
+    try:
+        parts = urlsplit(panel_url())
+        port = parts.port or 80
+    except ValueError:
+        return None
+    if parts.scheme != 'http' or parts.hostname not in _LOOPBACK or not run:
+        return None
+    import http.client
+    try:
+        from .boundaries import _inside
+        token = _inside.set(True)
+    except Exception:
+        _inside = token = None
+    connection = None
+    try:
+        connection = http.client.HTTPConnection(parts.hostname, port, timeout=timeout)
+        connection.request('GET', '/api/structure/review?run=' + quote(run, safe=''), headers={INTERNAL_HEADER: '1'})
+        answer = connection.getresponse()
+        body = answer.read()
+        if answer.status != 200:
+            return None
+        review = json.loads(body.decode('utf-8')).get('review') or {}
+        return int(review.get('total') or 0)
+    except Exception:
+        return None
+    finally:
+        if connection is not None:
+            connection.close()
+        if token is not None:
+            _inside.reset(token)
+
+
+def own_route(method, path, origin, host, read_body, fetch_site=None):
     """Answers a /__codetac/ request: (status, headers, body). `read_body(limit)` returns
     the request body, or None when it is longer than the limit."""
     if path == PREFIX + 'bar.js' and method == 'GET':
         return 200, [('Content-Type', 'text/javascript; charset=utf-8'), ('Cache-Control', 'no-store')], bar_script()
+    # Comprehension debt (phase 10, step 4; Python side in phase 11): the number on the
+    # bar's Structure pill, asked of the panel on this computer. Only the page itself may ask.
+    if path == PREFIX + 'review' and method == 'GET':
+        if not _same_origin(origin, host) or fetch_site == 'cross-site':
+            return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
+        body = json.dumps({'total': review_total()}, separators=(',', ':')).encode('utf-8')
+        return 200, [('Content-Type', 'application/json; charset=utf-8'), ('Cache-Control', 'no-store')], body
     if path == PREFIX + 'events' and method == 'POST':
         # Only the page itself may report actions: another site open in the
         # browser cannot write into the recording (browsers send Origin here).
-        same = not origin
-        if not same:
-            from urllib.parse import urlsplit
-            try:
-                same = urlsplit(origin).netloc == host
-            except ValueError:
-                same = False
-        if not same:
+        if not _same_origin(origin, host):
             return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
         body = read_body(MAX_EVENT_BYTES)
         if body is None:
@@ -305,7 +357,7 @@ def wsgi_own_route(environ, start_response):
         return stream.read(length) if stream is not None and length > 0 else b''
 
     status, headers, body = own_route(environ.get('REQUEST_METHOD', 'GET'), environ.get('PATH_INFO', ''),
-                                      environ.get('HTTP_ORIGIN'), environ.get('HTTP_HOST'), read_body)
+                                      environ.get('HTTP_ORIGIN'), environ.get('HTTP_HOST'), read_body, environ.get('HTTP_SEC_FETCH_SITE'))
     reasons = {200: 'OK', 204: 'No Content', 403: 'Forbidden', 404: 'Not Found', 413: 'Payload Too Large'}
     start_response('%d %s' % (status, reasons[status]), headers + [('Content-Length', str(len(body)))])
     return [body]
@@ -439,8 +491,14 @@ async def asgi_own_route(scope, receive, send):
                 return size
 
     size = await read_all() if scope.get('method') == 'POST' else 0
-    status, answer, body = own_route(scope.get('method', 'GET'), scope.get('path', ''), headers.get('origin'), headers.get('host'),
-                                     lambda limit: None if size is None or size > limit else b''.join(received))
+    arguments = (scope.get('method', 'GET'), scope.get('path', ''), headers.get('origin'), headers.get('host'),
+                 lambda limit: None if size is None or size > limit else b''.join(received), headers.get('sec-fetch-site'))
+    if scope.get('path') == PREFIX + 'review':
+        # Asking the panel waits on the network: not on the event loop.
+        import asyncio
+        status, answer, body = await asyncio.get_running_loop().run_in_executor(None, lambda: own_route(*arguments))
+    else:
+        status, answer, body = own_route(*arguments)
     await send({'type': 'http.response.start', 'status': status,
                 'headers': [(name.lower().encode('latin-1'), value.encode('latin-1')) for name, value in answer]
                 + [(b'content-length', str(len(body)).encode())]})

@@ -18,10 +18,11 @@
 //                    server routes to go through
 import { readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
+import { declaredCommands } from '../detect-python.mjs';
 
 export const SMELL_KINDS = ['cycle', 'skipped-layer', 'coupling', 'duplicate', 'dead-file', 'large-file', 'unused-export'];
 export const DEFAULT_THRESHOLDS = { largeFileLines: 400, duplicateTokens: 80, duplicateLines: 8, couplingFiles: 25, couplingBlocks: 4 };
-const CODE = new Set(['js', 'jsx', 'ts', 'tsx']);
+const CODE = new Set(['js', 'jsx', 'ts', 'tsx', 'python']);
 const CODE_BLOCKS = new Set(['block:interface', 'block:routes', 'block:logic', 'block:data', 'block:external', 'block:utilities']);
 const NOT_DEAD_BLOCKS = new Set(['block:config', 'block:tests']);
 const byProof = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
@@ -31,12 +32,16 @@ const byProof = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line -
 const NEXT_APP = /^(?:src\/)?app\/(?:.*\/)?(?:page|layout|template|loading|error|global-error|not-found|default|route|opengraph-image|twitter-image|icon|apple-icon|sitemap|robots|manifest)\.(?:[jt]sx?|mjs)$/;
 const NEXT_ROOT = /^(?:src\/)?(?:middleware|instrumentation|instrumentation-client)\.(?:[jt]s|mjs)$/;
 const NEXT_PAGES = /^(?:src\/)?pages\/.+\.(?:[jt]sx?|mjs)$/;
-const TEST_FILE = /(?:^|\/)(?:__tests__|__mocks__|tests?|e2e|cypress|playwright)\/|\.(?:test|spec|stories|story)\.[cm]?[jt]sx?$/;
+const TEST_FILE = /(?:^|\/)(?:__tests__|__mocks__|tests?|e2e|cypress|playwright)\/|\.(?:test|spec|stories|story)\.[cm]?[jt]sx?$|(?:^|\/)(?:test_[^/]*|[^/]*_test|conftest)\.py$/;
 const CONFIG_FILE = /(?:^|\/)[\w.-]+\.config\.[cm]?[jt]s$|(?:^|\/)\.?[\w-]+rc\.[cm]?js$/;
 const CONVENTION_FOLDER = /(?:^|\/)(?:pages|routes|api|functions|workers?|scripts|bin|cli|commands|plugins|migrations|seeds?|jobs|cron)\//;
 // Served as they are and loaded by their address (a service worker, a worklet).
 const PUBLIC_FOLDER = /^(?:.*\/)?(?:public|static)\//;
-const ENTRY_NAME = /(?:^|\/)(?:index|main|server|app|worker|cli|handler|lambda)\.[cm]?[jt]sx?$/;
+const ENTRY_NAME = /(?:^|\/)(?:index|main|server|app|worker|cli|handler|lambda)\.(?:[cm]?[jt]sx?|py)$/;
+// Python files a runner starts or Python runs without an import (phase 11):
+// package inits, `python -m pkg`, Django's manage.py, WSGI/ASGI entries, and
+// the Alembic migrations.
+const PYTHON_ENTRY = /(?:^|\/)(?:__init__|__main__|manage|wsgi|asgi)\.py$|(?:^|\/)(?:migrations|alembic)\/.*\.py$/;
 
 function packageEntries(root, graph) {
   const files = new Set(graph.nodes.filter(node => node.kind === 'file').map(node => node.path));
@@ -62,14 +67,46 @@ function packageEntries(root, graph) {
   return found;
 }
 
+// Python files started by a declared command (uvicorn app.main:app, python
+// run.py, in a Procfile, pyproject.toml, Makefile, README or package.json
+// script) or that run themselves (if __name__ == '__main__').
+function pythonEntries(root, graph) {
+  const files = new Set(graph.nodes.filter(node => node.kind === 'file').map(node => node.path));
+  const found = new Set();
+  const folders = new Set(['', ...[...files].filter(path => /(?:^|\/)(?:requirements[^/]*\.txt|pyproject\.toml|Procfile)$/.test(path)).map(path => posix.dirname(path) === '.' ? '' : posix.dirname(path))]);
+  const add = (folder, command) => {
+    const base = folder ? `${folder}/` : '';
+    const inside = command.match(/\bcd\s+([\w./-]+)\s*&&/)?.[1];
+    const from = inside ? `${posix.normalize(base + inside)}/`.replace(/^\.\//, '') : base;
+    for (const match of command.matchAll(/(?:uvicorn|gunicorn|hypercorn|granian)\s+(?:[^\s]*\s+)*?([\w.]+):\w+/g)) {
+      const module = from + match[1].split('.').join('/');
+      for (const candidate of [`${module}.py`, `${module}/__init__.py`]) if (files.has(candidate)) found.add(candidate);
+    }
+    for (const match of command.matchAll(/python3?\s+(?:-\S+\s+)*([\w./-]+\.py)\b/g)) if (files.has(posix.normalize(from + match[1]))) found.add(posix.normalize(from + match[1]));
+    for (const match of command.matchAll(/--app[= ]([\w.]+)/g)) {
+      const module = from + match[1].split('.').join('/');
+      if (files.has(`${module}.py`)) found.add(`${module}.py`);
+    }
+  };
+  for (const folder of folders) for (const { command } of declaredCommands(join(root, folder))) add(folder, command);
+  for (const manifest of [...files].filter(path => path === 'package.json' || path.endsWith('/package.json'))) {
+    try { for (const script of Object.values(JSON.parse(readFileSync(join(root, manifest), 'utf8')).scripts ?? {})) if (typeof script === 'string') add(posix.dirname(manifest) === '.' ? '' : posix.dirname(manifest), script); } catch {}
+  }
+  for (const path of files) {
+    if (!path.endsWith('.py')) continue;
+    try { if (/^if\s+__name__\s*==\s*['"]__main__['"]\s*:/m.test(readFileSync(join(root, path), 'utf8'))) found.add(path); } catch {}
+  }
+  return found;
+}
+
 export function entryFiles(graph, root) {
-  const sure = new Set(root ? packageEntries(root, graph) : []);
+  const sure = new Set(root ? [...packageEntries(root, graph), ...pythonEntries(root, graph)] : []);
   const possible = new Map();
   const next = (graph.project?.types ?? []).some(type => type.startsWith('next'));
   const exposes = new Set(graph.edges.filter(edge => edge.kind === 'exposes').map(edge => edge.from.slice(5)));
   for (const node of graph.nodes.filter(item => item.kind === 'file')) {
     const path = node.path;
-    if (NOT_DEAD_BLOCKS.has(node.block) || TEST_FILE.test(path) || CONFIG_FILE.test(path) || exposes.has(path) || path.endsWith('.d.ts')) sure.add(path);
+    if (NOT_DEAD_BLOCKS.has(node.block) || TEST_FILE.test(path) || CONFIG_FILE.test(path) || exposes.has(path) || path.endsWith('.d.ts') || PYTHON_ENTRY.test(path)) sure.add(path);
     else if (next && (NEXT_APP.test(path) || NEXT_ROOT.test(path) || NEXT_PAGES.test(path))) sure.add(path);
     else if (PUBLIC_FOLDER.test(path)) possible.set(path, 'public');
     else if (CONVENTION_FOLDER.test(`/${path}`)) possible.set(path, 'folder');
@@ -135,9 +172,10 @@ export function importCycles(graph) {
 // Tokens of a code file: comments dropped, strings and numbers alike (so two
 // copies that differ only in a text or a number still match). Cached by hash.
 const tokenCache = new Map();
-export function tokens(text) {
+const PYTHON_TOKENS = /#[^\n]*|('''[\s\S]*?'''|"""[\s\S]*?"""|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(\b\d[\d_.]*(?:e[+-]?\d+)?j?\b)|([A-Za-z_][\w]*)|(->|==|!=|<=|>=|\*\*|\/\/|:=|[{}()[\];,.<>+\-*/%=!?:&|^~@])/g;
+export function tokens(text, { python = false } = {}) {
   const list = [];
-  const pattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|(`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(\b\d[\d_.]*(?:e[+-]?\d+)?n?\b)|([A-Za-z_$][\w$]*)|(=>|===|!==|==|!=|<=|>=|&&|\|\||\?\?|\?\.|\.\.\.|[{}()[\];,.<>+\-*/%=!?:&|^~@#])/g;
+  const pattern = python ? PYTHON_TOKENS : /\/\/[^\n]*|\/\*[\s\S]*?\*\/|(`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(\b\d[\d_.]*(?:e[+-]?\d+)?n?\b)|([A-Za-z_$][\w$]*)|(=>|===|!==|==|!=|<=|>=|&&|\|\||\?\?|\?\.|\.\.\.|[{}()[\];,.<>+\-*/%=!?:&|^~@#])/g;
   let line = 1;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
@@ -213,7 +251,7 @@ function sourcesOf(graph, root) {
   return files.map(node => {
     let list = tokenCache.get(node.hash);
     if (!list) {
-      try { list = tokens(readFileSync(join(root, node.path), 'utf8')); } catch { list = []; }
+      try { list = tokens(readFileSync(join(root, node.path), 'utf8'), { python: node.language === 'python' }); } catch { list = []; }
       tokenCache.set(node.hash, list);
     }
     return { path: node.path, tokens: list };
@@ -253,7 +291,9 @@ export function structureSmells(graph, { root = null, thresholds = {} } = {}) {
     if (dead.has(file.path) || entries.sure.has(file.path) || entries.possible.has(file.path)) continue;
     const taken = new Set((importersOf.get(file.id) ?? []).flatMap(edge => edge.names ?? ['*']));
     if (taken.has('*')) continue;
-    for (const symbol of graph.nodes.filter(node => node.kind === 'symbol' && node.file === file.id && node.exported)) {
+    // In Python a public module-level object (engine = create_engine(…)) is
+    // wiring, not an export: only functions and classes count there.
+    for (const symbol of graph.nodes.filter(node => node.kind === 'symbol' && node.file === file.id && node.exported && !(file.language === 'python' && node.symbolKind === 'variable'))) {
       if ([symbol.name, ...(symbol.exportedAs ?? [])].some(name => taken.has(name))) continue;
       smells.push({ kind: 'unused-export', certainty: 'sure', files: [file.path], name: symbol.name, box: file.block, proof: [{ file: file.path, line: symbol.line }] });
     }

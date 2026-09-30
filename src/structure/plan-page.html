@@ -639,7 +639,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
   let dataSelected = null;
   let dataShown = null;
   const DATA_FINDINGS = { 'no-rls-browser': 'data_no_rls_browser', 'used-not-defined': 'data_used_not_defined', 'defined-never-used': 'data_defined_never_used' };
-  const DATA_SOURCES = { prisma: 'dataSourcePrisma', drizzle: 'dataSourceDrizzle', sql: 'dataSourceSql', 'supabase-types': 'dataSourceTypes' };
+  const DATA_SOURCES = { prisma: 'dataSourcePrisma', drizzle: 'dataSourceDrizzle', sql: 'dataSourceSql', 'supabase-types': 'dataSourceTypes', sqlalchemy: 'dataSourceSqlalchemy', alembic: 'dataSourceAlembic' };
   function dataFindingList(parent, list, className) {
     const ul = html('ul', null, { className: 'findings ' + className });
     for (const item of list) {

@@ -12,7 +12,10 @@ import { basename, extname, join } from 'node:path';
 import { dataDirectory } from '../../home.mjs';
 
 export const SKIPPED_FOLDERS = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', '.turbo', '.vercel',
-  '.svelte-kit', '.nuxt', '.output', '.cache', '.parcel-cache', '.vite']);
+  '.svelte-kit', '.nuxt', '.output', '.cache', '.parcel-cache', '.vite',
+  // Python (phase 11): bytecode, tool caches and virtual environments (any folder with a pyvenv.cfg is one too).
+  '__pycache__', '.venv', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.nox', '.eggs', '.ipynb_checkpoints']);
+const skippedName = name => SKIPPED_FOLDERS.has(name) || name.endsWith('.egg-info');
 const CACHE_VERSION = 1;
 
 export function languageOf(path) {
@@ -24,7 +27,9 @@ export function languageOf(path) {
     '.vue': 'vue', '.svelte': 'svelte', '.py': 'python', '.prisma': 'prisma', '.graphql': 'graphql', '.sh': 'shell' }[extname(path).toLowerCase()] ?? 'other';
 }
 
-const skipped = path => path.split('/').some(part => SKIPPED_FOLDERS.has(part));
+const skipped = path => path.split('/').some(skippedName);
+
+const isVirtualEnvironment = folder => { try { return lstatSync(join(folder, 'pyvenv.cfg')).isFile(); } catch { return false; } };
 
 // A .gitignore glob as a regular expression: "**/" any folders, "/**" all
 // below, "*" and "?" within one path segment.
@@ -79,7 +84,7 @@ function walk(root) {
       const path = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
-        if (!SKIPPED_FOLDERS.has(entry.name) && !ignored(path, true)) visit(path, here);
+        if (!skippedName(entry.name) && !isVirtualEnvironment(join(root, path)) && !ignored(path, true)) visit(path, here);
       } else if (entry.isFile() && (entry.name.startsWith('.env') || !ignored(path, false))) files.push(path);
     }
   };
@@ -93,7 +98,7 @@ function envFiles(root) {
   const visit = dir => {
     for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
       const path = dir ? `${dir}/${entry.name}` : entry.name;
-      if (entry.isDirectory() && !entry.isSymbolicLink() && !SKIPPED_FOLDERS.has(entry.name)) visit(path);
+      if (entry.isDirectory() && !entry.isSymbolicLink() && !skippedName(entry.name) && !isVirtualEnvironment(join(root, path))) visit(path);
       else if (entry.isFile() && entry.name.startsWith('.env')) found.push(path);
     }
   };
@@ -116,8 +121,10 @@ export function listFiles(root, { ignored = null } = {}) {
   const listed = gitFiles(root);
   const source = listed ? 'git' : 'walk';
   const paths = new Set([...(listed ?? walk(root)), ...envFiles(root)]);
+  // Virtual environments tracked by git (a pyvenv.cfg in the list): none of their files counts.
+  const environments = [...paths].filter(path => path === 'pyvenv.cfg' || path.endsWith('/pyvenv.cfg')).map(path => path.slice(0, -'pyvenv.cfg'.length));
   const files = [...paths].filter(path => {
-    if (skipped(path) || ignored?.(path)) return false;
+    if (skipped(path) || ignored?.(path) || environments.some(folder => path.startsWith(folder))) return false;
     try { return lstatSync(join(root, path)).isFile(); } catch { return false; }
   }).sort();
   return { files, source };

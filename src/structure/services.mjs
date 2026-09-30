@@ -17,7 +17,7 @@ const hostPattern = host => (host.startsWith('*.') ? name => name.endsWith(host.
 // { services, problems, byHost(host), bySdk(package, name), byId(id) }.
 export function serviceCatalogue(userEntries = []) {
   const problems = [];
-  const services = new Map(BUILT_IN.map(item => [item.id, { ...item, hosts: [...(item.hosts ?? [])], sdk: [...(item.sdk ?? [])], builtIn: true }]));
+  const services = new Map(BUILT_IN.map(item => [item.id, { ...item, hosts: [...(item.hosts ?? [])], sdk: [...(item.sdk ?? [])], python: [...(item.python ?? [])], builtIn: true }]));
   const say = message => problems.push(`${CONFIG_FILE}: ${message}`);
   for (const [index, entry] of (Array.isArray(userEntries) ? userEntries : []).entries()) {
     const where = `"services" entry ${index + 1}`;
@@ -25,9 +25,13 @@ export function serviceCatalogue(userEntries = []) {
     if (!isText(entry.id) || !/^[a-z0-9][a-z0-9._-]*$/.test(entry.id)) { say(`${where} needs an "id" (lower case letters, digits, . _ -); it is ignored.`); continue; }
     const hosts = entry.hosts ?? [];
     const sdk = entry.sdk ?? [];
+    const python = entry.python ?? [];
     if (!Array.isArray(hosts) || !hosts.every(isText)) { say(`${where} (${entry.id}): "hosts" must be a list of host names; it is ignored.`); continue; }
     if (!Array.isArray(sdk) || !sdk.every(item => isText(item?.package) && Array.isArray(item.create) && item.create.every(isText))) {
       say(`${where} (${entry.id}): "sdk" must be a list of { "package", "create": [names] }; it is ignored.`); continue;
+    }
+    if (!Array.isArray(python) || !python.every(item => isText(item?.module) && Array.isArray(item.create) && item.create.every(isText))) {
+      say(`${where} (${entry.id}): "python" must be a list of { "module", "create": [names] }; it is ignored.`); continue;
     }
     if (entry.jurisdiction !== undefined && !isText(entry.jurisdiction)) { say(`${where} (${entry.id}): "jurisdiction" must be text; it is ignored.`); continue; }
     if (entry.destination !== undefined && !DESTINATIONS.includes(entry.destination)) { say(`${where} (${entry.id}): "destination" must be one of ${DESTINATIONS.join(', ')}; it is ignored.`); continue; }
@@ -36,13 +40,14 @@ export function serviceCatalogue(userEntries = []) {
       if (entry.category !== undefined && entry.category !== known.category) say(`${where} (${entry.id}): the category of a known service stays ${known.category}.`);
       known.hosts.push(...hosts);
       known.sdk.push(...sdk);
+      known.python.push(...python);
       if (entry.name !== undefined && isText(entry.name)) known.name = entry.name;
       if (entry.jurisdiction !== undefined) known.jurisdiction = entry.jurisdiction.trim();
       continue;
     }
     if (!CATEGORIES.includes(entry.category)) { say(`${where} (${entry.id}): "category" must be one of ${CATEGORIES.join(', ')}; it is ignored.`); continue; }
-    if (!hosts.length && !sdk.length) { say(`${where} (${entry.id}): give "hosts" or "sdk", or it can never be recognised; it is ignored.`); continue; }
-    services.set(entry.id, { id: entry.id, name: isText(entry.name) ? entry.name : entry.id, category: entry.category, hosts: [...hosts], sdk: [...sdk],
+    if (!hosts.length && !sdk.length && !python.length) { say(`${where} (${entry.id}): give "hosts", "sdk" or "python", or it can never be recognised; it is ignored.`); continue; }
+    services.set(entry.id, { id: entry.id, name: isText(entry.name) ? entry.name : entry.id, category: entry.category, hosts: [...hosts], sdk: [...sdk], python: [...python],
       ...(entry.destination ? { destination: entry.destination } : {}), ...(entry.jurisdiction !== undefined ? { jurisdiction: entry.jurisdiction.trim() } : {}), builtIn: false });
   }
   const list = [...services.values()];
@@ -54,6 +59,9 @@ export function serviceCatalogue(userEntries = []) {
     byId: id => services.get(id) ?? null,
     byHost: host => hostRules.find(rule => rule.test(String(host).toLowerCase()))?.service ?? null,
     bySdk: (pkg, name) => list.find(service => service.sdk.some(item => item.package === pkg && item.create.includes(name))) ?? null,
+    // Python (phase 11): the module a call goes through and the name called; "*" = any call through the module.
+    byPython: (module, name) => list.find(service => service.python.some(item => item.module === module && (item.create.includes(name) || item.create.includes('*')))) ?? null,
+    pythonModules: new Set(list.flatMap(service => service.python.map(item => item.module))),
     packages: new Set(list.flatMap(service => service.sdk.map(item => item.package))),
   };
 }

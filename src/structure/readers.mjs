@@ -15,12 +15,16 @@ import { realpathSync } from 'node:fs';
 import { basename } from 'node:path';
 import { checkGraph } from './validate.mjs';
 import { nodeReader } from './node/reader.mjs';
+import { pythonReader } from './python/reader.mjs';
+import { blockEdges } from './node/edges.mjs';
+import { matchRoutes, routeIndex } from './node/routes.mjs';
+import { t } from './text.mjs';
 
 export const SCHEMA_VERSION = 1;
 
-// Built-in readers, in the order they are asked. The Python reader arrives in
-// phase 11. (defineReader is a function declaration, so it is ready here.)
-export const builtInReaders = [defineReader(nodeReader)];
+// Built-in readers, in the order they are asked (phase 11 added Python).
+// (defineReader is a function declaration, so it is ready here.)
+export const builtInReaders = [defineReader(nodeReader), defineReader(pythonReader)];
 
 export function defineReader(reader) {
   const problems = [];
@@ -52,22 +56,69 @@ export function canonical(graph) {
 }
 
 // Merges the graphs of several readers. A node both readers report (the same
-// id: a shared .env file, a table) is kept once, with the proofs of both.
+// id: a shared .env file, a table) is kept once, with the proofs of both. A
+// file both list keeps the node of the reader of its language (a .py file:
+// the Python reader), else the one that could classify it; the blocks and the
+// edges between blocks are then made again from the files kept.
 function merge(graphs, name) {
   const nodes = new Map();
   const edges = new Map();
   const notes = [];
+  const readerOf = new Map();
+  const better = (known, node, graph) => {
+    if (node.kind !== 'file') return false;
+    const own = graph.project?.languages?.includes(node.language);
+    const knownOwn = readerOf.get(node.id)?.project?.languages?.includes(known.language);
+    if (own !== knownOwn) return own;
+    return known.block === 'block:unknown' && node.block !== 'block:unknown';
+  };
   for (const graph of graphs) {
     for (const node of graph.nodes) {
       const known = nodes.get(node.id);
-      if (!known) nodes.set(node.id, node);
-      else {
+      if (!known) { nodes.set(node.id, node); readerOf.set(node.id, graph); }
+      else if (better(known, node, graph)) { nodes.set(node.id, node); readerOf.set(node.id, graph); }
+      else if (node.kind !== 'file') {
         const seen = new Set(known.proof.map(proof => JSON.stringify(proof)));
         nodes.set(node.id, { ...known, proof: [...known.proof, ...node.proof.filter(proof => !seen.has(JSON.stringify(proof)))] });
       }
     }
     for (const edge of graph.edges) if (!edges.has(edge.id)) edges.set(edge.id, edge);
     notes.push(...(graph.notes ?? []));
+  }
+  if (graphs.length > 1) {
+    // Requests a reader could not answer, answered by the routes of another.
+    const byReader = graphs.map(graph => graph.nodes.filter(node => node.kind === 'route'));
+    graphs.forEach((graph, at) => {
+      const others = byReader.filter((_, index) => index !== at).flat();
+      if (!others.length) return;
+      const index = routeIndex(others);
+      for (const request of graph.pending?.requests ?? []) {
+        const matches = matchRoutes(index, request);
+        if (!matches.length) continue;
+        notes.splice(notes.indexOf(request.note), 1);
+        for (const route of matches) {
+          const id = `calls:${request.from}->${route.id}`;
+          if (!edges.has(id)) edges.set(id, { id, kind: 'calls', from: request.from, to: route.id, origin: 'static', proof: [],
+            ...(request.runsOn ? { runsOn: request.runsOn } : {}), ...(request.method ? {} : { confidence: 'possible' }) });
+          const edge = edges.get(id);
+          for (const proof of request.proof) if (!edge.proof.some(item => item.file === proof.file && item.line === proof.line)) edge.proof.push(proof);
+        }
+      }
+    });
+    // Blocks again, from the files kept: one per layer present, proved by its first file.
+    for (const [id, node] of nodes) if (node.kind === 'block') nodes.delete(id);
+    const files = [...nodes.values()].filter(node => node.kind === 'file').sort((a, b) => (a.path < b.path ? -1 : 1));
+    for (const file of files) {
+      const layer = file.block.slice('block:'.length);
+      if (!nodes.has(file.block)) nodes.set(file.block, { id: file.block, kind: 'block', name: t(`layers.${layer}`), layer, origin: 'static', proof: [{ file: file.path, line: 1 }] });
+    }
+    const isBlock = id => id.startsWith('block:');
+    for (const [id, edge] of edges) if (isBlock(edge.from) && isBlock(edge.to)) edges.delete(id);
+    const blockOf = new Map(files.map(file => [file.id, file.block]));
+    for (const node of nodes.values()) if (node.kind === 'symbol') blockOf.set(node.id, blockOf.get(node.file));
+    const fileEdges = [...edges.values()].filter(edge => ['imports', 'exposes', 'calls'].includes(edge.kind));
+    for (const edge of fileEdges) if (edge.kind === 'exposes') blockOf.set(edge.to, blockOf.get(edge.from));
+    for (const edge of blockEdges(fileEdges, id => blockOf.get(id) ?? null)) edges.set(edge.id, edge);
   }
   return {
     schemaVersion: SCHEMA_VERSION,

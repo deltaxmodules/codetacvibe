@@ -41,8 +41,11 @@ async function suggest(root, { yes, confirm, loadAiConfig, complete, out }) {
   const { files } = inventory(root);
   const modules = projectModules(root, files, { packages: describeProject(root).packages });
   const byPath = new Map(files.map(file => [file.path, file]));
-  const request = suggestionRequest(unknown.map(node => ({ path: node.path, hash: byPath.get(node.path)?.hash ?? node.hash, exports: modules.get(node.path)?.exports ?? [] })),
-    { types: graph.project.types });
+  // Python files (phase 11): no exports in Python; their public symbols of the graph instead (def name, class Name).
+  const pythonExports = node => graph.nodes.filter(item => item.kind === 'symbol' && item.file === node.id && item.exported)
+    .map(item => ({ kind: item.symbolKind === 'function' ? 'def' : item.symbolKind, name: item.name }));
+  const request = suggestionRequest(unknown.map(node => ({ path: node.path, hash: byPath.get(node.path)?.hash ?? node.hash,
+    exports: node.language === 'python' ? pythonExports(node) : modules.get(node.path)?.exports ?? [] })), { types: graph.project.types });
   const where = config.local ? ', a model on this machine: nothing leaves it' : '';
   out(`This is exactly what would be sent to ${config.provider}${config.model ? ` (${config.model})` : ''}${where}. Only paths and export signatures, no code:`);
   out('-----');

@@ -37,6 +37,7 @@ export function traceAction(graph, dossier) {
   const observed = new Map();
   const steps = [];
   const unmatched = [];
+  const framework = [];
 
   // A project file as the graph names it, or why not.
   const projectPath = file => {
@@ -142,6 +143,9 @@ export function traceAction(graph, dossier) {
       }
       const byStep = new Map();
       for (const step of server.steps ?? []) {
+        // A step only the framework knows (FastAPI's request validation, in
+        // compiled code): no function of the project, so nothing to tie.
+        if (step.type === 'function' && step.opaque && !step.file) { framework.push({ function: step.function, durationMs: step.durationMs ?? null }); continue; }
         if (step.type === 'function') {
           const node = record('server', step.id, step.file, step.function, step.line, true);
           if (node) byStep.set(step.id, node);
@@ -179,6 +183,7 @@ export function traceAction(graph, dossier) {
     observed: [...observed.values()].sort((a, b) => byText(a.id, b.id)),
     steps,
     unmatched,
+    framework,
   };
 }
 
