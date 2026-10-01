@@ -36,16 +36,39 @@ export function splitUrl(raw, base = 'http://localhost') {
 
 // SQL is recorded as a template: string literals are replaced, so values
 // concatenated into the text do not reach the recording.
+// A statement that starts with WITH is the statement after its CTEs (WITH … INSERT is
+// an INSERT), and the CTE names are not tables. In a write, tables is the table
+// written; the tables its subqueries read go to reads.
+const SQL_STATEMENTS = new Set(['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE', 'UPSERT']);
+const SQL_WRITES = new Set(['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE', 'UPSERT']);
 export function describeSql(sql) {
   if (typeof sql !== 'string') return { operation: 'consulta' };
   const text = sql.replace(/'(?:[^'\\]|\\.|'')*'/g, "'?'").replace(/\s+/g, ' ').trim();
-  const operation = (text.match(/^\s*(\w+)/)?.[1] ?? 'consulta').toUpperCase();
+  const depth = [];
+  for (let i = 0, level = 0; i < text.length; i++) {
+    if (text[i] === '(') level++;
+    depth.push(level);
+    if (text[i] === ')') level = Math.max(0, level - 1);
+  }
+  let operation = (text.match(/^\s*(\w+)/)?.[1] ?? 'consulta').toUpperCase();
+  let start = 0;
+  const ctes = new Set();
+  if (operation === 'WITH') {
+    const main = [...text.matchAll(/\b\w+\b/g)].find(word => word.index > 0 && depth[word.index] === 0 && SQL_STATEMENTS.has(word[0].toUpperCase()));
+    if (main) { operation = main[0].toUpperCase(); start = main.index; }
+    for (const match of text.slice(0, main?.index ?? text.length).matchAll(/(?:^with(?: recursive)?|,) ?("[^"]*"|\w+) ?(?:\([^)]*\) ?)?as (?:not )?(?:materialized )?\(/gi)) {
+      if (depth[match.index] === 0) ctes.add(match[1].replace(/"/g, '').toLowerCase());
+    }
+  }
   // Names may be quoted ("public"."notes", `main`.`Invoice`, [dbo].[t]); the
   // default schemas (public, main, dbo) are dropped, others are kept.
-  const tables = [...text.matchAll(/\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+((?:(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+)\.)*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+))/gi)]
-    .map(match => match[1].replace(/["`[\]]/g, '').replace(/^(public|main|dbo)\./i, ''))
-    .filter(name => name && !/^(select|if|not|exists)$/i.test(name));
-  return { operation, tables: [...new Set(tables)].slice(0, 10), sql: text.slice(0, 2000) };
+  const found = [...text.matchAll(/\b(?:from|into|update|join|table(?: if (?:not )?exists)?)\s+((?:(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+)\.)*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|\w+))/gi)]
+    .map(match => ({ name: match[1].replace(/["`[\]]/g, '').replace(/^(public|main|dbo)\./i, ''), index: match.index }))
+    .filter(({ name }) => name && !/^(select|if|not|exists)$/i.test(name) && !ctes.has(name.toLowerCase()));
+  const target = SQL_WRITES.has(operation) ? found.find(item => item.index >= start && depth[item.index] === 0) : null;
+  const tables = [...new Set((target ? [target] : found).map(item => item.name))].slice(0, 10);
+  const reads = target ? [...new Set(found.filter(item => item.name !== target.name).map(item => item.name))].slice(0, 10) : [];
+  return { operation, tables, ...(reads.length ? { reads } : {}), sql: text.slice(0, 2000) };
 }
 
 function rowsOf(result) {
@@ -244,6 +267,8 @@ function installPrisma(runtime) {
     isEnabled: () => false,
     getTraceParent: () => '00-10-10-00',
     dispatchEngineSpans() {},
+    // Prisma 4 and 5 (with previewFeatures = ["tracing"]) hand the engine's spans here instead.
+    async createEngineSpan() {},
     getActiveContext() {},
     runInChildSpan(options, callback) {
       if (options?.name !== 'operation' || !options.attributes?.method) return callback();

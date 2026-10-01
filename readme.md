@@ -199,7 +199,7 @@ A mistake in the file is shown on the plan and never stops it.
 
 **What the static reading does not see** (so the plan may miss an arrow, or place a file in Unknown):
 - code chosen at run time: `import()` of a computed path, `require(variable)`, functions passed around as values, event emitters, queues, `eval`;
-- a request whose address is in a variable (the plan says “destination unknown”), or made through a client of your own instead of `fetch`, `axios`, `ky` or `ofetch`;
+- a request whose address is in a variable (What leaves the machine says “comes from the variable …”, or “unknown” when the address is built at run time), or made through a client of your own instead of `fetch`, `axios`, `ky` or `ofetch`;
 - routes declared in other ways than `app.get('/path', …)`, `router.post(…)`, `app.use('/prefix', router)`, Fastify's `register(…, { prefix })`, Next.js `route.ts`/`pages/api`;
 - calls to a function not by its name (`obj[name]()`, a method of a class instance);
 - functions inside functions (what they do counts for the function that contains them);

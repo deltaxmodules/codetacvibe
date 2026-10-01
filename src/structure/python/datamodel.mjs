@@ -124,8 +124,14 @@ function alembicTables(sources) {
       ...(referenceOf(value.args.slice(1), value.kw) ? { references: referenceOf(value.args.slice(1), value.kw) } : {}), proof: { file: path, line: value.line } };
   };
   for (const { path, item } of sources) {
-    for (const call of item.calls ?? []) {
-      if (call.scope !== 'upgrade' || call.func?.t !== 'name' || !/^(op|alembic\.op)\./.test(call.func.v)) continue;
+    // upgrade() and, in order, the functions of the same file it calls (create_users_table()…).
+    const functions = new Set((item.definitions ?? []).filter(definition => definition.kind !== 'class' && !definition.qualname.includes('.')).map(definition => definition.qualname));
+    const callsOf = (scope, seen) => (item.calls ?? []).filter(call => call.scope === scope).sort((a, b) => a.line - b.line).flatMap(call => {
+      const name = call.func?.t === 'name' ? call.func.v : null;
+      return name && functions.has(name) && !seen.has(name) ? callsOf(name, new Set([...seen, name])) : [call];
+    });
+    for (const call of callsOf('upgrade', new Set(['upgrade']))) {
+      if (call.func?.t !== 'name' || !/^(op|alembic\.op)\./.test(call.func.v)) continue;
       const action = last(call.func.v);
       const name = text(call.args[0]);
       if (!name) continue;

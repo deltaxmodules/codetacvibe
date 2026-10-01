@@ -182,12 +182,12 @@ export const pythonReader = {
     const { facts, problem, unread } = pythonFacts(folder, code, { cache, folders });
     const notes = [];
     if (problem === 'no-python') {
-      notes.push({ kind: 'python-unread', message: `${unread.length} Python file(s) are listed but not read: no Python ${MINIMUM.join('.')} or later was found (a virtual environment of the project, python3 or python). Install Python, or set CODETAC_PYTHON to an interpreter.` });
+      notes.push({ kind: 'python-unread', message: t('notes.pythonMissing', { count: unread.length, minimum: MINIMUM.join('.') }) });
     } else if (problem) {
-      notes.push({ kind: 'python-unread', message: `${unread.length} Python file(s) are listed but not read: the Python helper failed (${problem}).` });
+      notes.push({ kind: 'python-unread', message: t('notes.pythonHelperFailed', { count: unread.length, problem }) });
     }
     for (const [path, item] of facts) {
-      if (item.error) notes.push({ kind: 'parse-error', message: `${path} could not be read (${item.error.message}), so what it contains is not shown.`, proof: [{ file: path, line: item.error.line }] });
+      if (item.error) notes.push({ kind: 'parse-error', message: t('notes.parseError', { path, reason: item.error.message }), proof: [{ file: path, line: item.error.line }] });
     }
     // Files, symbols, imports (steps 1–2), routes (3), blocks (4), data (5),
     // variables and services (6).
@@ -205,6 +205,7 @@ export const pythonReader = {
     const readable = new Map([...facts].filter(([, item]) => !item.error));
     const found = pythonRoutes(modules, readable);
     for (const { path, symbol } of found.handlers) nodes.push(symbolNode(path, symbol));
+    notes.push(...found.notes);
     nodes.push(...found.routes);
     // One block per layer present, proved by its first file (paths are sorted).
     for (const layer of [...new Set([...classes.values()].map(item => item.layer))]) {
@@ -226,7 +227,7 @@ export const pythonReader = {
     const usage = pythonUsage(code, readable, modules, { catalogue, store });
     const symbolsOf = new Map([...modules].map(([path, module]) => [path, module.symbols]));
     const runsOnOf = new Map([...classes.values()].filter(item => item.runsOn).map(item => [item.path, item.runsOn]));
-    const outgoing = outgoingServices(code, usage, { catalogue: pythonCatalogue(catalogue), symbolsOf, runsOn: runsOnOf });
+    const outgoing = outgoingServices(code, usage, { catalogue: pythonCatalogue(catalogue), symbolsOf, runsOn: runsOnOf, skip: path => classes.get(path)?.layer === 'tests' });
     const env = environment(folder, files, usage, { types: [] });
     nodes.push(...outgoing.nodes, ...env.nodes);
     notes.push(...literalKeyNotes(code, usage));

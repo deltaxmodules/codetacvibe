@@ -33,10 +33,13 @@ const scriptsFolderOf = (path, packageRoots) => {
 const RULES = [
   (file) => basename(file.path).startsWith('.env') && ['config', 'dotenv'],
   (file) => (META_FILES.has(basename(file.path)) || /^(tsconfig|jsconfig)(\..+)?\.json$/.test(basename(file.path))
-    || /\.config\.(m|c)?(j|t)s$/.test(file.path) || /^\.(eslintrc|prettierrc|babelrc|swcrc)/.test(basename(file.path))) && ['config', 'project-meta'],
+    || /\.(config|preset)\.(m|c)?(j|t)s$/.test(file.path) || /^\.(eslintrc|prettierrc|babelrc|swcrc)/.test(basename(file.path))) && ['config', 'project-meta'],
   (file) => !file.path.includes('/') && file.language === 'markdown' && ['config', 'project-meta'],
   (file) => (/\.(test|spec)\.[mc]?[jt]sx?$/.test(file.path) || inFolder(file.path, ['__tests__', 'test', 'tests', 'e2e', 'cypress', 'playwright'])) && ['tests', 'test-file'],
   (file) => (file.language === 'sql' || file.language === 'prisma' || inFolder(file.path, ['migrations'])) && ['data', 'database-schema'],
+  // Code written by a tool: where it runs says its block; its smells are not the user's.
+  (file, module, context) => CODE.has(file.language) && (/\.(gen|generated)\.[mc]?[jt]sx?$/.test(file.path) || inFolder(file.path, ['__generated__']) || module?.generated)
+    && [['client', 'both'].includes(context.runsOn.get(file.path)) ? 'interface' : 'utilities', 'generated'],
   (file, module, context) => context.next && /(^|\/)app\/(.+\/)?route\.(t|j)s$/.test(file.path) && ['routes', 'next-app-router:route'],
   (file, module, context) => context.next && /(^|\/)pages\/api\//.test(file.path) && ['routes', 'next-pages-router:api'],
   (file, module, context) => context.next && /^(src\/)?middleware\.(t|j)s$/.test(file.path) && ['routes', 'next:middleware'],
@@ -49,6 +52,10 @@ const RULES = [
   (file, module, context) => CODE.has(file.language) && /^(server|app)\.[mc]?[jt]s$/.test(basename(file.path)) && /^(src\/)?[^/]+$/.test(file.path)
     && context.runsOn.get(file.path) !== 'client' && ['routes', 'server-entry'],
   (file, module) => module?.imports.some(item => DATABASE_PACKAGES.has(item.package)) && ['data', 'database-client'],
+  // A routes folder that only runs in the browser holds the pages of a frontend
+  // router (TanStack Router, React Router), not server routes.
+  (file, module, context) => CODE.has(file.language) && inFolder(file.path, ['routes', 'routers']) && context.runsOn.get(file.path) === 'client'
+    && ['interface', 'folder:routes:browser'],
   (file) => CODE.has(file.language) && inFolder(file.path, ['routes', 'api', 'controllers', 'handlers', 'endpoints', 'routers', 'middleware', 'middlewares'])
     && ['routes', 'folder:routes'],
   (file) => CODE.has(file.language) && inFolder(file.path, ['services', 'usecases', 'use-cases', 'domain', 'actions']) && ['logic', 'folder:services'],

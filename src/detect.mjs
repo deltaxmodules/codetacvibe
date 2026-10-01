@@ -211,3 +211,20 @@ export function describeStart(part) {
     : part.script ? `${part.command.join(' ')}  (script “${part.script.name}”: ${part.script.command})` : part.command.join(' ');
   return `${part.part === '.' ? '' : `[${part.part}] `}${part.stack ? `${part.stack} · ` : ''}${what}`;
 }
+
+// Prisma 4, 5 and 6.0 call the tracing helper CodeTAC uses only with
+// previewFeatures = ["tracing"] in the generator (6.1 made it standard): without
+// it, no Prisma operation reaches the dossiers. { version, schema } then, else null.
+export function prismaWithoutTracing(folder, root = folder) {
+  const version = [folder, root].map(base => readJson(join(base, 'node_modules', '@prisma', 'client', 'package.json'))?.version).find(Boolean);
+  const [major, minor] = String(version ?? '').split('.').map(Number);
+  if (!version || !(major < 6 || (major === 6 && minor < 1))) return null;
+  const declared = readJson(join(folder, 'package.json'))?.prisma?.schema;
+  const candidates = [...(typeof declared === 'string' ? [declared] : []), 'prisma/schema.prisma', 'schema.prisma'];
+  const schema = candidates.find(path => existsSync(join(folder, path)));
+  const texts = schema ? [readText(join(folder, schema)) ?? '']
+    : (() => { try { return readdirSync(join(folder, 'prisma', 'schema')).filter(name => name.endsWith('.prisma')).map(name => readText(join(folder, 'prisma', 'schema', name)) ?? ''); } catch { return []; } })();
+  if (!texts.length) return null;
+  const tracing = texts.some(text => /generator\s+\w+\s*\{[^}]*previewFeatures\s*=\s*\[[^\]]*["']tracing["']/.test(text));
+  return tracing ? null : { version, schema: schema ?? 'prisma/schema/' };
+}

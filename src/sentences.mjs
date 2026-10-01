@@ -2,18 +2,11 @@
 // comparação para as frases da IA), em inglês.
 // Nenhuma frase interpreta o nome de uma função: diz o que se observou.
 
+import { TEXT, t } from './structure/text.mjs';
+
 // The recordings keep their values in Portuguese (kinds, operations, modes):
-// they are translated only when shown.
-export const LABELS = {
-  'base-de-dados': 'database', ia: 'AI', mensagem: 'message', pagamento: 'payment', ficheiros: 'files', 'autenticação': 'authentication',
-  leitura: 'read', escrita: 'write', 'remoção': 'delete', 'cópia': 'copy', 'mudança de nome': 'rename', 'criação de pasta': 'create folder',
-  'verificação': 'check', 'verificação de sessão': 'session check', teste: 'test', 'produção': 'live', desconhecido: 'unknown',
-  'SMTP/transporte': 'SMTP/transport', presente: 'present', ausente: 'absent', '(descritor)': '(descriptor)',
-  minimo: 'minimal', 'modelo local': 'local model',
-  // Recorded by the page bar before 0.3.0.
-  'saída da página': 'page exit', 'endereço mudou': 'address changed', 'endereço substituído': 'address replaced',
-  'recuar/avançar': 'back/forward', 'ligação interna': 'in-page link', 'tempo máximo': 'time limit', 'sem atividade': 'idle', 'navegação': 'navigation',
-};
+// they are translated only when shown (steps.labels in text/en.json).
+export const LABELS = TEXT.steps.labels;
 export function label(value) { return LABELS[value] ?? value; }
 
 const list = (items, and) => items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`;
@@ -27,88 +20,102 @@ function duration(ms) {
 export const REDIS_LIBRARIES = new Set(['ioredis', 'redis']);
 const REDIS_KEY_DELETES = new Set(['DEL', 'UNLINK', 'GETDEL', 'FLUSHDB', 'FLUSHALL', 'JSON.DEL', 'JSON.FORGET']);
 
+// The words live in text/en.json (steps); these functions only choose and fill them.
+const or = (value, key) => value || t(key);
+const inParens = text => ` (${text})`;
+const someRows = (n, key = 'steps.someRows') => (n == null ? t(key) : EN.rows(n));
+const status = value => (value != null ? inParens(t('steps.status', { status: value })) : '');
+const usage = value => (value ? ` · ${t('steps.tokens', { input: value.input ?? '?', output: value.output ?? '?' })}` : '');
+const to = items => (items.length ? ` ${t('steps.to', { list: items.join(', ') })}` : '');
+const quoted = text => (text ? ` ${t('steps.quoted', { text })}` : '');
+const bytes = count => (count ? inParens(t('steps.bytes', { count })) : '');
+const times = (n, key) => (n > 1 ? inParens(t(key, { count: n })) : '');
+
 const EN = {
-  and: 'and',
-  rows: n => `${n} ${n === 1 ? 'row' : 'rows'}`,
-  read: (tables, rows) => `Reads ${tables || 'the database'}${rows != null ? ` (${EN.rows(rows)})` : ''}`,
-  insert: (tables, n) => `Adds ${n == null ? 'rows' : EN.rows(n)} to ${tables || 'a table'}`,
-  update: (tables, n) => n === 0 ? `Tries to change ${tables || 'a table'}; no rows changed` : `Changes ${n == null ? 'rows' : EN.rows(n)} in ${tables || 'a table'}`,
-  delete: (tables, n) => n === 0 ? `Tries to delete from ${tables || 'a table'}; no rows deleted` : `Deletes ${n == null ? 'rows' : EN.rows(n)} from ${tables || 'a table'}`,
-  create: (tables, ifNot) => `Creates table ${tables || ''}${ifNot ? ' if it does not exist' : ''}`.trim(),
-  alter: tables => `Changes the structure of ${tables || 'a table'}`,
-  drop: tables => `Drops ${tables || 'a table'}`,
-  otherDb: (op, tables) => `${op} command on the database${tables ? ` (${tables})` : ''}`,
+  and: t('steps.and'),
+  rows: n => t('steps.rows', { count: n }),
+  read: (tables, rows) => t('steps.read', { tables: or(tables, 'steps.theDatabase'), rows: rows != null ? inParens(EN.rows(rows)) : '' }),
+  insert: (tables, n) => t('steps.insert', { rows: someRows(n), tables: or(tables, 'steps.aTable') }),
+  update: (tables, n) => n === 0 ? t('steps.updateNone', { tables: or(tables, 'steps.aTable') }) : t('steps.update', { rows: someRows(n), tables: or(tables, 'steps.aTable') }),
+  delete: (tables, n) => n === 0 ? t('steps.deleteNone', { tables: or(tables, 'steps.aTable') }) : t('steps.delete', { rows: someRows(n), tables: or(tables, 'steps.aTable') }),
+  create: (tables, ifNot) => t('steps.create', { tables: tables || '', ifNot: ifNot ? ` ${t('steps.ifNotExists')}` : '' }).trim(),
+  alter: tables => t('steps.alter', { tables: or(tables, 'steps.aTable') }),
+  drop: tables => t('steps.drop', { tables: or(tables, 'steps.aTable') }),
+  otherDb: (op, tables) => t('steps.otherDb', { op, tables: tables ? inParens(tables) : '' }),
   // Redis has keys, not tables or rows.
-  redisKey: keys => `Redis ${keys.includes(', ') ? 'keys' : 'key'} ${keys}`,
-  redisRead: (keys, rows) => `Reads ${EN.redisKey(keys)}${rows === 0 ? ' (not found)' : ''}`,
-  redisWrite: (keys, command, n) => n === 0 ? `${command} on ${EN.redisKey(keys)}; nothing stored` : `Writes ${EN.redisKey(keys)} (${command})`,
-  redisDelete: (keys, command, n) => n === 0 ? `${command} on ${EN.redisKey(keys)}; nothing removed` : `${REDIS_KEY_DELETES.has(command) ? 'Deletes' : 'Removes items from'} ${EN.redisKey(keys)} (${command})`,
-  redisOther: (command, keys) => `${command} command on Redis${keys ? ` (${keys})` : ''}`,
-  failed: 'failed',
-  http: (method, host, path, status) => `Calls ${host}: ${method} ${path}${status != null ? ` (status ${status})` : ''}`,
-  ai: (provider, model, usage) => `Asks ${provider} for a response${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}`,
-  email: (to, subject) => `Sends an email${to.length ? ` to ${to.join(', ')}` : ''}${subject ? ` “${subject}”` : ''}`,
-  message: (to, provider) => `Sends a message via ${provider}${to.length ? ` to ${to.join(', ')}` : ''}`,
-  payment: (provider, operation, mode) => `Payment on ${provider}: ${operation} (${mode} mode)`,
-  fileRead: (where, bytes) => `Reads file ${where}${bytes ? ` (${bytes} bytes)` : ''}`,
-  fileWrite: (op, where, bytes) => `File ${op}: ${where}${bytes ? ` (${bytes} bytes)` : ''}`,
-  auth: (provider, operation) => `Authentication with ${provider}${operation ? `: ${operation}` : ''}`,
-  calls: items => `calls ${items}`,
-  noBoundary: 'Internal work: no boundary observed',
-  opaque: 'Not observable: runs in compiled or generated code that CodeTAC cannot see into',
-  templatePart: file => `renders HTML from ${file}`,
-  error: 'ended with an error',
-  unfinished: 'did not finish during the recording',
-  dbSetupPart: n => `runs ${n} database structure commands`,
-  readPart: tables => `reads ${tables}`,
-  writePart: (verb, tables) => `${verb} ${tables}`,
-  writeVerbs: { INSERT: 'adds to', UPDATE: 'changes', DELETE: 'deletes from', REPLACE: 'replaces in', UPSERT: 'adds or changes', MERGE: 'merges into' },
-  idleWritePart: tables => `tries to write to ${tables} without changing rows`,
-  httpPart: hosts => `calls ${hosts}`,
-  aiPart: providers => `asks ${providers} for responses`,
-  emailPart: n => n === 1 ? 'sends an email' : `sends ${n} emails`,
-  paymentPart: providers => `makes payments on ${providers}`,
-  filePart: ops => `files: ${ops}`,
-  authPart: providers => `authentication with ${providers}`,
-  dbSetup: (n, counts, tables, failed, changed, parentOk) => `Database setup: ${n} commands (${counts}) on ${tables} ${tables === 1 ? 'table' : 'tables'}` +
-    (failed ? ` · ${failed} failed${parentOk ? ' without stopping the function' : ''}` : '') +
-    (changed ? ` · includes writes that changed ${EN.rows(changed)}` : ''),
-  repeated: (sentence, n) => `${sentence} — ${n} times in a row`,
-  block: (times, size, what) => `The same ${size} steps repeated ${times} times${what ? `: ${what}` : ''}`,
-  helpers: (n, fns) => `${n} helper functions with no boundaries: ${fns}`,
-  generated: n => `${n} functions of bundler-generated code`,
-  devTools: n => `${n} development tool ${n === 1 ? 'request' : 'requests'} (recompilation, hot reload)`,
+  redisKey: keys => t('steps.redisKey', { count: keys.includes(', ') ? 2 : 1, keys }),
+  redisRead: (keys, rows) => t('steps.redisRead', { key: EN.redisKey(keys), notFound: rows === 0 ? inParens(t('steps.notFound')) : '' }),
+  redisWrite: (keys, command, n) => t(n === 0 ? 'steps.redisWriteNone' : 'steps.redisWrite', { command, key: EN.redisKey(keys) }),
+  redisDelete: (keys, command, n) => t(n === 0 ? 'steps.redisDeleteNone' : REDIS_KEY_DELETES.has(command) ? 'steps.redisDelete' : 'steps.redisRemove', { command, key: EN.redisKey(keys) }),
+  redisOther: (command, keys) => t('steps.redisOther', { command, keys: keys ? inParens(keys) : '' }),
+  failed: t('steps.failed'),
+  http: (method, host, path, code) => t('steps.http', { host, method, path, status: status(code) }),
+  ai: (provider, model, used) => t('steps.ai', { provider, model: model ? inParens(model) : '', usage: usage(used) }),
+  email: (recipients, subject) => t('steps.email', { to: to(recipients), subject: quoted(subject) }),
+  message: (recipients, provider) => t('steps.message', { provider, to: to(recipients) }),
+  payment: (provider, operation, mode) => t('steps.payment', { provider, operation, mode }),
+  fileRead: (where, size) => t('steps.fileRead', { where, bytes: bytes(size) }),
+  fileWrite: (op, where, size) => t('steps.fileWrite', { op, where, bytes: bytes(size) }),
+  auth: (provider, operation) => t('steps.auth', { provider, operation: operation ? `: ${operation}` : '' }),
+  calls: items => t('steps.calls', { items }),
+  noBoundary: t('steps.noBoundary'),
+  opaque: t('steps.opaque'),
+  templatePart: file => t('steps.templatePart', { file }),
+  error: t('steps.error'),
+  unfinished: t('steps.unfinished'),
+  dbSetupPart: n => t('steps.dbSetupPart', { count: n }),
+  readPart: tables => t('steps.readPart', { tables }),
+  dbOtherPart: n => t('steps.dbOtherPart', { count: n }),
+  otherBoundaryPart: n => t('steps.otherBoundaryPart', { count: n }),
+  writePart: (verb, tables) => t('steps.writePart', { verb, tables }),
+  writeVerbs: TEXT.steps.writeVerbs,
+  idleWritePart: tables => t('steps.idleWritePart', { tables }),
+  httpPart: hosts => t('steps.httpPart', { hosts }),
+  aiPart: providers => t('steps.aiPart', { providers }),
+  emailPart: n => t('steps.emailPart', { count: n }),
+  paymentPart: providers => t('steps.paymentPart', { providers }),
+  filePart: ops => t('steps.filePart', { ops }),
+  authPart: providers => t('steps.authPart', { providers }),
+  dbSetup: (n, counts, tables, failed, changed, parentOk) => t('steps.dbSetup', { count: n, counts, tables: t('steps.dbSetupTables', { count: tables }),
+    failed: failed ? ` · ${t('steps.failedCount', { count: failed })}${parentOk ? ` ${t('steps.withoutStopping')}` : ''}` : '',
+    changed: changed ? ` · ${t('steps.includesWrites', { rows: EN.rows(changed) })}` : '' }),
+  repeated: (sentence, n) => t('steps.repeated', { sentence, count: n }),
+  block: (count, size, what) => t('steps.block', { size, times: count, what: what ? `: ${what}` : '' }),
+  helpers: (n, fns) => t('steps.helpers', { count: n, fns }),
+  generated: n => t('steps.generated', { count: n }),
+  devTools: n => t('steps.devTools', { count: n }),
   effects: {
-    added: (n, table) => `${n == null ? 'Rows' : EN.rows(n)} added to ${table}`,
-    changed: (n, table) => `${n == null ? 'Rows' : EN.rows(n)} changed in ${table}`,
-    deleted: (n, table) => `${n == null ? 'Rows' : EN.rows(n)} deleted from ${table}`,
-    otherWrite: (op, table) => `${op} on ${table}`,
-    redisWritten: (keys, n) => `${EN.redisKey(keys)} written${n > 1 ? ` (${n} commands)` : ''}`,
-    redisDeleted: (keys, command, n) => `${EN.redisKey(keys)} ${REDIS_KEY_DELETES.has(command) ? 'deleted' : `changed (items removed with ${command})`}${n > 1 ? ` (${n} commands)` : ''}`,
-    redisNoChange: (command, keys, n) => `${command} on ${EN.redisKey(keys)} changed nothing${n > 1 ? ` (${n} times)` : ''}`,
-    noChange: (op, table, n) => `${op} on ${table} changed no rows${n > 1 ? ` (${n} times)` : ''}`,
-    structure: (ok, failed) => `${ok + failed} database structure commands (${ok} without error${failed ? `, ${failed} failed` : ''}); the recording does not show whether they changed the database`,
-    email: (to, subject, failed) => `${failed ? 'Failed email attempt' : 'Email sent'}${to.length ? ` to ${to.join(', ')}` : ''}${subject ? ` “${subject}”` : ''}`,
-    message: (provider, failed) => `${failed ? 'Failed message attempt' : 'Message sent'} via ${provider}`,
-    payment: (provider, operation, mode) => `Payment on ${provider}: ${operation} (${mode} mode)`,
-    file: (op, where) => `File: ${op} on ${where}`,
-    cookieSet: names => `Cookies stored in the browser: ${names}`,
-    cookieCleared: names => `Cookies deleted in the browser: ${names}`,
-    ai: (provider, model, usage, cost) => `AI call to ${provider}${model ? ` (${model})` : ''}${usage ? ` · ${usage.input ?? '?'} + ${usage.output ?? '?'} tokens` : ''}${cost != null ? ` · ~US$ ${cost.toFixed(4)}` : ''}`,
-    external: (method, host, n) => `External ${method} call to ${host}${n > 1 ? ` (${n} times)` : ''}`,
-    none: 'No lasting effect observed.',
-    unseen: 'Not observed: browser local storage and effects on unrecognised services.',
+    added: (n, table) => t('steps.effects.added', { rows: someRows(n, 'steps.effects.someRows'), table }),
+    changed: (n, table) => t('steps.effects.changed', { rows: someRows(n, 'steps.effects.someRows'), table }),
+    deleted: (n, table) => t('steps.effects.deleted', { rows: someRows(n, 'steps.effects.someRows'), table }),
+    otherWrite: (op, table) => t('steps.effects.otherWrite', { op, table }),
+    redisWritten: (keys, n) => t('steps.effects.redisWritten', { key: EN.redisKey(keys), times: times(n, 'steps.effects.commands') }),
+    redisDeleted: (keys, command, n) => t(REDIS_KEY_DELETES.has(command) ? 'steps.effects.redisDeleted' : 'steps.effects.redisChanged', { key: EN.redisKey(keys), command, times: times(n, 'steps.effects.commands') }),
+    redisNoChange: (command, keys, n) => t('steps.effects.redisNoChange', { command, key: EN.redisKey(keys), times: times(n, 'steps.effects.times') }),
+    noChange: (op, table, n) => t('steps.effects.noChange', { op, table, times: times(n, 'steps.effects.times') }),
+    structure: (ok, failed) => t('steps.effects.structure', { total: ok + failed, ok, failed: failed ? `, ${t('steps.failedCount', { count: failed })}` : '' }),
+    email: (recipients, subject, failed) => t(failed ? 'steps.effects.emailFailed' : 'steps.effects.email', { to: to(recipients), subject: quoted(subject) }),
+    message: (provider, failed) => t(failed ? 'steps.effects.messageFailed' : 'steps.effects.message', { provider }),
+    payment: (provider, operation, mode) => t('steps.payment', { provider, operation, mode }),
+    file: (op, where) => t('steps.effects.file', { op, where }),
+    cookieSet: list => t('steps.effects.cookieSet', { names: list }),
+    cookieCleared: list => t('steps.effects.cookieCleared', { names: list }),
+    ai: (provider, model, used, cost) => t('steps.effects.ai', { provider, model: model ? inParens(model) : '', usage: usage(used),
+      cost: cost != null ? ` · ${t('steps.effects.cost', { cost: cost.toFixed(4) })}` : '' }),
+    external: (method, host, n) => t('steps.effects.external', { method, host, times: times(n, 'steps.effects.times') }),
+    none: t('steps.effects.none'),
+    unseen: t('steps.effects.unseen'),
   },
   action: {
-    click: label => `Click on ${label}`,
-    submit: label => `Submit of ${label}`,
-    change: label => `Change in ${label}`,
-    continuation: 'Continuation after navigation',
-    request: (method, path, status) => `${method} ${path}${status != null ? ` (status ${status})` : ''}`,
-    noServer: 'no server requests',
-    screen: 'changes the screen',
-    noScreen: 'no visible change on screen',
-    navigates: path => `goes to ${path}`,
+    click: name => t('steps.action.click', { label: name }),
+    submit: name => t('steps.action.submit', { label: name }),
+    change: name => t('steps.action.change', { label: name }),
+    continuation: t('steps.action.continuation'),
+    request: (method, path, code) => t('steps.action.request', { method, path, status: status(code) }),
+    noServer: t('steps.action.noServer'),
+    screen: t('steps.action.screen'),
+    noScreen: t('steps.action.noScreen'),
+    navigates: path => t('steps.action.navigates', { path }),
   },
 };
 
@@ -117,7 +124,7 @@ export { duration, names, list };
 
 // The sentence of one boundary, from its recorded facts.
 export function boundarySentence(step) {
-  const t = texts();
+  const say = texts();
   const r = step.result ?? {};
   const failed = step.error || r.error;
   const tables = (step.tables ?? []).join(', ');
@@ -127,30 +134,30 @@ export function boundarySentence(step) {
       const op = step.operation;
       if (REDIS_LIBRARIES.has(step.library)) {
         const command = step.command ?? op;
-        text = op === 'SELECT' ? t.redisRead(tables, r.rows) : op === 'UPDATE' ? t.redisWrite(tables, command, r.affectedRows)
-          : op === 'DELETE' ? t.redisDelete(tables, command, r.affectedRows) : t.redisOther(command, tables);
-      } else if (op === 'SELECT' || op === 'WITH' || op === 'PRAGMA') text = t.read(tables, r.rows);
-      else if (op === 'INSERT') text = t.insert(tables, r.affectedRows);
-      else if (op === 'UPDATE') text = t.update(tables, r.affectedRows);
-      else if (op === 'DELETE') text = t.delete(tables, r.affectedRows);
-      else if (op === 'CREATE') text = t.create(tables, /\bif\s+not\s+exists\b/i.test(step.sql ?? ''));
-      else if (op === 'ALTER') text = t.alter(tables);
-      else if (op === 'DROP') text = t.drop(tables);
-      else text = t.otherDb(op, tables);
+        text = op === 'SELECT' ? say.redisRead(tables, r.rows) : op === 'UPDATE' ? say.redisWrite(tables, command, r.affectedRows)
+          : op === 'DELETE' ? say.redisDelete(tables, command, r.affectedRows) : say.redisOther(command, tables);
+      } else if (op === 'SELECT' || op === 'WITH' || op === 'PRAGMA') text = say.read(tables, r.rows);
+      else if (op === 'INSERT') text = say.insert(tables, r.affectedRows);
+      else if (op === 'UPDATE') text = say.update(tables, r.affectedRows);
+      else if (op === 'DELETE') text = say.delete(tables, r.affectedRows);
+      else if (op === 'CREATE') text = say.create(tables, /\bif\s+not\s+exists\b/i.test(step.sql ?? ''));
+      else if (op === 'ALTER') text = say.alter(tables);
+      else if (op === 'DROP') text = say.drop(tables);
+      else text = say.otherDb(op, tables);
       break;
     }
-    case 'http': text = t.http(step.method ?? '', step.host ?? '', step.path ?? '', r.status); break;
-    case 'ia': text = t.ai(step.provider, r.model ?? step.model, r.usage); break;
-    case 'email': text = t.email(step.to ?? [], step.subject); break;
-    case 'mensagem': text = t.message(step.to ?? [], step.provider ?? step.library); break;
-    case 'pagamento': text = t.payment(step.provider, step.operation, label(step.mode)); break;
+    case 'http': text = say.http(step.method ?? '', step.host ?? '', step.path ?? '', r.status); break;
+    case 'ia': text = say.ai(step.provider, r.model ?? step.model, r.usage); break;
+    case 'email': text = say.email(step.to ?? [], step.subject); break;
+    case 'mensagem': text = say.message(step.to ?? [], step.provider ?? step.library); break;
+    case 'pagamento': text = say.payment(step.provider, step.operation, label(step.mode)); break;
     case 'ficheiros': {
       const where = step.bucket ? `${step.provider} ${step.bucket}` : step.path ?? step.provider;
-      text = step.operation === 'leitura' || step.operation === 'verificação' ? t.fileRead(where, r.bytes) : t.fileWrite(label(step.operation ?? '?'), where, step.bytes);
+      text = step.operation === 'leitura' || step.operation === 'verificação' ? say.fileRead(where, r.bytes) : say.fileWrite(label(step.operation ?? '?'), where, step.bytes);
       break;
     }
-    case 'autenticação': text = t.auth(step.provider ?? step.library, label(step.operation)); break;
+    case 'autenticação': text = say.auth(step.provider ?? step.library, label(step.operation)); break;
     default: text = `${label(step.kind)}${step.operation ? `: ${label(step.operation)}` : ''}`;
   }
-  return failed ? `${text} — ${t.failed}` : text;
+  return failed ? `${text} — ${say.failed}` : text;
 }

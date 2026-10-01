@@ -137,7 +137,25 @@ function topLevelSymbols(program, language) {
 // { client, line, dynamic: true } when the URL is not a fixed text. Absolute
 // URLs and URLs from environment variables are outgoing calls, not requests.
 const METHOD_NAMES = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+// A generated API client (hey-api / openapi-ts, openapi-typescript-codegen):
+// client.post({ url: '/api/v1/items/' }), client.request({ method: 'POST', url }),
+// __request(OpenAPI, { method: 'POST', url }). The url is a fixed path; {id} is a parameter.
+function generatedClientRequest(node) {
+  const callee = node.callee;
+  const name = callee.type === 'Identifier' ? callee.name : callee.type === 'MemberExpression' && !callee.computed ? nameOf(callee.property) : null;
+  const options = name === '__request' ? node.arguments[1] : node.arguments[0];
+  if (!name || options?.type !== 'ObjectExpression' || !(METHOD_NAMES.has(name) || name === 'request' || name === '__request')) return null;
+  const property = key => options.properties.find(item => item.type === 'ObjectProperty' && nameOf(item.key) === key);
+  const url = property('url') ? literal(property('url').value) : null;
+  if (url == null || !url.startsWith('/') || url.startsWith('//')) return null;
+  const method = METHOD_NAMES.has(name) ? name.toUpperCase() : literal(property('method')?.value)?.toUpperCase() ?? null;
+  if (!method) return null;
+  return { client: 'generated', line: node.loc.start.line, method, path: url.split(/[?#]/)[0].replace(/\{[^}]+\}/g, ':param') || '/' };
+}
+
 function sameSiteRequest(node) {
+  const generated = generatedClientRequest(node);
+  if (generated) return generated;
   const callee = node.callee;
   let client = null;
   let method = null;
@@ -242,35 +260,55 @@ function routeRegistrations(program) {
     const scopeOf = object => (owner?.params.includes(object) ? { plugin: owner.name } : { object });
     for (const node of walk(statement)) {
       if (node.type !== 'CallExpression' || node.callee.type !== 'MemberExpression' || node.callee.object.type !== 'Identifier' || node.callee.computed) continue;
-      const object = node.callee.object.name;
-      const method = nameOf(node.callee.property);
-      const args = node.arguments;
-      const line = node.loc.start.line;
-      const path = literal(args[0]);
-      if (ROUTE_METHODS.has(method) && args.length >= 2 && path != null && (path.startsWith('/') || path === '*')) {
-        const last = args[args.length - 1];
-        const handler = FUNCTION_TYPES.has(last.type)
-          ? { inline: true, name: last.id?.name ?? '<anonymous>', line: last.loc.start.line, endLine: last.loc.end.line, calls: callsIn(last) }
-          : last.type === 'Identifier' ? { ref: last.name } : null;
-        routes.push({ ...scopeOf(object), method, path, line, handler });
-      } else if (method === 'use' && args.length) {
-        const prefix = literal(args[0]);
-        // A prefix that is not a fixed text (a variable's member, a template,
-        // a sum) is never guessed: the mount is left out.
-        if (prefix == null && args.length > 1 && /Member|Template|Binary|Conditional|Logical/.test(args[0].type)) continue;
-        const rest = prefix != null ? args.slice(1) : args;
-        if (prefix != null && !prefix.startsWith('/')) continue;
-        for (const item of rest) {
-          if (item.type === 'Identifier') mounts.push({ ...scopeOf(object), prefix: prefix ?? '', ref: item.name, line });
-          else if (inlineRequire(item) != null) mounts.push({ ...scopeOf(object), prefix: prefix ?? '', specifier: inlineRequire(item), line });
-        }
-      } else if (method === 'register' && (args[0]?.type === 'Identifier' || inlineRequire(args[0]) != null)) {
-        const options = args[1]?.type === 'ObjectExpression' ? args[1] : null;
-        const prefixProperty = options?.properties.find(property => property.type === 'ObjectProperty' && nameOf(property.key) === 'prefix');
-        const prefix = prefixProperty ? literal(prefixProperty.value) : '';
-        if (prefix == null) continue;
-        mounts.push({ ...scopeOf(object), prefix, ...(args[0].type === 'Identifier' ? { ref: args[0].name } : { specifier: inlineRequire(args[0]) }), line });
+      register(scopeOf(node.callee.object.name), nameOf(node.callee.property), node.arguments, node.loc.start.line);
+    }
+    // A chain on a new router, bound to a name or exported:
+    // const api = Router().use(a).use(b); export default Router().use('/api', api).
+    const chained = [];
+    if (statement.type === 'ExportDefaultDeclaration') chained.push(['default', statement.declaration]);
+    if (declaration?.type === 'VariableDeclaration') for (const item of declaration.declarations) if (item.id.type === 'Identifier') chained.push([item.id.name, item.init]);
+    const assigned = statement.type === 'ExpressionStatement' && statement.expression.type === 'AssignmentExpression' ? statement.expression : null;
+    if (assigned && assigned.left.type === 'MemberExpression' && assigned.left.object.type === 'Identifier' && assigned.left.object.name === 'module'
+      && nameOf(assigned.left.property) === 'exports') chained.push(['default', assigned.right]);
+    for (const [object, expression] of chained) {
+      const calls = [];
+      let current = expression;
+      while (current?.type === 'CallExpression' && current.callee.type === 'MemberExpression' && !current.callee.computed && current.callee.object.type === 'CallExpression') {
+        calls.unshift(current);
+        current = current.callee.object;
       }
+      const root = current?.type === 'CallExpression' ? current.callee : null;
+      const isRouter = root && ((root.type === 'Identifier' && /^(Router|express)$/.test(root.name))
+        || (root.type === 'MemberExpression' && nameOf(root.property) === 'Router'));
+      if (!isRouter) continue;
+      for (const call of calls) register({ object }, nameOf(call.callee.property), call.arguments, call.callee.property.loc.start.line);
+    }
+  }
+  function register(scope, method, args, line) {
+    const path = literal(args[0]);
+    if (ROUTE_METHODS.has(method) && args.length >= 2 && path != null && (path.startsWith('/') || path === '*')) {
+      const last = args[args.length - 1];
+      const handler = FUNCTION_TYPES.has(last.type)
+        ? { inline: true, name: last.id?.name ?? '<anonymous>', line: last.loc.start.line, endLine: last.loc.end.line, calls: callsIn(last) }
+        : last.type === 'Identifier' ? { ref: last.name } : null;
+      routes.push({ ...scope, method, path, line, handler });
+    } else if (method === 'use' && args.length) {
+      const prefix = literal(args[0]);
+      // A prefix that is not a fixed text (a variable's member, a template,
+      // a sum) is never guessed: the mount is left out.
+      if (prefix == null && args.length > 1 && /Member|Template|Binary|Conditional|Logical/.test(args[0].type)) return;
+      const rest = prefix != null ? args.slice(1) : args;
+      if (prefix != null && !prefix.startsWith('/')) return;
+      for (const item of rest) {
+        if (item.type === 'Identifier') mounts.push({ ...scope, prefix: prefix ?? '', ref: item.name, line });
+        else if (inlineRequire(item) != null) mounts.push({ ...scope, prefix: prefix ?? '', specifier: inlineRequire(item), line });
+      }
+    } else if (method === 'register' && (args[0]?.type === 'Identifier' || inlineRequire(args[0]) != null)) {
+      const options = args[1]?.type === 'ObjectExpression' ? args[1] : null;
+      const prefixProperty = options?.properties.find(property => property.type === 'ObjectProperty' && nameOf(property.key) === 'prefix');
+      const prefix = prefixProperty ? literal(prefixProperty.value) : '';
+      if (prefix == null) return;
+      mounts.push({ ...scope, prefix, ...(args[0].type === 'Identifier' ? { ref: args[0].name } : { specifier: inlineRequire(args[0]) }), line });
     }
   }
   return { routes, mounts };
@@ -431,12 +469,15 @@ export function maskKeys(text) {
   if (/^\s*[A-Za-z0-9+/=]{40,}\s*$/.test(masked)) masked = masked.replace(/[A-Za-z0-9+/=]{40,}/, '••••••');
   return masked;
 }
+const GENERATED_HEADER = /\b(auto-?generated|automatically generated|@generated|code generated|generated by|do not edit)\b/i;
 const KEY_LANGUAGES = new Set(['js', 'jsx', 'ts', 'tsx', 'json', 'html', 'yaml', 'vue', 'svelte', 'python', 'shell']);
 
 // What one file imports and exports. Parse failures are reported, not thrown.
 export function readModule(source, path, language, { startLine = 1 } = {}) {
   const result = { imports: [], exports: [], directives: [], outgoing: [], sdk: [], env: [], keys: [], symbols: [], bindings: [], routes: [], mounts: [], requests: [], data: [], runtimeImports: [], error: null };
   if (startLine === 1 && KEY_LANGUAGES.has(language)) result.keys = literalKeys(source);
+  // Code written by a tool (hey-api, TanStack Router, Prisma…): its header says so.
+  if (startLine === 1 && GENERATED_HEADER.test(source.slice(0, 1500).split('\n').filter(line => /^\s*(\/\/|\/\*|\*|#)/.test(line)).join('\n'))) result.generated = true;
   if (language === 'html') {
     const pattern = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
     for (const match of source.matchAll(pattern)) {
@@ -735,7 +776,7 @@ export function resolveImport(specifier, from, files, { aliases = { baseUrl: nul
   return { package: name };
 }
 
-const PARSE_CACHE_VERSION = 14;
+const PARSE_CACHE_VERSION = 16;
 function parseCachePath(root) {
   return join(dataDirectory(), 'structure', 'cache', `${createHash('sha256').update(root).digest('hex').slice(0, 32)}-modules.json`);
 }

@@ -9,6 +9,7 @@
 // include_router(r, prefix=…) adds to the router's own prefix;
 // register_blueprint(bp, url_prefix=…) replaces the blueprint's.
 import { ownerOf } from './modules.mjs';
+import { t } from '../text.mjs';
 
 const OWNERS = { FastAPI: 'app', APIRouter: 'router', Flask: 'app', Blueprint: 'blueprint' };
 const VERBS = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'];
@@ -24,6 +25,43 @@ export function routePath(...parts) {
 }
 
 const parentScope = qualname => (qualname.includes('.') ? qualname.slice(0, qualname.lastIndexOf('.')) : null);
+
+// A value as it is written, for a note (settings.api_prefix, os.environ['P']).
+const written = value => value?.t === 'name' ? value.v : value?.t === 'str' ? `'${value.v}'` : value?.t === 'attr' ? `${written(value.of)}.${value.name}`
+  : value?.t === 'sub' ? `${written(value.of)}[${written(value.key)}]` : value?.t === 'call' ? `${written(value.func)}(…)` : '…';
+
+// The default of each field of the project's settings classes (BaseSettings,
+// also through a class of the project that extends it): field → [{ value, file, line }].
+function settingsDefaults(facts) {
+  const classes = [];
+  for (const [path, item] of facts) {
+    for (const definition of item.definitions ?? []) {
+      if (definition.kind === 'class') classes.push({ path, item, definition, bases: (definition.bases ?? []).filter(base => base?.t === 'name').map(base => last(base.v)) });
+    }
+  }
+  const settings = new Set(['BaseSettings']);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const entry of classes) {
+      if (!settings.has(entry.definition.name ?? last(entry.definition.qualname)) && entry.bases.some(base => settings.has(base))) {
+        settings.add(entry.definition.name ?? last(entry.definition.qualname));
+        grew = true;
+      }
+    }
+  }
+  const fields = new Map();
+  for (const { path, item, definition, bases } of classes) {
+    if (!bases.some(base => settings.has(base))) continue;
+    for (const assignment of item.assignments ?? []) {
+      const name = assignment.scope === definition.qualname && assignment.targets[0]?.t === 'name' ? assignment.targets[0].v : null;
+      const value = assignment.value?.t === 'call' && last(assignment.value.func?.v ?? '') === 'Field' ? assignment.value.args[0] ?? assignment.value.kw.default : assignment.value;
+      if (!name || value?.t !== 'str') continue;
+      if (!fields.has(name)) fields.set(name, []);
+      fields.get(name).push({ value: value.v, file: path, line: assignment.line });
+    }
+  }
+  return fields;
+}
 
 export function pythonRoutes(modules, facts) {
   // Route holders, per file: { key, path, name, scope, kind, prefix, line }.
@@ -56,6 +94,19 @@ export function pythonRoutes(modules, facts) {
     const bound = modules.get(path)?.bindings.get(head);
     return bound?.module && rest.length === 1 ? holders.get(`${bound.target}::${rest[0]}`) ?? null : null;
   };
+  // A prefix written as settings.field: the field's default, when the
+  // project's settings classes give it only one value.
+  const defaults = settingsDefaults(facts);
+  const notes = [];
+  const prefixOf = (value, at) => {
+    if (value == null) return { prefix: null, proof: [] };
+    if (value.t === 'str') return { prefix: value.v, proof: [] };
+    const field = value.t === 'name' && value.v.includes('.') ? last(value.v) : value.t === 'attr' ? value.name : null;
+    const found = field ? defaults.get(field) ?? [] : [];
+    if (found.length && new Set(found.map(item => item.value)).size === 1) return { prefix: found[0].value, proof: [{ file: found[0].file, line: found[0].line }] };
+    notes.push({ kind: 'route-prefix', message: t('notes.prefixUnread', { prefix: written(value), method: at.method }), proof: [{ file: at.path, line: at.line }] });
+    return { prefix: null, proof: [] };
+  };
   // Mounts: child holder → [{ parent, prefix, line, path }].
   const mounts = new Map();
   for (const [path, item] of facts) {
@@ -66,9 +117,9 @@ export function pythonRoutes(modules, facts) {
       const parent = holderOf(path, call.scope, name.slice(0, name.lastIndexOf('.')));
       const child = call.args[0]?.t === 'name' ? holderOf(path, call.scope, call.args[0].v) : null;
       if (!parent || !child) continue;
-      const prefix = text(call.kw[method === 'include_router' ? 'prefix' : 'url_prefix']);
+      const { prefix, proof: from } = prefixOf(call.kw[method === 'include_router' ? 'prefix' : 'url_prefix'], { method, path, line: call.line });
       if (!mounts.has(child.key)) mounts.set(child.key, []);
-      mounts.get(child.key).push({ parent, prefix, line: call.line, path, replaces: method === 'register_blueprint' });
+      mounts.get(child.key).push({ parent, prefix, line: call.line, path, from, replaces: method === 'register_blueprint' });
     }
   }
   // Every full prefix of a holder, with the mount lines that prove it.
@@ -78,7 +129,7 @@ export function pythonRoutes(modules, facts) {
     if (!own?.length) return [{ prefix: holder.prefix, proof: [] }];
     return own.flatMap(mount => prefixes(mount.parent, new Set([...seen, holder.key])).map(above => ({
       prefix: routePath(above.prefix, mount.prefix ?? '', mount.replaces && mount.prefix != null ? '' : holder.prefix),
-      proof: [...above.proof, { file: mount.path, line: mount.line }],
+      proof: [...above.proof, { file: mount.path, line: mount.line }, ...mount.from],
     })));
   };
 
@@ -141,7 +192,7 @@ export function pythonRoutes(modules, facts) {
       }
     }
   }
-  return { routes: [...routes.values()], edges: [...edges.values()], handlers };
+  return { routes: [...routes.values()], edges: [...edges.values()], handlers, notes };
 }
 
 // The project function a name means in a file: its own, or imported.

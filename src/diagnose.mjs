@@ -2,25 +2,19 @@
 // em linguagem simples, a partir do projeto, do painel e da última gravação.
 import { registerHooks } from 'node:module';
 import http from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { dataDirectory } from './home.mjs';
-import { detectProject, describeStart } from './detect.mjs';
+import { detectProject, describeStart, prismaWithoutTracing } from './detect.mjs';
 import { MINIMUM, versionBelow } from './detect-python.mjs';
 import { recordingsOf, summarize } from './recording.mjs';
 import { describeConfig, loadConfig } from './ai.mjs';
+import { TEXT, t } from './structure/text.mjs';
 
 const directory = dataDirectory();
 
-const REASONS = {
-  'module-transform-failed': 'files that could not be prepared',
-  'source-map-unreadable': 'files with an unreadable source map',
-  'eval-code-transform-failed': 'bundler code blocks that could not be prepared',
-  'constructor-skipped': 'class constructors (they run, but are not shown)',
-  'generator-skipped': 'generators (they run, but are not shown)',
-  'parameter-redeclaration-skipped': 'functions that redeclare a parameter (they run, but are not shown)',
-  'direct-eval-skipped': 'functions with a direct eval (they run, but are not shown)',
-  'template-lines-unmapped': 'templates not linked to the lines of the file (shown as a single step)',
-};
+// The sentences live in structure/text/en.json (diagnose).
+const REASONS = TEXT.diagnose.reasons;
 
 function ping(port) {
   return new Promise(done => {
@@ -47,15 +41,15 @@ function panelConfig(port) {
 function pythonPart(part, { ok, bad, note }) {
   const label = part.part === '.' ? '' : `[${part.part}] `;
   const { python } = part;
-  if (!python.interpreter) bad(`${label}No Python environment (.venv).`, 'codetac creates it and installs the dependencies (it asks first; --yes answers yes).');
-  else if (!python.version) bad(`${label}The environment's Python (${relative(part.folder, python.interpreter)}) did not answer.`, 'The environment may be broken: delete the .venv and run codetac again.');
-  else if (versionBelow(python.version)) note(`${label}Python ${python.version} (${relative(part.folder, python.interpreter)}): minimal mode only (requests, boundaries and browser, without the functions).`,
-    `Create the environment with Python ${MINIMUM.join('.')} or newer.`);
-  else ok(`${label}Python ${python.version} (${relative(part.folder, python.interpreter) || python.interpreter}): can follow the project's functions.`);
-  if (python.interpreter && python.missing.length) bad(`${label}Missing dependencies: ${python.missing.slice(0, 8).join(', ')}${python.missing.length > 8 ? '…' : ''}.`, 'codetac installs them (it asks first).');
-  ok(`Start: ${describeStart(part)}`);
-  if (part.server) ok(`${label}Server: ${part.server}.`);
-  if (part.port) ok(`${label}Likely port: ${part.port.value} (${part.port.source}). If it is taken, the command picks another.`);
+  if (!python.interpreter) bad(`${label}${t('diagnose.noVenv')}`, t('diagnose.noVenvFix'));
+  else if (!python.version) bad(`${label}${t('diagnose.pythonSilent', { interpreter: relative(part.folder, python.interpreter) })}`, t('diagnose.pythonSilentFix'));
+  else if (versionBelow(python.version)) note(`${label}${t('diagnose.pythonOld', { version: python.version, interpreter: relative(part.folder, python.interpreter) })}`,
+    t('diagnose.pythonOldFix', { version: MINIMUM.join('.') }));
+  else ok(`${label}${t('diagnose.pythonOk', { version: python.version, interpreter: relative(part.folder, python.interpreter) || python.interpreter })}`);
+  if (python.interpreter && python.missing.length) bad(`${label}${t('diagnose.missingDeps', { list: `${python.missing.slice(0, 8).join(', ')}${python.missing.length > 8 ? '…' : ''}` })}`, t('diagnose.missingDepsFix'));
+  ok(t('diagnose.start', { start: describeStart(part) }));
+  if (part.server) ok(`${label}${t('diagnose.server', { server: part.server })}`);
+  if (part.port) ok(`${label}${t('diagnose.pythonPort', { port: part.port.value, source: part.port.source })}`);
   // The version note is already the first line.
   for (const text of (part.notes ?? []).filter(text => !text.startsWith("The project's Python"))) note(`${label}${text}`);
 }
@@ -66,45 +60,50 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
   const bad = (text, fix) => { problems++; out(`  ✗ ${text}`); if (fix) out(`      → ${fix}`); };
   const note = (text, fix) => { out(`  ! ${text}`); if (fix) out(`      → ${fix}`); };
 
-  out(`CodeTAC diagnosis · ${root}\n`);
-  out('This computer');
+  out(`${t('diagnose.title', { root })}\n`);
+  out(t('diagnose.computer'));
   const [major] = process.versions.node.split('.').map(Number);
-  if (major >= 24 && typeof registerHooks === 'function') ok(`Node ${process.version}: can follow the project's functions.`);
-  else if (typeof registerHooks === 'function') note(`Node ${process.version}: works, but CodeTAC was checked on Node 24 or newer.`, 'Install Node 24 or newer.');
-  else bad(`Node ${process.version}: cannot follow the functions; minimal mode only (requests and boundaries).`, 'Install Node 24 or newer.');
+  if (major >= 24 && typeof registerHooks === 'function') ok(t('diagnose.nodeOk', { version: process.version }));
+  else if (typeof registerHooks === 'function') note(t('diagnose.nodeOld', { version: process.version }), t('diagnose.installNode'));
+  else bad(t('diagnose.nodeMinimal', { version: process.version }), t('diagnose.installNode'));
 
-  out('\nThe project');
+  out(`\n${t('diagnose.project')}`);
   const project = detectProject(root);
-  if (project.missing.includes('package')) bad('No package.json or server file (server.js, index.js…) in this folder.', 'Run the command in the app\'s folder, or give the start command: codetac . -- node server.js');
-  else if (project.missing.includes('part')) note(`It has several parts: ${project.parts.map(part => part.part).join(', ')}. The command asks which to start.`);
+  if (project.missing.includes('package')) bad(t('diagnose.noPackage'), t('diagnose.noPackageFix'));
+  else if (project.missing.includes('part')) note(t('diagnose.severalParts', { parts: project.parts.map(part => part.part).join(', ') }));
   else if (project.missing.includes('command') && project.top?.language === 'python') {
-    if (project.top.python.django) bad('Django project: CodeTAC does not support it yet (FastAPI and Flask only).');
-    else bad('Python project, but I did not find the app (FastAPI(...) or Flask(...)) or a command in the Procfile, Makefile or README.', 'Give the command: codetac . -- uvicorn main:app --reload');
-  } else if (project.missing.includes('command')) bad('The package.json has no start script (dev, start…).', 'Give the command: codetac . -- <command>');
+    if (project.top.python.django) bad(t('diagnose.django'));
+    else bad(t('diagnose.pythonAppNotFound'), t('diagnose.pythonAppNotFoundFix'));
+  } else if (project.missing.includes('command')) bad(t('diagnose.noStartScript'), t('diagnose.noStartScriptFix'));
   for (const part of project.start.length ? project.start : project.parts) {
     if (part.language === 'python') { pythonPart(part, { ok, bad, note }); continue; }
-    ok(`Start: ${describeStart(part)}`);
-    if (part.port) ok(`Likely port: ${part.port.value} (${part.port.source}). The real port is read when the app starts.`);
-    if (!part.installed) bad(`The dependencies of ${part.part === '.' ? 'the project' : part.part} are not installed.`, `${part.manager === 'bun' ? 'npm' : part.manager} install (or codetac --yes, which installs them)`);
-    if (part.foreign) note(`The script uses ${part.foreign}, which is not Node: that part runs, but is not observed inside.`);
+    ok(t('diagnose.start', { start: describeStart(part) }));
+    if (part.port) ok(t('diagnose.nodePort', { port: part.port.value, source: part.port.source }));
+    if (!part.installed) bad(t('diagnose.depsNotInstalled', { part: part.part === '.' ? t('run.theProjectLower') : part.part }), t('diagnose.depsNotInstalledFix', { manager: part.manager === 'bun' ? 'npm' : part.manager }));
+    const prisma = prismaWithoutTracing(part.folder, root);
+    if (prisma) bad(t('run.prismaNoTracing', { version: prisma.version }),
+      t('diagnose.prismaFix', { schema: prisma.schema }));
+    if (part.foreign && !/^(python3?|uvicorn)$/.test(part.foreign) && spawnSync(process.platform === 'win32' ? 'where' : 'which', [part.foreign.split(' ')[0]], { stdio: 'ignore' }).status !== 0) {
+      bad(t('diagnose.foreignMissing', { tool: part.foreign }), t('diagnose.foreignMissingFix', { tool: part.foreign }));
+    } else if (part.foreign) note(t('diagnose.foreign', { tool: part.foreign }));
   }
 
-  out('\nThe panel');
+  out(`\n${t('diagnose.panel')}`);
   const panelOn = await ping(panelPort);
-  if (panelOn) ok(`Running at http://127.0.0.1:${panelPort}.`);
-  else note(`Not running on port ${panelPort}.`, 'The codetac command starts it.');
+  if (panelOn) ok(t('diagnose.panelOn', { port: panelPort }));
+  else note(t('diagnose.panelOff', { port: panelPort }), t('diagnose.panelOffFix'));
   try {
     // The running panel's own configuration, else the one it would load.
     const config = (panelOn && await panelConfig(panelPort)) || describeConfig(await loadConfig({ directory }));
-    ok(`Purpose sentences: ${config.active ? `${config.model} (${config.provider}${config.local ? ', local: nothing leaves this computer' : ', redacted excerpts are sent'})`
-      : `fixed, built from the facts (${config.problem ?? 'no AI model configured'})`}.`);
+    ok(t('diagnose.purposes', { how: config.active ? `${config.model} (${config.provider}, ${t(config.local ? 'diagnose.local' : 'diagnose.redacted')})`
+      : t('diagnose.fixed', { problem: config.problem ?? t('diagnose.noModel') }) }));
   } catch {}
 
-  out('\nThe latest recording of this project');
+  out(`\n${t('diagnose.latest')}`);
   const [last] = recordingsOf(directory, root);
   if (!last) {
-    note('No recordings of this project yet.', 'Start it with: codetac (in the project folder). Then run the diagnosis again.');
-    out(problems ? `\n${problems} problem(s) to fix.` : '\nNothing prevents the start.');
+    note(t('diagnose.noRecordings'), t('diagnose.noRecordingsFix'));
+    out(`\n${problems ? t('diagnose.problems', { count: problems }) : t('diagnose.nothingPrevents')}`);
     return problems ? 1 : 0;
   }
   const summary = summarize(last.folder);
@@ -113,21 +112,21 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
   const pythons = [...new Set(serving.filter(start => start.python).map(start => start.python))];
   const nodes = serving.filter(start => !start.python).length;
   const runtimes = [nodes && `${nodes} Node`, pythons.length && `${serving.length - nodes} Python ${pythons.join(', ')}`].filter(Boolean).join(', ');
-  ok(`${last.name} (${new Date(last.changed).toLocaleString('en-GB')}), ${serving.length} process(es) observed${runtimes ? ` (${runtimes})` : ''}.`);
-  if (summary.supervisors.size) ok(`${summary.supervisors.size} reloader supervisor process(es) (they only watch the files; not counted).`);
-  if (summary.servers.size) ok(`Server: ${[...summary.servers].join(', ')}.`);
+  ok(t('diagnose.recording', { name: last.name, date: new Date(last.changed).toLocaleString('en-GB'), count: serving.length, runtimes: runtimes ? ` (${runtimes})` : '' }));
+  if (summary.supervisors.size) ok(t('diagnose.supervisors', { count: summary.supervisors.size }));
+  if (summary.servers.size) ok(t('diagnose.server', { server: [...summary.servers].join(', ') }));
   const minimal = summary.starts.find(start => start.level === 'minimo');
-  if (minimal) note(`Minimal mode: the project's functions were not followed (${minimal.reason ?? 'no reason recorded'}). Requests, boundaries and browser were.`,
-    'If the app starts without CodeTAC but not with it, send these lines and the start messages.');
-  if (summary.ports.size) ok(`Ports opened by the app: ${[...summary.ports].join(', ')}.`);
-  else if (!summary.requests) bad('The capture did not see the app open any port.', 'Did the app start? If the server is neither Node nor Python (bun, deno…), it is not observed.');
+  if (minimal) note(t('diagnose.minimal', { reason: minimal.reason ?? t('diagnose.noReason') }),
+    t('diagnose.minimalFix'));
+  if (summary.ports.size) ok(t('diagnose.ports', { ports: [...summary.ports].join(', ') }));
+  else if (!summary.requests) bad(t('diagnose.noPorts'), t('diagnose.noPortsFix'));
   if (!minimal) {
-    if (summary.files) ok(`Project files prepared: ${summary.files} (${summary.functions} functions).`);
-    else if (summary.requests) bad('No project file went through CodeTAC.',
-      'The server may be running code already bundled without a source map, or outside the project folder. The dossiers show only requests and boundaries.');
+    if (summary.files) ok(t('diagnose.files', { files: summary.files, functions: summary.functions }));
+    else if (summary.requests) bad(t('diagnose.noFiles'),
+      t('diagnose.noFilesFix'));
     const failed = summary.failed.length;
     if (failed) {
-      note(`${failed} file(s) run without being followed (they could not be prepared):`);
+      note(t('diagnose.failedFiles', { count: failed }));
       for (const item of summary.failed.slice(0, 5)) out(`      - ${relative(root, item.file ?? '') || item.file}${item.detail ? `: ${item.detail}` : ''}`);
     }
     for (const [reason, count] of summary.limitations) {
@@ -136,16 +135,16 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
     }
   }
   if (summary.requests) {
-    ok(`Requests recorded: ${summary.requests}. With project functions: ${summary.withFunctions.size}. With boundaries: ${summary.withBoundaries.size}.`);
-    if (!minimal && summary.files && !summary.withFunctions.size) note('No request has gone through project functions so far.',
-      'Normal in a frontend-only app (Vite, static pages): the server only delivers files; what matters is in the browser.');
-  } else note('No request has arrived yet.', 'Open the app in the browser and use it.');
-  if (summary.pages) ok(`Pages served with the CodeTAC bar: ${summary.pages}.`);
-  else if (summary.requests && !summary.actions.size) note('No HTML page went through the observed server: the bar was not injected.',
-    'If the page comes from another server (a process CodeTAC does not observe), open it through the app\'s observed server.');
-  if (summary.actions.size) ok(`Browser actions recorded: ${summary.actions.size}.`);
-  else if (summary.pages) note('The bar is on the page, but no action has arrived yet.', 'Click something in the app. If nothing shows up, check the browser console (CSP errors?).');
+    ok(t('diagnose.requests', { requests: summary.requests, functions: summary.withFunctions.size, boundaries: summary.withBoundaries.size }));
+    if (!minimal && summary.files && !summary.withFunctions.size) note(t('diagnose.noFunctions'),
+      t('diagnose.noFunctionsFix'));
+  } else note(t('diagnose.noRequests'), t('diagnose.noRequestsFix'));
+  if (summary.pages) ok(t('diagnose.pages', { count: summary.pages }));
+  else if (summary.requests && !summary.actions.size) note(t('diagnose.noPages'),
+    t('diagnose.noPagesFix'));
+  if (summary.actions.size) ok(t('diagnose.actions', { count: summary.actions.size }));
+  else if (summary.pages) note(t('diagnose.noActions'), t('diagnose.noActionsFix'));
 
-  out(problems ? `\n${problems} problem(s) to fix.` : '\nEverything that could be checked is working.');
+  out(`\n${problems ? t('diagnose.problems', { count: problems }) : t('diagnose.allWorking')}`);
   return problems ? 1 : 0;
 }

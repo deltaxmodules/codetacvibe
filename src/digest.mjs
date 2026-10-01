@@ -139,7 +139,7 @@ function blocks(nodes, ctx) {
     const run = nodes.slice(index, index + best.size * best.times);
     const first = nodes.slice(index, index + best.size);
     const inside = run.flatMap(node => [node, ...collect(node).boundaries]).filter(node => node.type === 'boundary');
-    const reads = [...new Set(inside.filter(item => item.kind === 'base-de-dados' && item.operation === 'SELECT').flatMap(item => item.tables ?? []))];
+    const reads = [...new Set(inside.filter(item => item.kind === 'base-de-dados').flatMap(item => item.operation === 'SELECT' ? item.tables ?? [] : item.reads ?? []))];
     const writes = [...new Set(inside.filter(item => item.kind === 'base-de-dados' && WRITES.has(item.operation)).flatMap(item => item.tables ?? []))];
     const fns = [...new Set(first.flatMap(node => node.type === 'function' ? [node.function] : node.type === 'group' && node.children[0].type === 'function' ? [node.children[0].function] : []))];
     const parts = [];
@@ -165,9 +165,11 @@ function functionSentence(node, ctx) {
   const template = TEMPLATE_FILE.test(node.file ?? '');
   if (template && !node.opaque) parts.push(t.templatePart(node.file.split('/').pop()));
   const db = facts.boundaries.filter(item => item.kind === 'base-de-dados');
+  const beforeDb = parts.length;
   const structure = db.filter(item => STRUCTURE.has(item.operation));
   if (structure.length) parts.push(t.dbSetupPart(structure.length));
-  const reads = [...new Set(db.filter(item => item.operation === 'SELECT').flatMap(item => item.tables ?? []))];
+  // Tables a write's subqueries read (INSERT … SELECT) are reads too.
+  const reads = [...new Set(db.flatMap(item => item.operation === 'SELECT' ? item.tables ?? [] : item.reads ?? []))];
   if (reads.length) parts.push(t.readPart(names(reads, t.and)));
   // Writes that changed no rows (or failed) are not presented as changes.
   const idle = new Set();
@@ -179,6 +181,8 @@ function functionSentence(node, ctx) {
     for (const item of writes) if (!done.includes(item)) for (const table of item.tables ?? []) if (!tables.includes(table)) idle.add(table);
   }
   if (idle.size) parts.push(t.idleWritePart(names([...idle], t.and)));
+  // Only commands with no table (a COMMIT, a pool's health check): still said.
+  if (db.length && parts.length === beforeDb) parts.push(t.dbOtherPart(db.length));
   const kinds = kind => facts.boundaries.filter(item => item.kind === kind);
   const hosts = [...new Set(kinds('http').map(item => item.host))];
   if (hosts.length) parts.push(t.httpPart(names(hosts, t.and)));
@@ -199,6 +203,8 @@ function functionSentence(node, ctx) {
   if (callees.length) parts.push(t.calls(names(callees, t.and)));
   if (node.error) parts.push(t.error);
   else if (node.finished === false) parts.push(t.unfinished);
+  // Boundaries of a kind no part above describes: the sentence is never empty.
+  if (!parts.length) parts.push(t.otherBoundaryPart(facts.boundaries.length));
   const text = parts.join(' · ');
   return text[0].toUpperCase() + text.slice(1);
 }

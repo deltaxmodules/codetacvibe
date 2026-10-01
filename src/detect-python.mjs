@@ -244,6 +244,12 @@ export function describePythonFolder(folder, top = folder) {
 }
 
 // The same part on another port (a taken port, or one the others must follow).
+// --port with one Python part whose command CodeTAC writes: the app starts on that port.
+export function withAskedPort(parts, { port, command } = {}) {
+  if (!port || command?.length || parts.length !== 1 || parts[0].language !== 'python' || parts[0].port?.value === port || !commandFor(parts[0], port)) return parts;
+  return [{ ...moveTo(parts[0], port), port: { value: port, source: '--port' } }];
+}
+
 export function moveTo(part, port) {
   const command = commandFor(part, port);
   const moved = { ...part, port: { value: port, source: 'chosen by CodeTAC' }, command: command ?? part.command };
@@ -272,6 +278,21 @@ export function interpreters() {
   }
   const key = version => version.split('.').map(Number).reduce((total, part) => total * 1000 + part, 0);
   return found.sort((a, b) => key(b.version) - key(a.version));
+}
+
+// The variables of a frontend's .env files whose value is a local address on a port
+// (VITE_API_URL=http://localhost:8000): [{ variable, value, file }]. The values stay
+// in memory, to be passed with another port; they are never shown.
+const ENV_FILES = ['.env', '.env.local', '.env.development', '.env.development.local'];
+export function envAddressesOn(folder, port) {
+  const found = new Map();
+  for (const file of ENV_FILES) {
+    for (const line of (readText(join(folder, file)) ?? '').split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?([A-Za-z_]\w*)\s*=\s*["']?([^"'\s#]*)/);
+      if (match && new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\]):${port}(?:/|$)`).test(match[2])) found.set(match[1], { variable: match[1], value: match[2], file });
+    }
+  }
+  return [...found.values()];
 }
 
 // The Vite proxy of a frontend: which ports it sends to, and the variable that sets each one.

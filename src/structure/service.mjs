@@ -12,6 +12,7 @@ import { blockCard } from './card.mjs';
 import { explanationRequest, explainCard } from './explain.mjs';
 import { blocked, blockedText, guarded } from '../privacy.mjs';
 import { traceAction, traceRequest } from './trace.mjs';
+import { t } from './text.mjs';
 import { SKIPPED_FOLDERS } from './node/inventory.mjs';
 import { maskKeys } from './node/modules.mjs';
 import { leaksView } from './leaks.mjs';
@@ -220,13 +221,13 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
   async function handle(pathname, params, { method = 'GET', body = null } = {}) {
     const run = params.get('run');
     const root = run ? rootOf(run) : null;
-    if (!run) return { status: 400, body: { error: 'Say which recording (run).' } };
-    if (!root) return { status: 404, body: { error: 'This recording has no project folder yet. Load a page of the app first.' } };
+    if (!run) return { status: 400, body: { error: t('service.noRun') } };
+    if (!root) return { status: 404, body: { error: t('service.noFolder') } };
     // The secret filter hid part of the folder's path (a name that looks like a key, M30/M131).
     if (root.includes('[REDACTED]')) {
-      return { status: 404, body: { error: 'Part of the project folder\'s path looks like a secret (for example a long random name), so it was hidden when recording and the plan cannot find the folder. Move the project to a folder with a plain name and run codetac again.' } };
+      return { status: 404, body: { error: t('service.folderHidden') } };
     }
-    try { if (!statSync(root).isDirectory()) throw new Error(); } catch { return { status: 404, body: { error: 'The project folder of this recording no longer exists.' } }; }
+    try { if (!statSync(root).isDirectory()) throw new Error(); } catch { return { status: 404, body: { error: t('service.folderGone') } }; }
     const entry = await project(root, { wait: Number(params.get('wait')) > 0 ? Math.min(Number(params.get('wait')), 30_000) : 0 });
     if (!entry.graph) {
       return entry.error ? { status: 500, body: { status: 'error', error: entry.error } } : { status: 202, body: { status: 'reading' } };
@@ -246,7 +247,7 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       return { status: 200, body: { ...summary(entry), plan: planView(entry.graph, { expanded: open, trace, covered }),
         ...(trace ? { trace: { label: trace.label, nodes: trace.nodes, unmatched: trace.unmatched, steps: trace.steps, observed: trace.observed.length, inferred: trace.inferred.length,
           ...focusOf(entry.graph, trace, params.get('focus')) } } : {}),
-        ...(wanted && !trace ? { traceError: 'That action is not recorded in this session.' } : {}),
+        ...(wanted && !trace ? { traceError: t('service.actionMissing') } : {}),
         ...(covered ? { sessionActions } : {}) } };
     }
     if (pathname === '/api/structure/leaks') {
@@ -291,7 +292,7 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, against, ...entry.changes.view, sentences }, review: debtOf(entry, root) } };
     }
     if (pathname === '/api/structure/snapshot') {
-      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
+      if (method !== 'POST') return { status: 405, body: { error: t('service.usePost') } };
       const label = typeof body?.label === 'string' ? body.label : null;
       // Phase 10: the user's prediction of the next change, saved with it.
       const prediction = cleanPrediction(body?.prediction);
@@ -317,7 +318,7 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       return { status: 200, body: { ...summary(entry), quiz: { round, questions: withoutAnswers(quizQuestions(entry.graph, { round })), results: readResults(root) } } };
     }
     if (pathname === '/api/structure/quiz/answer') {
-      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
+      if (method !== 'POST') return { status: 405, body: { error: t('service.usePost') } };
       const round = Math.max(0, Math.min(Number.parseInt(body?.round ?? 0, 10) || 0, 1e6));
       const verdict = answerQuestion(entry.graph, root, { round, id: String(body?.id ?? ''), choice: body?.choice });
       return verdict ? { status: 200, body: verdict } : { status: 404, body: { error: 'changed' } };
@@ -325,7 +326,7 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
     if (pathname === '/api/structure/trace') {
       const wanted = params.get('action') ? { action: params.get('action') } : params.get('request') ? { request: params.get('request') } : null;
       const trace = wanted ? await traceOf(entry, wanted) : null;
-      return trace ? { status: 200, body: trace } : { status: 404, body: { error: 'That action is not recorded in this session.' } };
+      return trace ? { status: 200, body: trace } : { status: 404, body: { error: t('service.actionMissing') } };
     }
     if (pathname === '/api/structure/search') {
       const query = (params.get('q') ?? '').trim().toLowerCase();
@@ -340,7 +341,7 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
     }
     if (pathname === '/api/structure/card') {
       const card = blockCard(entry.graph, params.get('block') ?? '');
-      if (!card) return { status: 404, body: { error: 'No such block.' } };
+      if (!card) return { status: 404, body: { error: t('service.noBlock') } };
       // Actions of this session that went through the block.
       const members = new Set(entry.graph.nodes.filter(node => node.kind === 'file' && node.block === card.id).map(node => node.id));
       const inBlock = id => members.has(id) || members.has(entry.graph.nodes.find(node => node.id === id)?.file);
@@ -361,30 +362,30 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
         const source = ask('source');
         const item = (await alertsOf(entry, root, source, ask('snapshot'))).find(alert => alert.key === ask('key'));
         card = item ? alertFacts(source, item, entry.graph) : null;
-      } else return { status: 400, body: { error: 'Unknown kind of explanation.' } };
-      if (!card) return { status: 404, body: { error: kind === 'alert' ? 'This finding is no longer there: the project changed.' : 'No such block.' } };
-      if (!ai?.config?.provider) return { status: 200, body: { active: false, problem: ai?.config?.problem ?? 'No AI model is configured.' } };
+      } else return { status: 400, body: { error: t('service.unknownExplanation') } };
+      if (!card) return { status: 404, body: { error: kind === 'alert' ? t('service.findingGone') : t('service.noBlock') } };
+      if (!ai?.config?.provider) return { status: 200, body: { active: false, problem: ai?.config?.problem ?? t('service.noModel') } };
       // Privacy (phase 10, step 5): switched off, or «No AI».
       const reason = blocked('explanations', ai.config);
       if (reason) return { status: 200, body: { active: false, blocked: reason, problem: blockedText(reason) } };
       const request = explanationRequest(card, entry.graph.project, kind);
       const who = { active: true, provider: ai.config.provider, model: ai.config.model, local: Boolean(ai.config.local) };
       if (preview) return { status: 200, body: { ...who, ...request, cached: explanations.get(`${request.hash}:${ai.config.model}`) ?? null } };
-      if (method !== 'POST') return { status: 405, body: { error: 'Use POST.' } };
-      if (body?.hash !== request.hash) return { status: 409, body: { error: 'The facts changed since the preview. Look at the new request before sending it.' } };
+      if (method !== 'POST') return { status: 405, body: { error: t('service.usePost') } };
+      if (body?.hash !== request.hash) return { status: 409, body: { error: t('service.factsChanged') } };
       const key = `${request.hash}:${ai.config.model}`;
       if (!explanations.has(key)) {
         try { explanations.set(key, await explainCard({ config: ai.config, request, card, complete: guarded('explanations', ai.complete) })); } catch (error) {
-          return { status: 502, body: { error: `The model did not answer: ${String(error?.message ?? error).slice(0, 200)}` } };
+          return { status: 502, body: { error: t('service.noAnswer', { reason: String(error?.message ?? error).slice(0, 200) }) } };
         }
       }
       return { status: 200, body: { ...who, hash: request.hash, ...explanations.get(key) } };
     }
     if (pathname === '/api/structure/source') {
       const result = excerpt(root, entry.graph, params.get('file'), Number(params.get('line')));
-      return result ? { status: 200, body: result } : { status: 404, body: { error: 'Code unavailable for this file.' } };
+      return result ? { status: 200, body: result } : { status: 404, body: { error: t('service.noCode') } };
     }
-    return { status: 404, body: { error: 'Not found.' } };
+    return { status: 404, body: { error: t('service.notFound') } };
   }
 
   // The lines around a proof. Only files of the graph, never .env files or
@@ -414,6 +415,6 @@ function readInWorker(root) {
     let answered = false;
     worker.once('message', message => { answered = true; resolve(message); worker.terminate(); });
     worker.once('error', error => { if (!answered) resolve({ error: String(error?.message ?? error) }); });
-    worker.once('exit', code => { if (!answered) resolve({ error: `The reader stopped (code ${code}).` }); });
+    worker.once('exit', code => { if (!answered) resolve({ error: t('service.readerStopped', { code }) }); });
   });
 }

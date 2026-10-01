@@ -13,7 +13,7 @@ import { LABELS } from './sentences.mjs';
 import { answerQuestion, complete, createPurposes, describeConfig, loadConfig, questionRequest } from './ai.mjs';
 import { blocked, blockedText, clearLog, privacyState, readLog, writeSettings } from './privacy.mjs';
 import { createStructureService, isLoopback } from './structure/service.mjs';
-import { privacyPageWithText, planPageWithText } from './structure/text.mjs';
+import { TEXT, t, privacyPageWithText, planPageWithText } from './structure/text.mjs';
 import { maskKeys } from './structure/node/modules.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -79,7 +79,7 @@ function readDetail(run) {
 }
 async function body(request) {
   let text = '';
-  for await (const chunk of request) { text += chunk; if (text.length > 100_000) throw new Error('Request too large.'); }
+  for await (const chunk of request) { text += chunk; if (text.length > 100_000) throw new Error(t('panel.api.tooLarge')); }
   return JSON.parse(text || '{}');
 }
 
@@ -98,7 +98,7 @@ function requestWithDigest(id) {
 const server = http.createServer(async (request, response) => {
   // Local only: a page served from another name (DNS rebinding) is refused.
   if (!new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(request.headers.host)) {
-    json(response, 403, { error: 'Access allowed from 127.0.0.1 only.' });
+    json(response, 403, { error: t('panel.api.localOnly') });
     return;
   }
   const url = new URL(request.url, 'http://localhost');
@@ -155,7 +155,7 @@ const server = http.createServer(async (request, response) => {
       if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
         || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
         || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {
-        json(response, 403, { error: 'Request refused.' });
+        json(response, 403, { error: t('panel.api.refused') });
         return;
       }
       const answer = await structure.handle(url.pathname, url.searchParams, post ? { method: 'POST', body: await body(request) } : {});
@@ -170,19 +170,19 @@ const server = http.createServer(async (request, response) => {
     // a page elsewhere cannot send without a preflight) and a local origin.
     if (request.method === 'POST' && (request.headers['x-codetac'] !== '1'
       || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin)))) {
-      json(response, 403, { error: 'Request refused.' });
+      json(response, 403, { error: t('panel.api.refused') });
       return;
     }
     if (url.pathname === '/api/detalhe') {
       const run = request.method === 'POST' ? null : url.searchParams.get('run');
       if (request.method !== 'POST') {
         const spec = readDetail(run);
-        json(response, spec ? 200 : 404, spec ?? { error: 'Unknown recording.' });
+        json(response, spec ? 200 : 404, spec ?? { error: t('panel.api.unknownRecording') });
         return;
       }
       const change = await body(request);
       const spec = readDetail(change.run);
-      if (!spec) { json(response, 404, { error: 'Unknown recording.' }); return; }
+      if (!spec) { json(response, 404, { error: t('panel.api.unknownRecording') }); return; }
       const same = item => item.file === change.file && item.line === change.line && (item.function ?? '') === (change.function ?? '');
       if (change.op === 'limpar') { spec.functions = []; spec.files = []; }
       else if (change.op === 'ficheiro') spec.files = spec.files.includes(change.file) ? spec.files.filter(file => file !== change.file) : [...spec.files, change.file];
@@ -208,18 +208,18 @@ const server = http.createServer(async (request, response) => {
     if ((url.pathname === '/api/pergunta' || url.pathname === '/api/pergunta/preview') && request.method === 'POST') {
       const asked = await body(request);
       const dossier = requestWithDigest(String(asked.requestId ?? ''));
-      if (!dossier) { json(response, 404, { error: 'Request not found.' }); return; }
+      if (!dossier) { json(response, 404, { error: t('panel.api.requestNotFound') }); return; }
       const question = { config: ai, dossier, stepId: String(asked.stepId ?? ''), question: String(asked.question ?? ''), readCode: source };
       if (url.pathname.endsWith('/preview')) {
-        if (!ai.provider) { json(response, 200, { available: false, text: 'Questions need an AI model (see “AI explanations” in the README).' }); return; }
+        if (!ai.provider) { json(response, 200, { available: false, text: t('ai.question.noModel') }); return; }
         const reason = blocked('questions', ai);
         if (reason) { json(response, 200, { available: false, blocked: reason, text: blockedText(reason) }); return; }
         const preview = questionRequest(question);
         json(response, 200, preview ? { available: true, system: preview.system, text: preview.text, hash: preview.hash, model: ai.model, provider: ai.provider,
-          local: Boolean(ai.local), valuesSent: preview.valuesSent, valuesWithheld: preview.valuesWithheld } : { available: true, known: false, text: 'This step was not found in the dossier.' });
+          local: Boolean(ai.local), valuesSent: preview.valuesSent, valuesWithheld: preview.valuesWithheld } : { available: true, known: false, text: t('ai.question.notFound') });
         return;
       }
-      if (typeof asked.hash !== 'string') { json(response, 409, { error: 'Look at the request before sending it.' }); return; }
+      if (typeof asked.hash !== 'string') { json(response, 409, { error: t('panel.api.lookFirst') }); return; }
       json(response, 200, await answerQuestion({ ...question, hash: asked.hash }));
       return;
     }
@@ -233,7 +233,7 @@ const server = http.createServer(async (request, response) => {
         if (wanted[1] === 'requests') return { dossiers: [requestWithDigest(id)].filter(Boolean) };
         const action = await actionWithDigest(id);
         if (!action) return { dossiers: [] };
-        if (action.pending) throw new Error('The action is still in progress.');
+        if (action.pending) throw new Error(t('panel.api.actionPending'));
         return { action, dossiers: action.timeline.flatMap(item => item.server ?? []) };
       }));
       return;
@@ -241,34 +241,36 @@ const server = http.createServer(async (request, response) => {
     const action = url.pathname.match(/^\/api\/actions\/(.+)$/);
     if (action) {
       const dossier = await actionWithDigest(decodeURIComponent(action[1]));
-      json(response, dossier ? 200 : 404, dossier ?? { error: 'Action not recorded yet, or unknown.' });
+      json(response, dossier ? 200 : 404, dossier ?? { error: t('panel.api.actionNotFound') });
       return;
     }
     const match = url.pathname.match(/^\/api\/requests\/(.+)$/);
     if (match) {
       const dossier = requestWithDigest(decodeURIComponent(match[1]));
-      json(response, dossier ? 200 : 404, dossier ?? { error: 'Request not found.' });
+      json(response, dossier ? 200 : 404, dossier ?? { error: t('panel.api.requestNotFound') });
       return;
     }
     if (url.pathname === '/api/source') {
       const result = source(url.searchParams.get('run'), url.searchParams.get('file'),
         Number(url.searchParams.get('line')), Number(url.searchParams.get('end')) || null);
-      json(response, result ? 200 : 404, result ?? { error: 'Code unavailable for this file.' });
+      json(response, result ? 200 : 404, result ?? { error: t('panel.api.noCode') });
       return;
     }
-    json(response, 404, { error: 'Not found.' });
+    json(response, 404, { error: t('panel.api.notFound') });
   } catch (error) {
     json(response, 500, { error: String(error.message) });
   }
 });
-server.listen(port, '127.0.0.1', () => console.log(`CodeTAC panel: http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => console.log(t('panel.api.listening', { url: `http://127.0.0.1:${port}` })));
 
+// Text put into the page's markup.
+const html = value => String(value).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const page = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CodeTAC — dossiers</title>
+<title>${html(t('panel.page.title'))}</title>
 <style>
 :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e3de; --accent:#2f5bd3;
   --db:#0f7b5f; --http:#6a4bc4; --ia:#b4531f; --mail:#1f73b4; --pay:#9b2c86; --file:#7a6a12; --auth:#3d6b2f; --error:#c0392b; --code:#f1f0ec;
@@ -364,11 +366,11 @@ pre.code span.idle { opacity:.45; }
 </style>
 </head>
 <body>
-<header><h1>CodeTAC</h1><div class="tabs"><button data-tab="actions" class="on">Actions</button><button data-tab="requests">Requests without an action</button></div>
-<label class="runs">Recording <select id="run"></select></label> <a class="privacy" href="/privacy" title="What CodeTAC can send to an AI model, with a switch for each">Privacy</a></header>
+<header><h1>CodeTAC</h1><div class="tabs"><button data-tab="actions" class="on">${html(t('panel.page.actions'))}</button><button data-tab="requests">${html(t('panel.page.requestsWithoutAction'))}</button></div>
+<label class="runs">${html(t('panel.page.recording'))} <select id="run"></select></label> <a class="privacy" href="/privacy" title="${html(t('panel.page.privacyTitle'))}">${html(t('panel.page.privacy'))}</a></header>
 <main>
-  <nav id="list"><p class="empty" style="padding:14px">Loading…</p></nav>
-  <article id="detail"><p class="empty">Choose an action or a request on the left to see what it did.</p></article>
+  <nav id="list"><p class="empty" style="padding:14px">${html(t('panel.page.loading'))}</p></nav>
+  <article id="detail"><p class="empty">${html(t('panel.page.choose'))}</p></article>
 </main>
 <script>
 const params = new URLSearchParams(location.search);
@@ -385,12 +387,20 @@ const time = at => at ? new Date(at).toLocaleTimeString('en-GB') : '';
 const LABELS = ${JSON.stringify(LABELS)};
 const label = value => LABELS[value] ?? value;
 const kindLabel = kind => kind === 'http' ? 'HTTP' : label(kind);
+// The sentences, from src/structure/text/<language>.json (panel.page): t('key', { hole: value }).
+const TEXT = ${JSON.stringify(TEXT.panel.page).replace(/</g, '\\u003c')};
+const t = (key, vars = {}) => {
+  let value = key.split('.').reduce((node, part) => node?.[part], TEXT);
+  if (value && typeof value === 'object' && 'other' in value) value = vars.count === 1 ? value.one : value.other;
+  if (typeof value !== 'string') return key;
+  return value.replace(/\\{(\\w+)\\}/g, (hole, name) => (name in vars ? String(vars[name]) : hole));
+};
 
 const runSelect = document.getElementById('run');
 async function loadRuns() {
   const runs = await (await fetch('/api/runs')).json();
   const current = runSelect.value;
-  runSelect.innerHTML = runs.map(r => '<option value="' + esc(r.run) + '">' + esc(r.run) + ' (' + (r.actions ? r.actions + ' actions, ' : '') + r.requests + ' requests)</option>').join('');
+  runSelect.innerHTML = runs.map(r => '<option value="' + esc(r.run) + '">' + esc(r.run) + ' (' + (r.actions ? t('runActions', { count: r.actions }) + ', ' : '') + t('runRequests', { count: r.requests }) + ')</option>').join('');
   if (current && runs.some(r => r.run === current)) runSelect.value = current;
 }
 runSelect.addEventListener('change', () => { selected = null; loadList(); });
@@ -405,19 +415,19 @@ async function loadList() {
   const run = encodeURIComponent(runSelect.value);
   if (tab === 'actions') {
     const actions = await (await fetch('/api/actions?run=' + run)).json();
-    if (!actions.length) { list.innerHTML = '<p class="empty" style="padding:14px">No actions in this recording yet. Use the app in the browser: each click shows up here.</p>'; return; }
+    if (!actions.length) { list.innerHTML = '<p class="empty" style="padding:14px">' + t('noActions') + '</p>'; return; }
     list.innerHTML = actions.map(a => '<button data-type="action" data-id="' + esc(a.actionId) + '"' + (selected && selected.id === a.actionId ? ' class="active"' : '') + '>' +
       '<div class="label">' + esc(a.label) + '</div>' +
-      '<div class="meta">' + esc(a.page || '') + ' · ' + a.serverRequests + (a.serverRequests === 1 ? ' server request' : ' server requests') +
-      (a.pending ? ' · in progress' : '') + ' · ' + time(a.at) + '</div></button>').join('');
+      '<div class="meta">' + esc(a.page || '') + ' · ' + t('serverRequests', { count: a.serverRequests }) +
+      (a.pending ? ' · ' + t('inProgress') : '') + ' · ' + time(a.at) + '</div></button>').join('');
     return;
   }
   const requests = await (await fetch('/api/requests?semAcao=1&run=' + run)).json();
-  if (!requests.length) { list.innerHTML = '<p class="empty" style="padding:14px">No requests without an action in this recording.</p>'; return; }
+  if (!requests.length) { list.innerHTML = '<p class="empty" style="padding:14px">' + t('noRequests') + '</p>'; return; }
   list.innerHTML = requests.map(r => '<button data-type="request" data-id="' + esc(r.requestId) + '"' + (selected && selected.id === r.requestId ? ' class="active"' : '') + '>' +
     '<div class="req-line"><span class="method">' + esc(r.method) + '</span><span class="path">' + esc(r.path) + '</span></div>' +
     '<div class="meta"><span class="' + (r.status >= 400 ? 'status-bad' : 'status-ok') + '">' + esc(r.status ?? '…') + '</span> · ' + ms(r.durationMs) +
-    ' · ' + (r.functions ?? 0) + ' functions · ' + (r.boundaries ?? 0) + ' boundaries · ' + time(r.at) + '</div></button>').join('');
+    ' · ' + t('functionsCount', { count: r.functions ?? 0 }) + ' · ' + t('boundariesCount', { count: r.boundaries ?? 0 }) + ' · ' + time(r.at) + '</div></button>').join('');
 }
 list.addEventListener('click', event => {
   const button = event.target.closest('button[data-id]');
@@ -431,30 +441,6 @@ function show() {
   return selected.type === 'action' ? loadAction(selected.id) : loadDossier(selected.id);
 }
 
-function describe(step) {
-  const r = step.result || {};
-  const parts = [];
-  if (step.kind === 'base-de-dados') {
-    parts.push((step.operation || '') + (step.tables && step.tables.length ? ' on ' + step.tables.join(', ') : ''));
-    if (r.rows != null) parts.push(r.rows + (r.rows === 1 ? ' row' : ' rows'));
-    if (r.affectedRows != null) parts.push(r.affectedRows + ' changed');
-  } else if (step.kind === 'email' || step.kind === 'mensagem') {
-    parts.push('to ' + (step.to || []).join(', ') + (step.subject ? ' — “' + step.subject + '”' : ''));
-  } else if (step.kind === 'ia') {
-    const model = r.model || step.model;
-    parts.push(step.provider + (model ? ' · ' + model : ''));
-    if (r.usage) parts.push((r.usage.input ?? '?') + ' + ' + (r.usage.output ?? '?') + ' tokens');
-    if (step.costUsd != null) parts.push('~US$ ' + step.costUsd.toFixed(4) + ' (estimated)');
-  } else if (step.kind === 'pagamento') {
-    parts.push(step.operation + ' · ' + label(step.mode) + ' mode' + (step.amount ? ' · ' + step.amount + ' ' + (step.currency || '') : ''));
-  } else if (step.kind === 'ficheiros') {
-    parts.push((step.provider || '') + ' · ' + label(step.operation || '') + (step.bucket ? ' · ' + step.bucket : '') + (step.bytes ? ' · ' + step.bytes + ' bytes' : ''));
-  } else {
-    parts.push((step.method || '') + ' ' + (step.host || '') + (step.path || ''));
-  }
-  if (r.status != null) parts.push('status ' + r.status);
-  return parts.filter(Boolean).join(' · ');
-}
 function relative(root, file) { return root && file && file.startsWith(root + '/') ? file.slice(root.length + 1) : file; }
 // Grouped view: one row per step with its purpose sentence; groups and
 // functions with steps inside open with the arrow.
@@ -462,11 +448,11 @@ function relative(root, file) { return root && file && file.startsWith(root + '/
 const stepData = new Map();
 // Work done after the response was sent (FastAPI BackgroundTasks, teardown).
 function afterTag(n) {
-  return n.afterResponse ? ' <span class="tag" title="Ran after the response was sent to the browser (for example, background tasks).">after the response</span>' : '';
+  return n.afterResponse ? ' <span class="tag" title="' + t('afterTitle') + '">' + t('after') + '</span>' : '';
 }
 function editorLink(file, line) {
   if (!aiConfig || !aiConfig.editor || !file || file[0] !== '/') return '';
-  return '<a class="mini" href="' + esc(aiConfig.editor + '://file' + encodeURI(file) + ':' + (line || 1) + ':1') + '" title="Open in the editor at line ' + esc(line) + '">open in editor</a>';
+  return '<a class="mini" href="' + esc(aiConfig.editor + '://file' + encodeURI(file) + ':' + (line || 1) + ':1') + '" title="' + t('openInEditorTitle', { line: esc(line) }) + '">' + t('openInEditor') + '</a>';
 }
 function asked(c, n) {
   const spec = detailSpecs[c.run];
@@ -480,39 +466,39 @@ function short(value) {
 function valuesHtml(n, pad) {
   const d = n.detail;
   const args = d.args.map(a => esc(a.name) + ' = ' + esc(short(a.value))).join(', ');
-  const out = 'returned' in d ? 'returned ' + esc(short(d.returned)) : '<span style="color:var(--error)">threw ' + esc(short(d.threw)) + '</span>';
-  return '<div class="values" ' + pad + '><span class="tag k-detalhe">values</span>' + (args ? 'input: ' + args + ' · ' : 'no arguments · ') + out +
-    ' · ' + d.lines.length + (d.lines.length === 1 ? ' line run' : ' lines run') + '</div>';
+  const out = 'returned' in d ? t('returned', { value: esc(short(d.returned)) }) : '<span style="color:var(--error)">' + t('threw', { value: esc(short(d.threw)) }) + '</span>';
+  return '<div class="values" ' + pad + '><span class="tag k-detalhe">' + t('values') + '</span>' + (args ? t('input', { args }) + ' · ' : t('noArguments') + ' · ') + out +
+    ' · ' + t('linesRun', { count: d.lines.length }) + '</div>';
 }
 function rowHtml(n, c, depth, open) {
   const pad = 'style="padding-left:' + (4 + depth * 18) + 'px"';
   const valuesPad = 'style="padding-left:' + (28 + depth * 18) + 'px"';
   const inner = n.type === 'group' ? n.children : (n.children || []);
-  const caret = inner.length ? '<button class="caret" aria-label="open or close">' + (open ? '▾' : '▸') + '</button>' : '<span class="caret"></span>';
+  const caret = inner.length ? '<button class="caret" aria-label="' + t('openOrClose') + '">' + (open ? '▾' : '▸') + '</button>' : '<span class="caret"></span>';
   let row;
   if (n.type !== 'group') stepData.set(n.id, { node: n, c });
   if (n.type === 'group') {
-    row = '<div class="step grp' + (n.errors ? ' warn' : '') + '" ' + pad + '>' + caret + '<span class="body"><span class="tag k-grupo">' + n.count + ' steps</span><span class="sent">' + esc(n.sentence) + '</span></span><span class="time">' + ms(n.durationMs) + '</span></div>';
+    row = '<div class="step grp' + (n.errors ? ' warn' : '') + '" ' + pad + '>' + caret + '<span class="body"><span class="tag k-grupo">' + t('steps', { count: n.count }) + '</span><span class="sent">' + esc(n.sentence) + '</span></span><span class="time">' + ms(n.durationMs) + '</span></div>';
   } else if (n.type === 'function') {
     // Without a line (a template whose lines could not be mapped): the file only.
-    const where = n.file ? relative(c.root, n.file) + (n.line != null ? ':' + n.line : ' (no lines)') : '';
+    const where = n.file ? relative(c.root, n.file) + (n.line != null ? ':' + n.line : ' (' + t('noLines') + ')') : '';
     // A function with nothing inside is named in its parent's sentence ("calls …"):
     // the grouped view leaves it out; "Show all" shows it in place.
     const internal = depth > 0 && !inner.length && !n.error && !n.detail;
     const on = asked(c, n);
     row = '<div class="step fn' + (n.error ? ' error' : '') + (internal ? ' internal' : '') + '" ' + pad + ' data-step="' + esc(n.id) + '">' + caret +
       '<span class="body"><span class="sent" data-node="' + esc(n.id) + '" data-facts="' + esc(n.purpose.text) + '">' + esc(n.purpose.text) + '</span>' +
-      '<span class="where" title="' + esc(where) + '">' + esc(n.function) + (where ? ' · ' + esc(where.split('/').pop()) : '') + '</span>' + (n.error ? ' <span class="tag" style="color:var(--error)">error</span>' : '') +
-      (n.opaque ? ' <span class="tag" title="This part runs, but CodeTAC cannot see what it does inside.">opaque</span>' : '') + afterTag(n) +
-      (n.opaque ? '' : '<span class="acts"><button class="mini' + (on ? ' on' : '') + '" data-detalhe="' + esc(n.id) + '" title="' + (on ? 'Detail requested: the next run records the values. Click to turn it off.' : 'Record the input and output values and the lines run of this function, from the next action on') + '">' + (on ? 'detail on' : 'request detail') + '</button>' +
+      '<span class="where" title="' + esc(where) + '">' + esc(n.function) + (where ? ' · ' + esc(where.split('/').pop()) : '') + '</span>' + (n.error ? ' <span class="tag" style="color:var(--error)">' + t('error') + '</span>' : '') +
+      (n.opaque ? ' <span class="tag" title="' + t('opaqueTitle') + '">' + t('opaque') + '</span>' : '') + afterTag(n) +
+      (n.opaque ? '' : '<span class="acts"><button class="mini' + (on ? ' on' : '') + '" data-detalhe="' + esc(n.id) + '" title="' + t(on ? 'detailOnTitle' : 'detailRequestTitle') + '">' + t(on ? 'detailOn' : 'requestDetail') + '</button>' +
       editorLink(n.file, n.line) + planLink(n, c) + '</span>') + '</span><span class="time">' + ms(n.durationMs) + '</span></div>' + (n.detail ? valuesHtml(n, valuesPad) : '');
   } else {
     const r = n.result || {};
     row = '<div class="step boundary' + (n.error || r.error ? ' error' : '') + '" ' + pad + ' data-step="' + esc(n.id) + '">' + caret + '<span class="body"><span class="tag k-' + esc(n.kind) + '">' + esc(kindLabel(n.kind)) + '</span>' + afterTag(n) +
       '<span class="sent" data-node="' + esc(n.id) + '" data-facts="' + esc(n.purpose.text) + '">' + esc(n.purpose.text) + '</span>' +
       (n.sql ? '<span class="detail sql">' + esc(n.sql) + '</span>' : '') +
-      (r.promptExcerpt || n.promptExcerpt ? '<span class="detail">prompt: “' + esc(r.promptExcerpt || n.promptExcerpt) + '”</span>' : '') +
-      (r.answerExcerpt ? '<span class="detail">answer: “' + esc(r.answerExcerpt) + '”</span>' : '') +
+      (r.promptExcerpt || n.promptExcerpt ? '<span class="detail">' + t('prompt', { text: esc(r.promptExcerpt || n.promptExcerpt) }) + '</span>' : '') +
+      (r.answerExcerpt ? '<span class="detail">' + t('answer', { text: esc(r.answerExcerpt) }) + '</span>' : '') +
       '</span><span class="time">' + ms(n.durationMs) + '</span></div>';
   }
   if (!inner.length) return row;
@@ -528,7 +514,7 @@ function planLink(n, c) {
   if (rel === n.file) return '';
   const target = selected && selected.type === 'action' ? 'action=' + encodeURIComponent(selected.id) : 'request=' + encodeURIComponent(c.req);
   const url = '/structure?' + (embed ? 'embed=1&' : '') + 'run=' + encodeURIComponent(c.run) + '&' + target + '&focus=' + encodeURIComponent(rel + '#' + n.function + '@' + n.line);
-  return ' <a class="mini" href="' + esc(url) + '" title="Show this step on the plan of the project, with the whole action lit">see on plan</a>';
+  return ' <a class="mini" href="' + esc(url) + '" title="' + t('seeOnPlanTitle') + '">' + t('seeOnPlan') + '</a>';
 }
 function nodesHtml(nodes, c, depth, forced) {
   return nodes.map(n => rowHtml(n, c, depth, forced === false ? false : n.type === 'group' ? false : busy(n))).join('');
@@ -547,9 +533,9 @@ function detailStateHtml(run) {
   const spec = detailSpecs[run];
   if (!spec || (!spec.functions.length && !spec.files.length)) return '';
   const items = spec.functions.map(f => esc(f.function || '?') + ' <span class="where">' + esc(String(f.file).split('/').pop()) + ':' + f.line + '</span>')
-    .concat(spec.files.map(f => 'the whole file <span class="where">' + esc(String(f).split('/').pop()) + '</span>'));
-  return '<p class="detail-state"><span class="tag k-detalhe">detail on</span>' + items.join(', ') +
-    ' — applies from the next action, with the app running under CodeTAC. <button class="mini" data-limpar="' + esc(run) + '">turn all off</button></p>';
+    .concat(spec.files.map(f => t('wholeFile') + ' <span class="where">' + esc(String(f).split('/').pop()) + '</span>'));
+  return '<p class="detail-state"><span class="tag k-detalhe">' + t('detailOn') + '</span>' + items.join(', ') +
+    ' — ' + t('appliesNext') + ' <button class="mini" data-limpar="' + esc(run) + '">' + t('turnAllOff') + '</button></p>';
 }
 async function changeDetail(change) {
   const response = await fetch('/api/detalhe', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify(change) });
@@ -562,32 +548,22 @@ async function changeDetail(change) {
 function effectsHtml(e) {
   const lasting = e.items.filter(i => !['sem-alteracao', 'leitura-externa', 'custo'].includes(i.category));
   const other = e.items.filter(i => ['sem-alteracao', 'leitura-externa', 'custo'].includes(i.category));
-  return '<section class="box effects"><h3>Lasting effects</h3>' +
+  return '<section class="box effects"><h3>' + t('lastingEffects') + '</h3>' +
     (lasting.length ? '<ul>' + lasting.map(i => '<li>' + esc(i.text) + '</li>').join('') + '</ul>' : '<p class="note" style="margin:0">' + esc(e.none) + '</p>') +
-    (other.length ? '<h3 style="margin-top:8px">No lasting effect</h3><ul class="meta">' + other.map(i => '<li>' + esc(i.text) + '</li>').join('') + '</ul>' : '') +
+    (other.length ? '<h3 style="margin-top:8px">' + t('noLastingEffect') + '</h3><ul class="meta">' + other.map(i => '<li>' + esc(i.text) + '</li>').join('') + '</ul>' : '') +
     '<p class="note" style="margin:6px 0 0">' + esc(e.unseen) + '</p></section>';
 }
 // Phase 5: the diagnostic codes, in plain words.
-const REASONS = {
-  'module-transform-failed': 'files that could not be prepared: they run normally, but their functions are not shown',
-  'source-map-unreadable': 'files with an unreadable source map: they run normally, but their functions are not shown',
-  'eval-code-transform-failed': 'bundler-generated code that could not be prepared: its functions are not shown',
-  'constructor-skipped': 'class constructors: they run, but are not shown in the sequence',
-  'generator-skipped': 'generators: they run, but are not shown in the sequence',
-  'parameter-redeclaration-skipped': 'functions that redeclare a parameter: they run, but are not shown in the sequence',
-  'direct-eval-skipped': 'functions with a direct eval: they run, but are not shown in the sequence',
-  'template-lines-unmapped': 'templates whose lines could not be linked to the file: shown as a single step, without lines',
-};
+const REASONS = TEXT.reasons;
 function minimalHtml(d) {
   if (d.level !== 'minimo') return '';
-  return '<p class="minimal"><b>Minimal mode.</b> The project’s functions are not being followed' + (d.reason ? ' (' + esc(d.reason) + ')' : '') +
-    '. Shown: the requests, the boundaries (database, HTTP, email, files…) and what happened in the browser. To find out more: <code>codetac diagnose</code>.</p>';
+  return '<p class="minimal"><b>' + t('minimalTitle') + '</b> ' + t('minimalBody', { reason: d.reason ? ' (' + esc(d.reason) + ')' : '', command: '<code>codetac diagnose</code>' }) + '</p>';
 }
 function limitsHtml(limitations, extra) {
   const items = limitations.map(l => '<li>' + esc(REASONS[l.reason] || l.reason) + ' (' + l.count + ')</li>').concat(extra || []);
   if (!items.length) return '';
-  return '<section class="box"><h3>What CodeTAC cannot see</h3><ul>' + items.join('') +
-    '</ul><p class="note" style="margin:6px 0 0">What is missing here was not necessarily skipped by the app: some parts run but are not shown.</p></section>';
+  return '<section class="box"><h3>' + t('cannotSee') + '</h3><ul>' + items.join('') +
+    '</ul><p class="note" style="margin:6px 0 0">' + t('cannotSeeNote') + '</p></section>';
 }
 
 async function loadDossier(id) {
@@ -597,11 +573,11 @@ async function loadDossier(id) {
   await loadDetail(d.request.run);
   const q = d.request.queryKeys.length ? '?' + d.request.queryKeys.map(k => esc(k) + '=…').join('&') : '';
   let html = '<h2 class="mono">' + esc(d.request.method) + ' ' + esc(d.request.path) + q + '</h2>' +
-    '<p class="note">Status ' + esc(d.request.status ?? 'in progress') + ' · ' + ms(d.request.durationMs) + ' · ' + time(d.request.at) +
-    ' · level ' + esc(label(d.level)) + (d.level === 'minimo' ? ': requests and boundaries' : ': project functions and boundaries') + ', without argument or return values.</p>';
+    '<p class="note">' + t('status', { status: esc(d.request.status ?? t('inProgress')) }) + ' · ' + ms(d.request.durationMs) + ' · ' + time(d.request.at) +
+    ' · ' + t('levelLine', { level: esc(label(d.level)), what: t(d.level === 'minimo' ? 'levelMinimal' : 'levelFull') }) + '</p>';
   html += minimalHtml(d) + '<p id="ai"></p>' + TOOLBAR + detailStateHtml(d.request.run);
-  if (!d.steps.length) html += '<p class="empty">No project function or boundary observed in this request.</p>';
-  else if (d.level !== 'minimo' && !d.steps.some(s => s.type === 'function')) html += '<p class="note">No project function was observed in this request, only boundaries. The request may have been handled by libraries only, or by code CodeTAC cannot follow (<code>codetac diagnose</code> explains).</p>';
+  if (!d.steps.length) html += '<p class="empty">' + t('noSteps') + '</p>';
+  else if (d.level !== 'minimo' && !d.steps.some(s => s.type === 'function')) html += '<p class="note">' + t('onlyBoundaries', { command: '<code>codetac diagnose</code>' }) + '</p>';
   html += digestHtml(d) + effectsHtml(d.digest.effects) + limitsHtml(d.limitations) + '<div id="code"></div>';
   detail.innerHTML = html;
   startPurposes('requests', id);
@@ -609,7 +585,7 @@ async function loadDossier(id) {
 
 // AI purpose sentences, when a model is configured: they replace the fixed
 // sentence as they arrive; the fixed one stays as the facts beside it.
-const TOOLBAR = '<div class="toolbar"><button data-all="open">Show all</button><button data-all="close">Grouped view</button></div>';
+const TOOLBAR = '<div class="toolbar"><button data-all="open">' + t('showAll') + '</button><button data-all="close">' + t('grouped') + '</button></div>';
 let aiConfig = null;
 let purposeTimer = null;
 const known = {};
@@ -619,18 +595,18 @@ async function startPurposes(kind, id) {
   const box = document.getElementById('ai');
   if (!box) return;
   if (!aiConfig.active) {
-    box.textContent = 'Fixed sentences, built only from the recorded facts' + (aiConfig.problem ? ' (' + aiConfig.problem + ')' : ' (no AI model configured).');
+    box.textContent = t('fixed') + (aiConfig.problem ? ' (' + aiConfig.problem + ')' : ' (' + t('noModel') + ').');
     return;
   }
   const r = await (await fetch('/api/' + kind + '/' + encodeURIComponent(id) + '/finalidades')).json();
-  if (r.blocked) { box.textContent = 'Fixed sentences, built only from the recorded facts. ' + r.blockedText; return; }
+  if (r.blocked) { box.textContent = t('fixed') + '. ' + r.blockedText; return; }
   known[id] = r.purposes;
   applyPurposes(r.purposes);
-  const who = aiConfig.model + (aiConfig.local ? ' (local model: nothing leaves this computer)' : ' (' + aiConfig.provider + ': redacted code excerpts are sent)');
+  const who = aiConfig.model + ' (' + (aiConfig.local ? t('localModel') : t('remoteModel', { provider: aiConfig.provider })) + ')';
   const rejected = Object.values(r.purposes).filter(p => p.rejected).length;
   box.textContent = r.finished
-    ? 'Sentences written by ' + who + ' and checked against the facts' + (rejected ? '; ' + rejected + (rejected === 1 ? ' rejected one kept' : ' rejected ones kept') + ' the fixed sentence' : '') + '.' + (r.errors.length ? ' Failures: ' + r.errors.join('; ') : '')
-    : 'Writing sentences with ' + who + '… ' + r.done + (r.total != null ? ' of ' + r.total : '');
+    ? t('writtenBy', { who }) + (rejected ? '; ' + t('rejectedKept', { count: rejected }) : '') + '.' + (r.errors.length ? ' ' + t('failures', { list: r.errors.join('; ') }) : '')
+    : t('writing', { who, done: r.done }) + (r.total != null ? ' ' + t('of', { total: r.total }) : '');
   if (!r.finished && selected && selected.id === id) purposeTimer = setTimeout(() => startPurposes(kind, id), 1200);
 }
 function applyPurposes(map) {
@@ -640,11 +616,11 @@ function applyPurposes(map) {
     el.dataset.applied = '1';
     if (p.source === 'ia') {
       const boundary = el.closest('.boundary');
-      el.innerHTML = esc(p.text) + '<span class="src-ia" title="Written by the AI model from the code and the facts; checked against the facts.">AI</span>' +
+      el.innerHTML = esc(p.text) + '<span class="src-ia" title="' + t('aiTitle') + '">' + t('ai') + '</span>' +
         (boundary ? ' <span class="where">' + esc(el.dataset.facts) + '</span>' : '');
-      el.title = 'Recorded facts: ' + el.dataset.facts;
+      el.title = t('recordedFacts', { facts: el.dataset.facts });
     } else if (p.rejected) {
-      el.insertAdjacentHTML('beforeend', '<span class="src-ia src-rej" title="' + esc('AI sentence rejected (' + p.rejected + '): “' + p.proposed + '”') + '">AI rejected</span>');
+      el.insertAdjacentHTML('beforeend', '<span class="src-ia src-rej" title="' + esc(t('aiRejectedTitle', { reason: p.rejected, proposed: p.proposed })) + '">' + t('aiRejected') + '</span>');
     }
   }
 }
@@ -664,7 +640,7 @@ function componentsHtml(list, verb) {
   if (!own.length && !other) return '';
   return '<li>' + verb + ': ' + (own.length ? own.map(c => '<b>' + esc(c.name) + '</b>' + (c.count > 1 ? ' (' + c.count + '×)' : '') +
     ' <span class="where">' + esc(c.origin.short) + ':' + c.origin.line + '</span>').join(', ') : '') +
-    (other ? (own.length ? ' · ' : '') + '<span class="where">+' + other + ' from the framework or libraries</span>' : '') + '</li>';
+    (other ? (own.length ? ' · ' : '') + '<span class="where">' + t('fromFramework', { count: other }) + '</span>' : '') + '</li>';
 }
 let actionTimer = null;
 async function loadAction(id) {
@@ -672,15 +648,15 @@ async function loadAction(id) {
   const response = await fetch('/api/actions/' + encodeURIComponent(id));
   const d = await response.json();
   if (d.error) {
-    detail.innerHTML = '<p class="empty">' + esc(d.error) + ' Trying again…</p>';
+    detail.innerHTML = '<p class="empty">' + esc(d.error) + ' ' + t('tryingAgain') + '</p>';
     actionTimer = setTimeout(() => loadAction(id), 1500);
     return;
   }
   const run = d.run;
   if (!aiConfig) aiConfig = await (await fetch('/api/config')).json();
   await loadDetail(run);
-  let html = '<h2>' + esc(d.label) + '</h2><p class="summary" data-node="action" data-facts="' + esc(d.digest.summary) + '">' + esc(d.digest.summary) + '</p><p class="note">' + time(d.startedAt) + (d.durationMs ? ' · action of ' + ms(d.durationMs) : '') +
-    ' · in the browser: element, component, handler and requests (not each function) · on the server: level ' + esc(label(d.level)) + '</p>';
+  let html = '<h2>' + esc(d.label) + '</h2><p class="summary" data-node="action" data-facts="' + esc(d.digest.summary) + '">' + esc(d.digest.summary) + '</p><p class="note">' + time(d.startedAt) + (d.durationMs ? ' · ' + t('actionOf', { duration: ms(d.durationMs) }) : '') +
+    ' · ' + t('actionNote', { level: esc(label(d.level)) }) + '</p>';
   html += minimalHtml(d) + '<p id="ai"></p>' + TOOLBAR + detailStateHtml(run);
   const explained = new Set();  // origin notes already explained in full in this action
   for (const item of d.digest.timeline) {
@@ -688,58 +664,57 @@ async function loadAction(id) {
       html += '<div class="node closed"><div class="step grp"><button class="caret">▸</button><span class="body"><span class="tag k-grupo">' + item.items.length + '</span><span class="sent">' + esc(item.sentence) + '</span></span><span class="time"></span></div>' +
         '<div class="kids">' + item.items.map(i => '<div class="step plain" style="padding-left:28px"><span class="body"><span class="where">' + esc(i.browser.method) + ' ' + esc(i.browser.path) + '</span></span><span class="time">' + ms(i.browser.durationMs) + '</span></div>').join('') + '</div></div>';
     } else if (item.type === 'trigger') {
-      const t = item.trigger;
-      const c = t.component || {};
+      const trigger = item.trigger;
+      const c = trigger.component || {};
       const place = c.origin && c.origin.project ? c.origin : c.project ? c.project.origin : c.origin;
-      const via = c.project ? ' · ' + esc(c.project.via) + ' (library)' + (c.project.name ? ' used in ' + esc(c.project.name) : '') : '';
-      const verb = t.event === 'submit' ? 'submit of ' : t.event === 'change' ? 'change in ' : 'click on ';
-      html += '<div class="step plain src" style="padding-left:6px"' + srcAttrs(run, place, 3) + '><span><span class="tag k-browser">browser</span><span class="name">' +
-        verb + esc(d.label) + '</span> ' + whereHtml(place) +
-        '<span class="detail">page ' + esc(item.page && item.page.path) + (c.name ? ' · component ' + esc(c.name) : '') + via + '</span></span><span class="time"></span></div>';
-      const handlers = [t.handler, t.submit && t.submit.handler].filter(Boolean);
+      const via = c.project ? ' · ' + esc(c.project.via) + ' (' + t('library') + ')' + (c.project.name ? ' ' + t('usedIn', { name: esc(c.project.name) }) : '') : '';
+      const verb = trigger.event === 'submit' ? 'submitOf' : trigger.event === 'change' ? 'changeIn' : 'clickOn';
+      html += '<div class="step plain src" style="padding-left:6px"' + srcAttrs(run, place, 3) + '><span><span class="tag k-browser">' + t('browser') + '</span><span class="name">' +
+        t(verb, { label: esc(d.label) }) + '</span> ' + whereHtml(place) +
+        '<span class="detail">' + t('page', { path: esc(item.page && item.page.path) }) + (c.name ? ' · ' + t('component', { name: esc(c.name) }) : '') + via + '</span></span><span class="time"></span></div>';
+      const handlers = [trigger.handler, trigger.submit && trigger.submit.handler].filter(Boolean);
       for (const h of handlers) {
-        html += '<div class="step plain" style="padding-left:24px"><span><span class="name">handler <b>' + esc(h.name) + '</b></span>' +
+        html += '<div class="step plain" style="padding-left:24px"><span><span class="name">' + t('handler', { name: '<b>' + esc(h.name) + '</b>' }) + '</span>' +
           '<span class="where">' + esc(h.prop || (h.source === 'dom' ? 'addEventListener' : '')) + '</span></span><span class="time"></span></div>';
       }
-      if (!handlers.length) html += '<div class="step plain" style="padding-left:24px"><span class="detail">No handler found on this element (native browser behaviour).</span></div>';
+      if (!handlers.length) html += '<div class="step plain" style="padding-left:24px"><span class="detail">' + t('noHandler') + '</span></div>';
     } else if (item.type === 'request') {
       const b = item.browser;
       const chainHtml = (b.chain || []).map(f => '<span class="step src" style="display:inline;padding:0 2px"' + srcAttrs(run, { project: true, file: f.file, line: f.line }, 3) + '>' +
         '<span class="name">' + esc(f.fn) + '</span> <span class="where">' + esc(f.short) + ':' + esc(f.line ?? '?') + '</span></span>').join(' → ');
-      const via = b.libraries && b.libraries.length ? ' <span class="where">via ' + b.libraries.map(esc).join(', ') + '</span>' : '';
-      html += '<div class="cross browser"><span class="tag k-browser">browser → ' + (b.sameOrigin ? 'server' : esc(b.host)) + '</span><span class="name">' +
+      const via = b.libraries && b.libraries.length ? ' <span class="where">' + t('via', { list: b.libraries.map(esc).join(', ') }) + '</span>' : '';
+      html += '<div class="cross browser"><span class="tag k-browser">' + t('browserTo', { target: b.sameOrigin ? t('server') : esc(b.host) }) + '</span><span class="name">' +
         esc(b.method) + ' ' + esc(b.path) + (b.queryKeys && b.queryKeys.length ? '?' + b.queryKeys.map(k => esc(k) + '=…').join('&') : '') + '</span> ' +
-        '<span class="where">' + (b.status != null ? 'status ' + b.status : b.error ? 'failed' : 'no response') + ' · ' + ms(b.durationMs) + '</span>' +
-        (chainHtml || via ? '<div class="meta">called by: ' + (chainHtml || '<span class="where">(no position resolved in the project)</span>') + via + '</div>' : '') + '</div>';
+        '<span class="where">' + (b.status != null ? t('statusLower', { status: b.status }) : t(b.error ? 'failed' : 'noResponse')) + ' · ' + ms(b.durationMs) + '</span>' +
+        (chainHtml || via ? '<div class="meta">' + t('calledBy', { list: chainHtml || '<span class="where">(' + t('noPosition') + ')</span>' }) + via + '</div>' : '') + '</div>';
       const note = originNote(item, d.origin, explained.has(item.probable ? 'provavel' : 'sem'));
       if (note) explained.add(item.probable ? 'provavel' : 'sem');
       html += note + serverHtml(item.server, b.sameOrigin, b);
     } else if (item.type === 'navigation') {
-      const text = item.kind === 'page exit' || item.kind === 'saída da página' ? 'left ' + esc(item.path) + ' (the browser loads a new document)' : esc(label(item.kind)) + ' → ' + esc(item.path);
-      html += '<div class="step plain"><span><span class="tag k-browser">navigation</span><span class="name">' + text + '</span></span><span class="time"></span></div>';
+      const text = item.kind === 'page exit' || item.kind === 'saída da página' ? t('left', { path: esc(item.path) }) : esc(label(item.kind)) + ' → ' + esc(item.path);
+      html += '<div class="step plain"><span><span class="tag k-browser">' + t('navigation') + '</span><span class="name">' + text + '</span></span><span class="time"></span></div>';
     } else if (item.type === 'document') {
-      html += '<div class="cross"><span class="tag k-browser">new page</span><span class="name">' + esc(item.page && item.page.path) + '</span></div>';
+      html += '<div class="cross"><span class="tag k-browser">' + t('newPage') + '</span><span class="name">' + esc(item.page && item.page.path) + '</span></div>';
       html += serverHtml(item.server, true);
     } else if (item.type === 'screen') {
       const s = item.screen || {};
       const parts = [];
-      if (s.added || s.removed) parts.push((s.added || 0) + ' elements added, ' + (s.removed || 0) + ' removed');
-      if (s.text) parts.push(s.text + ' texts changed');
-      if (s.attributes) parts.push(s.attributes + ' attributes changed');
-      if (s.title) parts.push('page title changed');
-      const lines = [componentsHtml(s.stateChanged, 'state changed in'), componentsHtml(s.mounted, 'appeared'), componentsHtml(s.unmounted, 'disappeared')].join('');
-      html += '<div class="cross browser"><span class="tag k-browser">screen</span><span class="name">' + (parts.length ? esc(parts.join(' · ')) : 'no visible change observed') + '</span>' +
+      if (s.added || s.removed) parts.push(t('elementsChanged', { added: s.added || 0, removed: s.removed || 0 }));
+      if (s.text) parts.push(t('textsChanged', { count: s.text }));
+      if (s.attributes) parts.push(t('attributesChanged', { count: s.attributes }));
+      if (s.title) parts.push(t('titleChanged'));
+      const lines = [componentsHtml(s.stateChanged, t('stateChangedIn')), componentsHtml(s.mounted, t('appeared')), componentsHtml(s.unmounted, t('disappeared'))].join('');
+      html += '<div class="cross browser"><span class="tag k-browser">' + t('screen') + '</span><span class="name">' + (parts.length ? esc(parts.join(' · ')) : t('noVisibleChange')) + '</span>' +
         (lines ? '<ul class="meta" style="margin:4px 0 0;padding-left:18px">' + lines + '</ul>' : '') +
-        '<div class="meta">action closed: ' + esc(label(item.closedBy || '')) + '</div></div>';
+        '<div class="meta">' + t('actionClosed', { reason: esc(label(item.closedBy || '')) }) + '</div></div>';
     } else if (item.type === 'unmatched') {
-      html += '<div class="cross"><span class="tag k-servidor">server</span><span class="name">requests received with this action but not reported by the browser</span></div>';
+      html += '<div class="cross"><span class="tag k-servidor">' + t('server') + '</span><span class="name">' + t('unmatched') + '</span></div>';
       html += serverHtml(item.server, true);
     }
   }
   html += effectsHtml(d.digest.effects);
-  const extra = ['<li>In the browser, functions are not followed one by one: shown are the element, the component, the handler and the project functions on the way to each request.</li>',
-    '<li>Requests started while the action is open are attributed to it, even when they come from a timer on the page.</li>'];
-  if (!d.browserSeen) extra.push('<li>The browser did not report this action.</li>');
+  const extra = ['<li>' + t('browserNotFollowed') + '</li>', '<li>' + t('timerAttributed') + '</li>'];
+  if (!d.browserSeen) extra.push('<li>' + t('browserSilent') + '</li>');
   html += limitsHtml(d.limitations, extra) + '<div id="code"></div>';
   const scroll = detail.scrollTop;
   detail.innerHTML = html;
@@ -759,27 +734,23 @@ function originNote(item, pageOrigin, brief) {
   try { page = new URL(pageOrigin).hostname; } catch {}
   const name = b.host.replace(/:\\d+$/, '').replace(/^\\[|\\]$/g, '');
   const local = ['localhost', '127.0.0.1', '::1', page].includes(name);
-  const proxy = ' For an exact link, use the development server’s proxy (in Vite, <code>server.proxy</code>).';
-  if (item.probable && brief) return '<p class="note probable"><b>Probable link</b> (as above).</p>';
-  if (!item.probable && local && brief) return '<p class="note probable"><b>No link to the server</b> (as above).</p>';
-  if (item.probable) {
-    return '<p class="note probable"><b>Probable link.</b> The request went to another origin (' + esc(b.host) + '), where CodeTAC cannot mark it without changing the app: ' +
-      'it was linked to the request that server received from this page with the same method and path, at the same time (identical simultaneous requests may be swapped).' + proxy + '</p>';
-  }
+  const proxy = ' ' + t('proxyTip', { option: '<code>server.proxy</code>' });
+  if (item.probable && brief) return '<p class="note probable"><b>' + t('probableLink') + '</b> (' + t('asAbove') + ').</p>';
+  if (!item.probable && local && brief) return '<p class="note probable"><b>' + t('noLink') + '</b> (' + t('asAbove') + ').</p>';
+  if (item.probable) return '<p class="note probable"><b>' + t('probableLink') + '.</b> ' + t('probableBody', { host: esc(b.host) }) + proxy + '</p>';
   if (!local) return '';
-  return '<p class="note probable"><b>No link to the server.</b> The request went to another origin (' + esc(b.host) + ') and CodeTAC did not find it on that server: ' +
-    'it may not be observed (start it with CodeTAC too).' + proxy + '</p>';
+  return '<p class="note probable"><b>' + t('noLink') + '.</b> ' + t('noLinkBody', { host: esc(b.host) }) + proxy + '</p>';
 }
 
 function serverHtml(list, sameOrigin, browser) {
   if (!list || !list.length) {
-    return sameOrigin ? '<div class="server-part"><p class="note" style="margin:4px 0">The server did not record this request (served without capture, for example as a static file or by another process).</p></div>' : '';
+    return sameOrigin ? '<div class="server-part"><p class="note" style="margin:4px 0">' + t('notRecorded') + '</p></div>' : '';
   }
   const same = d => browser && list.length === 1 && browser.method === d.request.method && browser.path === d.request.path && browser.status === d.request.status;
   // A part with nothing inside (a CORS preflight, the hop of a proxy) takes one line.
-  const empty = '<p class="note" style="margin:4px 0">No project function or boundary in this request.</p>';
-  return list.map(d => '<div class="server-part">' + (same(d) ? (d.steps.length ? '' : empty) : '<div class="meta"><span class="tag k-servidor">server</span>' + esc(d.request.method) + ' ' + esc(d.request.path) +
-    ' · status ' + esc(d.request.status ?? 'in progress') + ' · ' + ms(d.request.durationMs) + (d.steps.length ? '' : ' · no project functions or boundaries') + '</div>') +
+  const empty = '<p class="note" style="margin:4px 0">' + t('noStepsHere') + '</p>';
+  return list.map(d => '<div class="server-part">' + (same(d) ? (d.steps.length ? '' : empty) : '<div class="meta"><span class="tag k-servidor">' + t('server') + '</span>' + esc(d.request.method) + ' ' + esc(d.request.path) +
+    ' · ' + t('statusLower', { status: esc(d.request.status ?? t('inProgress')) }) + ' · ' + ms(d.request.durationMs) + (d.steps.length ? '' : ' · ' + t('noStepsShort')) + '</div>') +
     (d.steps.length ? digestHtml(d) : '') + '</div>').join('');
 }
 
@@ -849,31 +820,31 @@ async function openStep(id) {
   if (n.type === 'function' && n.opaque) {
     // Nothing to show inside: no code, no values.
     html += '<h3>' + esc(n.function) + (n.file ? ' — ' + esc(relative(c.root, n.file)) : '') + '</h3>' +
-      '<p class="note" style="margin:2px 0 6px">' + esc(n.purpose.text) + '. The time and the outcome (error or not) are real; what happens inside is not visible.</p>';
+      '<p class="note" style="margin:2px 0 6px">' + esc(n.purpose.text) + '. ' + t('opaqueNote') + '</p>';
   } else if (n.type === 'function') {
     const params = new URLSearchParams({ run: c.run, file: n.file, line: n.line, end: n.endLine ?? '' });
-    const result = n.line == null ? { error: 'No lines: CodeTAC could not link this step to the lines of the file.' }
+    const result = n.line == null ? { error: t('noLinesError') }
       : await (await fetch('/api/source?' + params)).json();
     const on = asked(c, n);
     const wholeFile = (detailSpecs[c.run] || { files: [] }).files.includes(n.file);
     html += '<h3>' + esc(n.function) + ' — ' + esc(result.file || relative(c.root, n.file)) + (n.line != null ? ':' + n.line : '') + ' ' + editorLink(n.file, n.line ?? 1) + '</h3>' +
       '<p class="note" style="margin:2px 0 6px">' + esc(n.purpose.text) + '</p>' +
-      '<div class="toolbar"><button data-detalhe="' + esc(n.id) + '">' + (on && !wholeFile ? 'Turn off detail for this function' : 'Request detail for this function') + '</button>' +
-      '<button data-ficheiro="' + esc(n.file) + '" data-run="' + esc(c.run) + '">' + (wholeFile ? 'Turn off detail for the file' : 'Request detail for the whole file') + '</button></div>';
+      '<div class="toolbar"><button data-detalhe="' + esc(n.id) + '">' + t(on && !wholeFile ? 'detailFunctionOff' : 'detailFunctionOn') + '</button>' +
+      '<button data-ficheiro="' + esc(n.file) + '" data-run="' + esc(c.run) + '">' + t(wholeFile ? 'detailFileOff' : 'detailFileOn') + '</button></div>';
     if (n.detail) {
       const d = n.detail;
-      html += '<p class="note" style="margin:6px 0 2px">Values recorded in this call (after secrets were redacted):</p><pre class="code values-full">' +
+      html += '<p class="note" style="margin:6px 0 2px">' + t('valuesRecorded') + '</p><pre class="code values-full">' +
         esc(JSON.stringify({ input: Object.fromEntries(d.args.map(a => [a.name, a.value])), ...('returned' in d ? { returned: d.returned } : { threw: d.threw }) }, null, 2)) + '</pre>' +
-        '<p class="note" style="margin:6px 0 2px">In green, the lines that ran in this call; dimmed, the lines of the function that did not run.</p>';
+        '<p class="note" style="margin:6px 0 2px">' + t('greenLines') + '</p>';
     } else if (on) {
-      html += '<p class="note" style="margin:6px 0 2px">Detail requested: repeat the action to record the values and the lines run.</p>';
+      html += '<p class="note" style="margin:6px 0 2px">' + t('detailRepeat') + '</p>';
     }
     html += result.error ? '<p class="note">' + esc(result.error) + '</p>' : codeHtml(result, n.detail ? n.detail.lines : null);
   } else {
     html += '<h3>' + esc(kindLabel(n.kind)) + ': ' + esc(n.purpose.text) + '</h3>' + (n.sql ? '<pre class="code">' + esc(n.sql) + '</pre>' : '');
   }
-  html += '<div class="ask"><input id="pergunta" data-step="' + esc(id) + '" placeholder="Ask about this step (for example: why does this read this table?)" autocomplete="off">' +
-    '<button data-perguntar="' + esc(id) + '">Ask</button></div><div id="resposta"></div></section>';
+  html += '<div class="ask"><input id="pergunta" data-step="' + esc(id) + '" placeholder="' + esc(t('askPlaceholder')) + '" autocomplete="off">' +
+    '<button data-perguntar="' + esc(id) + '">' + t('ask') + '</button></div><div id="resposta"></div></section>';
   box.innerHTML = html;
   box.scrollIntoView({ block: 'nearest' });
 }
@@ -888,36 +859,36 @@ async function askQuestion(id) {
   try {
     preview = await (await fetch('/api/pergunta/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' },
       body: JSON.stringify({ requestId: c.req, stepId: id, question }) })).json();
-  } catch (error) { out.innerHTML = '<p class="note">Failed: ' + esc(error.message) + '</p>'; return; }
+  } catch (error) { out.innerHTML = '<p class="note">' + t('failedWith', { error: esc(error.message) }) + '</p>'; return; }
   if (preview.error || !preview.available || !preview.hash) {
-    out.innerHTML = '<p class="note">' + esc(preview.error || preview.text) + (preview.blocked ? ' <a href="/privacy">Privacy</a>' : '') + '</p>';
+    out.innerHTML = '<p class="note">' + esc(preview.error || preview.text) + (preview.blocked ? ' <a href="/privacy">' + t('privacy') + '</a>' : '') + '</p>';
     return;
   }
-  out.innerHTML = '<div class="preview"><p class="note" style="margin:0 0 4px">This is exactly what will be sent to ' + esc(preview.model) +
-    (preview.local ? ' (on this computer: nothing leaves it)' : ' (' + esc(preview.provider) + ', outside this computer)') + ':</p>' +
-    '<pre class="code" id="perguntaTexto">' + esc(preview.text) + '</pre><details><summary class="note">Instructions to the model</summary><pre class="code">' + esc(preview.system) + '</pre></details>' +
-    '<button id="enviarPergunta">Send</button> <button id="cancelarPergunta">Cancel</button></div>';
+  out.innerHTML = '<div class="preview"><p class="note" style="margin:0 0 4px">' +
+    t('exactlySent', { model: esc(preview.model), where: preview.local ? t('onThisComputer') : t('outside', { provider: esc(preview.provider) }) }) + '</p>' +
+    '<pre class="code" id="perguntaTexto">' + esc(preview.text) + '</pre><details><summary class="note">' + t('instructions') + '</summary><pre class="code">' + esc(preview.system) + '</pre></details>' +
+    '<button id="enviarPergunta">' + t('send') + '</button> <button id="cancelarPergunta">' + t('cancel') + '</button></div>';
   document.getElementById('cancelarPergunta').addEventListener('click', () => { out.innerHTML = ''; });
   document.getElementById('enviarPergunta').addEventListener('click', () => sendQuestion(id, question, preview.hash));
 }
 async function sendQuestion(id, question, hash) {
   const out = document.getElementById('resposta');
   const { c } = stepData.get(id);
-  out.innerHTML = '<p class="note">Thinking…</p>';
+  out.innerHTML = '<p class="note">' + t('thinking') + '</p>';
   try {
     const response = await fetch('/api/pergunta', { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' },
       body: JSON.stringify({ requestId: c.req, stepId: id, question, hash }) });
     const a = await response.json();
     if (a.error) { out.innerHTML = '<p class="note">' + esc(a.error) + '</p>'; return; }
     if (!a.available || a.changed) { out.innerHTML = '<p class="note">' + esc(a.text) + '</p>'; return; }
-    const source = a.model ? 'Answer from ' + a.model + (a.local ? ' (local model)' : '') + (a.valuesSent ? ', with the recorded values.'
-      : a.valuesWithheld ? ', without the recorded values: they are not sent to models outside this computer (only the lines run and the redacted code).' : '.') : '';
+    const source = a.model ? t('answerFrom', { model: a.model }) + (a.local ? ' (' + t('localModelShort') + ')' : '') + (a.valuesSent ? ', ' + t('withValues')
+      : a.valuesWithheld ? ', ' + t('withoutValues') : '.') : '';
     out.innerHTML = '<div class="answer' + (a.known ? '' : ' unknown') + (a.rejected ? ' rejected' : '') + '">' +
-      (a.rejected ? '<p class="note" style="color:var(--error);margin:0 0 4px">Unverified answer (' + esc(a.rejected) + '). Check it in the code.</p>' : '') +
-      (!a.known ? '<p class="note" style="margin:0 0 4px">The recorded facts are not enough to answer with certainty:</p>' : '') +
+      (a.rejected ? '<p class="note" style="color:var(--error);margin:0 0 4px">' + t('unverified', { reason: esc(a.rejected) }) + '</p>' : '') +
+      (!a.known ? '<p class="note" style="margin:0 0 4px">' + t('notEnough') + '</p>' : '') +
       '<p style="margin:0">' + esc(a.text) + '</p><p class="note" style="margin:4px 0 0">' + esc(source) + '</p></div>';
   } catch (error) {
-    out.innerHTML = '<p class="note">Failed: ' + esc(error.message) + '</p>';
+    out.innerHTML = '<p class="note">' + t('failedWith', { error: esc(error.message) }) + '</p>';
   }
 }
 

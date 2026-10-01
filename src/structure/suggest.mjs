@@ -12,28 +12,14 @@ import { dirname, join } from 'node:path';
 import { dataDirectory } from '../home.mjs';
 import { createRedactor } from '../redact.mjs';
 import { LAYERS } from './config.mjs';
+import { TEXT, t } from './text.mjs';
 
 const VERSION = 1;
 const MAX_FILES = 60;
-const BLOCKS = {
-  interface: 'what the user sees and touches: pages, components, styles, browser code',
-  routes: 'entry points of the server: HTTP routes, API handlers, server setup, server actions',
-  logic: 'the rules of the application: services, calculations, workflows',
-  data: 'access to databases: clients, queries, schemas, migrations',
-  external: 'calls to outside services: AI, payments, email, other APIs',
-  config: 'configuration of the project or the app',
-  utilities: 'small generic helpers used everywhere, types',
-  tests: 'automated tests',
-  unknown: 'none of the above can be told from the path and exports',
-};
-
+// The instructions and the meaning of each block live in text/en.json (ai.suggest).
 export const SYSTEM = [
-  'You classify the files of a web project into blocks, for a map of the project.',
-  'For each file you get only its path and the signatures of what it exports; you never see its code.',
-  'Choose the block the path and exports point to. If they do not tell, answer "unknown": never guess.',
-  'Give a short reason (at most 15 words) based only on the path and the exports.',
-  'Blocks:',
-  ...Object.entries(BLOCKS).map(([block, meaning]) => `- ${block}: ${meaning}`),
+  TEXT.ai.suggest.system,
+  ...Object.entries(TEXT.ai.suggest.blocks).map(([block, meaning]) => `- ${block}: ${meaning}`),
 ].join('\n');
 
 export const SCHEMA = {
@@ -53,10 +39,10 @@ function signature(item) {
 export function suggestionRequest(files, { types = [] } = {}) {
   const chosen = files.slice(0, MAX_FILES);
   const redact = createRedactor();
-  const lines = [`Project types: ${types.length ? types.join(', ') : 'not recognised'}`, '', 'Files:'];
+  const lines = [t('ai.suggest.types', { types: types.length ? types.join(', ') : t('ai.suggest.notRecognised') }), '', t('ai.suggest.files')];
   for (const file of chosen) {
     const exports = (file.exports ?? []).map(signature);
-    lines.push(`- ${file.path}: ${exports.length ? exports.join('; ') : 'exports nothing'}`);
+    lines.push(`- ${file.path}: ${exports.length ? exports.join('; ') : t('ai.suggest.exportsNothing')}`);
   }
   return { text: redact(lines.join('\n')), files: chosen, left: files.length - chosen.length };
 }

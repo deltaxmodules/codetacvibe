@@ -33,7 +33,7 @@ const NEXT_APP = /^(?:src\/)?app\/(?:.*\/)?(?:page|layout|template|loading|error
 const NEXT_ROOT = /^(?:src\/)?(?:middleware|instrumentation|instrumentation-client)\.(?:[jt]s|mjs)$/;
 const NEXT_PAGES = /^(?:src\/)?pages\/.+\.(?:[jt]sx?|mjs)$/;
 const TEST_FILE = /(?:^|\/)(?:__tests__|__mocks__|tests?|e2e|cypress|playwright)\/|\.(?:test|spec|stories|story)\.[cm]?[jt]sx?$|(?:^|\/)(?:test_[^/]*|[^/]*_test|conftest)\.py$/;
-const CONFIG_FILE = /(?:^|\/)[\w.-]+\.config\.[cm]?[jt]s$|(?:^|\/)\.?[\w-]+rc\.[cm]?js$/;
+const CONFIG_FILE = /(?:^|\/)[\w.-]+\.(?:config|preset)\.[cm]?[jt]s$|(?:^|\/)\.?[\w-]+rc\.[cm]?js$/;
 const CONVENTION_FOLDER = /(?:^|\/)(?:pages|routes|api|functions|workers?|scripts|bin|cli|commands|plugins|migrations|seeds?|jobs|cron)\//;
 // Served as they are and loaded by their address (a service worker, a worklet).
 const PUBLIC_FOLDER = /^(?:.*\/)?(?:public|static)\//;
@@ -59,7 +59,15 @@ function packageEntries(root, graph) {
     for (const value of typeof pkg.bin === 'object' && pkg.bin ? Object.values(pkg.bin) : [pkg.bin]) add(value);
     const exported = value => { if (typeof value === 'string') add(value); else if (value && typeof value === 'object') Object.values(value).forEach(exported); };
     exported(pkg.exports);
-    for (const script of Object.values(pkg.scripts ?? {})) {
+    // React Email's CLI (email dev|build|export) loads every template of its folder (emails/, or --dir).
+    const scripts = Object.values(pkg.scripts ?? {}).filter(script => typeof script === 'string');
+    const reactEmail = scripts.find(script => /(?:^|[\s;&|])email\s+(?:dev|build|export)\b/.test(script));
+    if (reactEmail && (pkg.dependencies?.['react-email'] || pkg.devDependencies?.['react-email'])) {
+      const dir = posix.normalize(folder + (reactEmail.match(/--dir[= ]([\w./-]+)/)?.[1] ?? 'emails').replace(/^\.\//, '')).replace(/\/?$/, '/');
+      for (const path of files) if (path.startsWith(dir) && /\.[cm]?[jt]sx?$/.test(path)) found.add(path);
+    }
+    // Scripts, and Prisma's seed command ("prisma": { "seed": "ts-node src/prisma/seed.ts" }).
+    for (const script of [...Object.values(pkg.scripts ?? {}), pkg.prisma?.seed]) {
       if (typeof script !== 'string') continue;
       for (const word of script.split(/[\s;&|=()'"]+/)) if (/\.[cm]?[jt]sx?$/.test(word)) add(word);
     }
@@ -96,6 +104,58 @@ function pythonEntries(root, graph) {
     if (!path.endsWith('.py')) continue;
     try { if (/^if\s+__name__\s*==\s*['"]__main__['"]\s*:/m.test(readFileSync(join(root, path), 'utf8'))) found.add(path); } catch {}
   }
+  // Flask's app named in .flaskenv or .env (FLASK_APP=microblog.py, or a module).
+  for (const folder of folders) {
+    for (const name of ['.flaskenv', '.env']) {
+      let text = '';
+      try { text = readFileSync(join(root, folder, name), 'utf8'); } catch { continue; }
+      const value = text.match(/^\s*(?:export\s+)?FLASK_APP\s*=\s*["']?([\w./:-]+?)(?::[\w()]+)?["']?\s*$/m)?.[1];
+      if (!value) continue;
+      const module = (folder ? `${folder}/` : '') + (value.endsWith('.py') ? value.slice(0, -3) : value.split('.').join('/'));
+      for (const candidate of [`${module}.py`, `${module}/__init__.py`]) if (files.has(candidate)) found.add(candidate);
+    }
+  }
+  return found;
+}
+
+// Python modules another file names in a text, to load them by name
+// (queue.enqueue(f'app.tasks.{name}'), importlib.import_module('app.jobs')): possibly run.
+function pythonByName(root, graph) {
+  const files = new Set(graph.nodes.filter(node => node.kind === 'file').map(node => node.path));
+  const found = new Map();
+  for (const path of files) {
+    if (!path.endsWith('.py')) continue;
+    let text = '';
+    try { text = readFileSync(join(root, path), 'utf8'); } catch { continue; }
+    for (const match of text.matchAll(/\bf?['"]((?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*)\.?(?=\{|['"])/g)) {
+      const parts = match[1].split('.');
+      for (const cut of [parts.length, parts.length - 1]) {
+        const module = parts.slice(0, cut).join('/');
+        const candidate = [`${module}.py`, `${module}/__init__.py`].find(item => files.has(item) && item !== path);
+        if (candidate && !found.has(candidate)) found.set(candidate, { file: path, line: text.slice(0, match.index).split('\n').length });
+      }
+    }
+  }
+  return found;
+}
+
+// The folders of components copied from a library by its CLI (shadcn/ui: the "ui"
+// alias of components.json, "@/components/ui" → src/components/ui/): unused parts are normal there.
+export function vendorFolders(graph, root) {
+  if (!root) return [];
+  const files = graph.nodes.filter(node => node.kind === 'file').map(node => node.path);
+  const found = [];
+  for (const manifest of files.filter(path => path === 'components.json' || path.endsWith('/components.json'))) {
+    let config;
+    try { config = JSON.parse(readFileSync(join(root, manifest), 'utf8')); } catch { continue; }
+    if (!config || typeof config !== 'object' || !(config.aliases || config.$schema?.includes('shadcn'))) continue;
+    const folder = posix.dirname(manifest) === '.' ? '' : `${posix.dirname(manifest)}/`;
+    const alias = typeof config.aliases?.ui === 'string' ? config.aliases.ui : `${config.aliases?.components ?? 'components'}/ui`;
+    const rest = alias.replace(/^[@~]\//, '').replace(/^\.\//, '').replace(/\/$/, '');
+    const candidates = /^[@~]\//.test(alias) ? [`${folder}src/${rest}/`, `${folder}${rest}/`] : [`${folder}${rest}/`];
+    const chosen = candidates.find(candidate => files.some(path => path.startsWith(candidate)));
+    if (chosen) found.push(chosen);
+  }
   return found;
 }
 
@@ -112,6 +172,7 @@ export function entryFiles(graph, root) {
     else if (CONVENTION_FOLDER.test(`/${path}`)) possible.set(path, 'folder');
     else if (ENTRY_NAME.test(`/${path}`)) possible.set(path, 'name');
   }
+  if (root) for (const [path, where] of pythonByName(root, graph)) if (!sure.has(path) && !possible.has(path)) possible.set(path, { note: { message: 'by-name', proof: [where] } });
   // A module chosen at run time can be any file of its folder. One whose path
   // has no fixed folder (import(url), a temporary file, a package name) says
   // nothing about the project's files and leaves them as they are (M141).
@@ -247,7 +308,7 @@ export function duplicates(sources, { minTokens = DEFAULT_THRESHOLDS.duplicateTo
 }
 
 function sourcesOf(graph, root) {
-  const files = graph.nodes.filter(node => node.kind === 'file' && CODE.has(node.language) && !NOT_DEAD_BLOCKS.has(node.block) && !node.path.endsWith('.d.ts') && node.size <= 200_000);
+  const files = graph.nodes.filter(node => node.kind === 'file' && CODE.has(node.language) && !NOT_DEAD_BLOCKS.has(node.block) && node.rule !== 'generated' && !node.path.endsWith('.d.ts') && node.size <= 200_000);
   return files.map(node => {
     let list = tokenCache.get(node.hash);
     if (!list) {
@@ -264,7 +325,8 @@ export function structureSmells(graph, { root = null, thresholds = {} } = {}) {
   const limits = { ...DEFAULT_THRESHOLDS, ...thresholds };
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const files = graph.nodes.filter(node => node.kind === 'file');
-  const code = files.filter(node => CODE.has(node.language));
+  // Generated code (rule generated) is not the user's to fix: no dead files, unused exports, sizes, coupling or duplicates in it.
+  const code = files.filter(node => CODE.has(node.language) && node.rule !== 'generated');
   const imports = graph.edges.filter(edge => edge.kind === 'imports' && edge.from.startsWith('file:') && edge.to.startsWith('file:'));
   const importersOf = new Map();
   for (const edge of imports) { if (!importersOf.has(edge.to)) importersOf.set(edge.to, []); importersOf.get(edge.to).push(edge); }
@@ -275,10 +337,12 @@ export function structureSmells(graph, { root = null, thresholds = {} } = {}) {
   }
 
   const entries = entryFiles(graph, root);
+  const vendor = vendorFolders(graph, root);
+  const copied = path => vendor.some(folder => path.startsWith(folder));
   const dead = new Set();
   for (const file of code) {
     if ((importersOf.get(file.id) ?? []).length || entries.sure.has(file.path)) continue;
-    const doubt = entries.possible.get(file.path);
+    const doubt = copied(file.path) ? 'vendor' : entries.possible.get(file.path);
     dead.add(file.path);
     smells.push({ kind: 'dead-file', certainty: doubt ? 'possible' : 'sure', files: [file.path], box: file.block,
       ...(doubt?.note ? { because: doubt.note.message } : doubt ? { because: doubt } : {}), proof: [{ file: file.path, line: 1 }, ...(doubt?.note?.proof ?? [])] });
@@ -295,7 +359,8 @@ export function structureSmells(graph, { root = null, thresholds = {} } = {}) {
     // wiring, not an export: only functions and classes count there.
     for (const symbol of graph.nodes.filter(node => node.kind === 'symbol' && node.file === file.id && node.exported && !(file.language === 'python' && node.symbolKind === 'variable'))) {
       if ([symbol.name, ...(symbol.exportedAs ?? [])].some(name => taken.has(name))) continue;
-      smells.push({ kind: 'unused-export', certainty: 'sure', files: [file.path], name: symbol.name, box: file.block, proof: [{ file: file.path, line: symbol.line }] });
+      smells.push({ kind: 'unused-export', certainty: copied(file.path) ? 'possible' : 'sure', ...(copied(file.path) ? { because: 'vendor' } : {}),
+        files: [file.path], name: symbol.name, box: file.block, proof: [{ file: file.path, line: symbol.line }] });
     }
   }
 

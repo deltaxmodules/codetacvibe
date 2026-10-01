@@ -11,11 +11,12 @@ import http from 'node:http';
 import { basename, join, resolve } from 'node:path';
 import readline from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
-import { detectProject, describeStart, foreignRuntime } from './detect.mjs';
+import { detectProject, describeStart, foreignRuntime, chooseScript, prismaWithoutTracing } from './detect.mjs';
 import { panelOnPort } from './panel-ping.mjs';
-import { MINIMUM, commandFor, describePythonFolder, environmentOf, interpreters, moveTo, probe, proxyOf, pythonPort, versionBelow } from './detect-python.mjs';
+import { MINIMUM, commandFor, describePythonFolder, environmentOf, interpreters, moveTo, probe, proxyOf, pythonPort, versionBelow, withAskedPort, envAddressesOn } from './detect-python.mjs';
 import { createSummary, follow } from './recording.mjs';
 import { describeFailure, ownError, readTraceback } from './failure.mjs';
+import { t } from './structure/text.mjs';
 
 import { dataDirectory, install as workspace } from './home.mjs';
 
@@ -28,36 +29,7 @@ const seconds = () => `${Math.round((Date.now() - started) / 1000)} s`;
 const say = text => process.stdout.write(`${text}\n`);
 // Output cut short (codetac structure --diff | head): stop quietly, like other commands.
 process.stdout.on('error', error => { if (error.code === 'EPIPE') process.exit(0); throw error; });
-const HELP = `Usage:
-  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)
-  codetac diagnose [folder]                  explains what is and what is not working
-  codetac report [folder]                    saves the diagnosis to a file to attach to an issue
-  codetac structure [folder]                 what the project is made of: its files by block
-  codetac structure [folder] --reclassify <file> <block|auto>
-                                             places a file in a block yourself (saved in codetac.structure.json)
-  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)
-  codetac structure [folder] --snapshot [label]
-                                             saves the structure as it is now, to compare with later (kept outside the project);
-                                             with --predict, first asks what you expect the next change to do, and --diff
-                                             then says what you got right
-  codetac structure [folder] --snapshots     lists the saved snapshots
-  codetac structure [folder] --diff [from] [to]
-                                             what changed in the structure: since the newest snapshot, or between two
-                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)
-  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]
-                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent
-  codetac help                               this help
-  codetac --version                          installed version
-
-Options:
-  --script <name>      package.json script to use (default: dev, start…)
-  --part <folder>      in a project with several parts, which one to start (can repeat)
-  --port <n>           the app's port, if it is not found automatically
-  --panel-port <n>     the panel's port (default 4000)
-  --minimal            do not follow the project's functions (requests and boundaries only)
-  --yes                answer "yes" to the questions (install dependencies, create the .venv…)
-  --no-open            do not open the browser
-  -- <command>         the start command, when it is not found (e.g. -- node server.js)`;
+const HELP = t('run.help');
 
 function parseArgs(argv) {
   const options = { parts: [], command: null, folder: null, sub: null, reclassify: null };
@@ -101,7 +73,7 @@ function parseArgs(argv) {
     }
     else if (arg === '-v' || arg === '--version') options.sub = 'version';
     else if (!options.folder && !arg.startsWith('-')) options.folder = arg;
-    else { say(`Unknown option: ${arg}\n\n${HELP}`); process.exit(2); }
+    else { say(`${t('run.unknownOption', { arg })}\n\n${HELP}`); process.exit(2); }
   }
   return options;
 }
@@ -126,6 +98,23 @@ async function confirm(question, options) {
   return !/^n/i.test(answer);
 }
 
+// Folders one level down that start with Node on their own (a package.json with a
+// start script that needs no other runtime) or are a Python app.
+function startableFolders(root) {
+  const found = [];
+  let entries = [];
+  try { entries = readdirSync(root, { withFileTypes: true }); } catch {}
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    try {
+      const script = chooseScript(JSON.parse(readFileSync(join(root, entry.name, 'package.json'), 'utf8')));
+      if (script && !foreignRuntime(script.command)) found.push(entry.name);
+    } catch {
+      if (existsSync(join(root, entry.name, 'pyproject.toml')) || existsSync(join(root, entry.name, 'requirements.txt'))) found.push(entry.name);
+    }
+  }
+  return found.sort();
+}
 function hasBinary(name) {
   return spawnSync(process.platform === 'win32' ? 'where' : 'which', [name], { stdio: 'ignore' }).status === 0;
 }
@@ -177,9 +166,9 @@ async function ensurePanel(port, avoid) {
     }
     child.kill();
     if (/EADDRINUSE/.test(first)) continue;
-    throw new Error(`The panel did not start: ${first.trim().split('\n').slice(-3).join(' ')}`);
+    throw new Error(t('run.panelDidNotStart', { output: first.trim().split('\n').slice(-3).join(' ') }));
   }
-  throw new Error('No free port found for the panel.');
+  throw new Error(t('run.noFreePort'));
 }
 
 function recordingName(name) {
@@ -225,6 +214,7 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
     const child = spawn(bin, args, { cwd: part.folder, env: { ...env, ...part.env, ...(part.language === 'python' ? environmentOf(part) : {}) }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32',
       shell: process.platform === 'win32' });
     const label = parts.length > 1 ? `[${part.part}] ` : '';
+    child.tail = [];
     const show = chunk => {
       for (const line of String(chunk).split(/\r?\n/)) {
         if (!line.trim()) continue;
@@ -232,6 +222,8 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
         const plain = line.replace(ANSI, '');
         tail.push(`${label}${plain}`);
         if (tail.length > 40) tail.shift();
+        child.tail.push(plain);
+        if (child.tail.length > 12) child.tail.shift();
         for (const match of plain.matchAll(URL_IN_OUTPUT)) if (match[1]) ports.push(Number(match[1]));
         // Watch modes (node --watch, nodemon, tsx watch) keep running after a crash.
         if (CRASHED.test(plain)) child.crashed = true;
@@ -247,8 +239,8 @@ function startApp(parts, { run, panelPort, minimal, reason, root, extraEnv = {} 
     // A command that cannot start (not found, not executable): said in words, never a crash.
     // The exit code is already set (negative), so the waits below see the part as stopped.
     child.on('error', error => {
-      const hint = bin === 'python' ? ' On macOS and Linux it is usually python3 (or the .venv\'s python).' : '';
-      child.spawnError = error.code === 'ENOENT' ? `Could not start "${bin}": the command was not found.${hint}` : `Could not start "${bin}": ${error.message}`;
+      const hint = bin === 'python' ? ` ${t('run.pythonHint')}` : '';
+      child.spawnError = error.code === 'ENOENT' ? t('run.commandNotFound', { bin, hint }) : t('run.couldNotStart', { bin, error: error.message });
       show(child.spawnError);
     });
     child.part = part;
@@ -323,7 +315,7 @@ async function findApp(candidates, panelPort, { children, addresses, warn }) {
         const bound = addresses.get(port) ?? (mine[0].names.find(name => /^127\.0\.0\.1:|^\[::1\]:/.test(name)) ?? mine[0].names[0] ?? '').replace(/:\d+$/, '');
         // '::' (every IPv6 address) too: the other program holds the IPv4 one.
         host = /^\[?::1?\]?$/.test(bound) ? '::1' : '127.0.0.1';
-        warn(port, others[0].command ?? 'another program', host);
+        warn(port, others[0].command ?? t('run.anotherProgram'), host);
       }
     }
     // The internal header keeps these probes out of the recording.
@@ -357,7 +349,7 @@ function pythonSteps(part, { create, skip = [] }) {
   if (part.manager === 'uv' && uv) return { steps: [['uv', ['sync']]], chosen, env: {} };
   if (part.manager === 'poetry' || part.manager === 'pipenv') {
     const tool = part.manager;
-    if (!hasBinary(tool)) return { problem: `The project uses ${tool}, which is not installed on this computer. Install it (for example, pipx install ${tool}) and run the command again.` };
+    if (!hasBinary(tool)) return { problem: t('run.toolMissing', { tool }) };
     // Both keep the environment in the project when asked to: the .venv of DP5.
     const env = tool === 'poetry' ? { POETRY_VIRTUALENVS_IN_PROJECT: 'true' } : { PIPENV_VENV_IN_PROJECT: '1' };
     return { steps: [tool === 'poetry' ? ['poetry', ['install', '--no-root']] : ['pipenv', ['install', '--dev']]], chosen, env };
@@ -369,7 +361,7 @@ function pythonSteps(part, { create, skip = [] }) {
     if (uv) steps.push(['uv', ['venv', '--python', chosen?.executable ?? MINIMUM.join('.'), '.venv']]);
     else {
       chosen ??= found[0] ?? null;
-      if (!chosen) return { problem: 'No Python found on this computer. Install Python 3.12 or newer (python.org or brew install python) and run the command again.' };
+      if (!chosen) return { problem: t('run.noPython') };
       steps.push([chosen.executable, ['-m', 'venv', '.venv']]);
     }
   }
@@ -387,23 +379,23 @@ const shown = ([bin, args], folder) => [bin, ...args].map(token => token.startsW
   .map(token => token.includes(' ') ? `"${token}"` : token).join(' ');
 
 async function preparePython(part, root, options, skip = []) {
-  const label = part.part === '.' ? 'The project' : `The part ${part.part}`;
+  const label = part.part === '.' ? t('run.theProject') : t('run.thePart', { part: part.part });
   const create = !part.python.interpreter;
   const plan = pythonSteps(part, { create, skip });
-  if (plan.problem) { say(`✗ ${label} has no Python environment. ${plan.problem}`); process.exit(2); }
+  if (plan.problem) { say(`✗ ${t('run.noEnvironment', { label })} ${plan.problem}`); process.exit(2); }
   const lines = plan.steps.map(step => step.pyproject ? `${shown(step.install, part.folder)} <pyproject.toml dependencies>` : shown(step, part.folder));
   const why = create
-    ? `${label} has no Python environment (.venv).`
-    : `Dependencies are missing in the ${part.python.source} environment (${part.python.missing.slice(0, 6).join(', ')}${part.python.missing.length > 6 ? '…' : ''}).`;
-  say(`${why} To start, this must run in the folder ${part.folder}:`);
+    ? t('run.noVenv', { label })
+    : t('run.missingDeps', { source: part.python.source, list: `${part.python.missing.slice(0, 6).join(', ')}${part.python.missing.length > 6 ? '…' : ''}` });
+  say(`${why} ${t('run.mustRun', { folder: part.folder })}`);
   for (const line of lines) say(`    ${line}`);
-  if (create && plan.chosen) say(`  (with Python ${plan.chosen.version}${skip.length ? '' : ', the newest on this computer'})`);
-  else if (create && hasBinary('uv') && part.manager !== 'uv') say(`  (uv downloads Python ${MINIMUM.join('.')}: there is no ${MINIMUM.join('.')} or newer on this computer)`);
+  if (create && plan.chosen) say(`  ${t('run.withPython', { version: plan.chosen.version, newest: skip.length ? '' : `, ${t('run.newest')}` })}`);
+  else if (create && hasBinary('uv') && part.manager !== 'uv') say(`  ${t('run.uvDownloads', { version: MINIMUM.join('.') })}`);
   if (!lines.length) return part;
   // A retry with an older Python was already agreed to.
-  const yes = skip.length ? true : await confirm(create ? 'Create the .venv and install the dependencies now?' : 'Install now?', options);
-  if (yes === null) { say('Run those commands, or use --yes for CodeTAC to run them.'); process.exit(2); }
-  if (!yes) { say('Without the dependencies, the app does not start. Run those commands and run codetac again.'); process.exit(2); }
+  const yes = skip.length ? true : await confirm(t(create ? 'run.createVenv' : 'run.installNow'), options);
+  if (yes === null) { say(t('run.runThoseOrYes')); process.exit(2); }
+  if (!yes) { say(t('run.withoutDeps')); process.exit(2); }
   for (const step of plan.steps) {
     let command = step;
     if (step.pyproject) {
@@ -412,7 +404,7 @@ async function preparePython(part, root, options, skip = []) {
       if (!declared.length) continue;
       command = [step.install[0], [...step.install[1], ...declared]];
     }
-    say(`  Running: ${shown(command, part.folder)}`);
+    say(`  ${t('run.running', { command: shown(command, part.folder) })}`);
     // Not the environment of whoever runs codetac: the project's.
     const env = { ...process.env, ...plan.env };
     delete env.VIRTUAL_ENV;
@@ -423,11 +415,11 @@ async function preparePython(part, root, options, skip = []) {
       const older = create && plan.chosen ? interpreters().find(item => !versionBelow(item.version) && item.executable !== plan.chosen.executable
         && ![...skip, plan.chosen.executable].includes(item.executable) && item.version.split('.').slice(0, 2).join('.') !== plan.chosen.version.split('.').slice(0, 2).join('.')) : null;
       if (older) {
-        say(`! The installation failed with Python ${plan.chosen.version} (some pinned dependencies do not exist for it yet). Trying with Python ${older.version}.`);
+        say(`! ${t('run.retryOlderPython', { failed: plan.chosen.version, older: older.version })}`);
         rmSync(join(part.folder, '.venv'), { recursive: true, force: true });
         return preparePython(part, root, options, [...skip, plan.chosen.executable]);
       }
-      say(`✗ Failed (code ${result.status}). See the messages above.`);
+      say(`✗ ${t('run.failedCode', { code: result.status })}`);
       process.exit(1);
     }
   }
@@ -435,12 +427,12 @@ async function preparePython(part, root, options, skip = []) {
     const inGit = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: part.folder, encoding: 'utf8' }).stdout?.trim() === 'true';
     // Git shows the .venv (as untracked) only when nothing ignores it; uv puts a .gitignore inside it.
     if (inGit && spawnSync('git', ['status', '--porcelain', '--', '.venv'], { cwd: part.folder, encoding: 'utf8' }).stdout.trim()) {
-      say('! The .venv is not in .gitignore. Add the line ".venv/" to .gitignore, so it is not sent to the repository.');
+      say(`! ${t('run.venvNotIgnored')}`);
     }
   }
   const again = describePythonFolder(part.folder, root);
-  if (!again?.command) { say('✗ After the installation, I still do not know how to start the app.'); process.exit(1); }
-  if (again.python.missing.length) say(`! Still missing: ${again.python.missing.join(', ')}. Trying to start anyway.`);
+  if (!again?.command) { say(`✗ ${t('run.stillUnknown')}`); process.exit(1); }
+  if (again.python.missing.length) say(`! ${t('run.stillMissing', { list: again.python.missing.join(', ') })}`);
   return { ...again, part: part.part };
 }
 
@@ -450,8 +442,8 @@ function manualPart(project, root, command) {
   const top = project.top?.language === 'python' && project.top.folder === root ? project.top : null;
   if (!top) return { folder: root, part: '.', name: project.name, command, script: null, stack: null, port: null, installed: true, foreign: foreignRuntime(command.join(' ')) };
   const text = command.join(' ');
-  const part = { ...top, installed: true, notes: [], python: { ...top.python, declared: text, declaredSource: 'the given command' },
-    script: { name: 'the given command', command: text } };
+  const part = { ...top, installed: true, notes: [], python: { ...top.python, declared: text, declaredSource: t('run.givenCommand') },
+    script: { name: t('run.givenCommand'), command: text } };
   part.port = pythonPort(root, { command: text, app: top.python.app });
   part.command = commandFor(part, part.port?.value ?? 8000);
   return part;
@@ -460,9 +452,9 @@ function manualPart(project, root, command) {
 // The macOS AirPlay Receiver listens on 5000 (and 7000): Flask's default port.
 function portTakenBy(port, who) {
   if (process.platform === 'darwin' && port === 5000 && /ControlCe|AirPlay/i.test(who ?? '')) {
-    return 'by the macOS AirPlay Receiver (ControlCenter). To use 5000 again, turn off "AirPlay Receiver" in System Settings › General › AirDrop & Handoff';
+    return t('run.takenByAirPlay');
   }
-  return `by another program (${who ?? 'unknown'})`;
+  return t('run.takenBy', { who: who ?? t('run.unknown') });
 }
 
 async function main() {
@@ -470,7 +462,7 @@ async function main() {
   if (options.sub === 'help') { say(HELP); return; }
   if (options.sub === 'version') { say(JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version); return; }
   const folder = resolve(options.folder ?? process.cwd());
-  if (!existsSync(folder)) { say(`The folder ${folder} does not exist.`); process.exit(2); }
+  if (!existsSync(folder)) { say(t('run.noFolder', { folder })); process.exit(2); }
   const root = realpathSync(folder);
   if (options.sub === 'report') {
     // The diagnosis in a file to send with an incident: no code, no values;
@@ -485,8 +477,8 @@ async function main() {
     const file = join(recordings, `report-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
     writeFileSync(file, text);
     say(text);
-    say(`Report saved to ${file.split(homedir()).join('~')}`);
-    say('It contains no code or values from the app: only what is above. Send it with a description of the problem at');
+    say(t('run.reportSaved', { file: file.split(homedir()).join('~') }));
+    say(t('run.reportContents'));
     say('  https://github.com/deltaxmodules/codetacvibe/issues/new');
     return;
   }
@@ -499,7 +491,7 @@ async function main() {
   }
   if (options.sub === 'structure') {
     const { structureCommand } = await import('./structure/cli.mjs');
-    if (options.predict && !options.snapshot) { say('--predict goes with --snapshot: codetac structure --snapshot [label] --predict'); process.exitCode = 2; return; }
+    if (options.predict && !options.snapshot) { say(t('run.predictNeedsSnapshot')); process.exitCode = 2; return; }
     const confirm = interactive ? async question => /^y(es)?$/i.test(String(await ask(question) ?? '').trim()) : null;
     process.exitCode = await structureCommand(root, { reclassify: options.reclassify, suggest: options.suggest, yes: options.yes, confirm,
       snapshot: options.snapshot ?? null, snapshots: options.snapshots ?? false, diff: options.diff ?? null,
@@ -513,7 +505,7 @@ async function main() {
   }
 
   const [major] = process.versions.node.split('.').map(Number);
-  if (major < 24) say(`! This Node is ${process.version}; CodeTAC was made for Node 24 or newer. Trying anyway.`);
+  if (major < 24) say(`! ${t('run.oldNode', { version: process.version })}`);
 
   // 1. How to start the project.
   const project = detectProject(root);
@@ -522,45 +514,56 @@ async function main() {
     parts = [manualPart(project, root, options.command)];
   } else if (options.parts.length) {
     parts = options.parts.map(name => project.parts.find(part => part.part === name || basename(part.folder) === name) ?? (name === '.' ? project.top : null)).filter(Boolean);
-    if (!parts.length) { say(`Part not found: ${options.parts.join(', ')}. Parts: ${project.parts.map(part => part.part).join(', ') || 'none'}.`); process.exit(2); }
+    if (!parts.length) { say(t('run.partNotFound', { parts: options.parts.join(', '), all: project.parts.map(part => part.part).join(', ') || t('run.none') })); process.exit(2); }
   } else if (options.script) {
     const base = project.top ?? project.start[0];
-    if (!base) { say('There is no package.json in this folder to choose a script from.'); process.exit(2); }
+    if (!base) { say(t('run.noPackageForScript')); process.exit(2); }
     parts = [{ ...base, script: { name: options.script, command: '' }, command: [base.runner, 'run', options.script] }];
   }
   say(`CodeTAC · ${project.name} (${root})`);
   if (!parts.length && project.missing.includes('part')) {
-    say('This project has several parts that can be started:');
-    const answer = await ask('Which ones should I start? (numbers separated by commas, or Enter for all)', project.parts.map(describeStart));
+    say(t('run.severalParts'));
+    const answer = await ask(t('run.whichParts'), project.parts.map(describeStart));
     if (answer === null) parts = project.parts;
     else parts = answer ? answer.split(/[\s,]+/).map(n => project.parts[Number(n) - 1]).filter(Boolean) : project.parts;
   }
   if (!parts.length && project.top?.language === 'python') {
     say(project.top.python.django
-      ? 'This project uses Django, which CodeTAC does not support yet (FastAPI and Flask only).'
-      : 'I found a Python project, but not the app: I looked for FastAPI(...) and Flask(...) in the .py files and for commands in the Procfile, Makefile and README.');
+      ? t('run.django')
+      : t('run.pythonAppNotFound'));
   }
   if (!parts.length) {
     const python = project.top?.language === 'python';
     if (!python) say(project.missing.includes('package')
-      ? 'I did not find a package.json or a server file (server.js, index.js…) in this folder.'
-      : 'I did not find a start script (dev, start…) in the package.json.');
+      ? t('run.noPackage')
+      : t('run.noStartScript'));
     const example = python ? 'uvicorn main:app --reload' : 'node server.js';
-    const answer = await ask(`Which command starts the app? (e.g. ${example}, or Enter to quit)`);
-    if (!answer) { say(`Give the command after --, for example: codetac . -- ${example}`); process.exit(2); }
+    const answer = await ask(t('run.whichCommand', { example }));
+    if (!answer) { say(t('run.giveCommand', { example })); process.exit(2); }
     parts = [manualPart(project, root, answer.split(/\s+/))];
   }
+  const absent = [];
   for (const part of parts.filter(part => part.foreign)) {
     // Python started from a Node script inherits the Python captor (PYTHONPATH).
-    if (/^(python3?|uvicorn)$/.test(part.foreign)) say(`! [${part.part}] The script starts Python: CodeTAC observes it if that Python is ${MINIMUM.join('.')} or newer.`);
-    else say(`! [${part.part}] The script uses ${part.foreign}, which is not Node: that part runs, but CodeTAC cannot observe it inside.`);
+    if (/^(python3?|uvicorn)$/.test(part.foreign)) say(`! [${part.part}] ${t('run.scriptStartsPython', { version: MINIMUM.join('.') })}`);
+    else if (!hasBinary(part.foreign.split(' ')[0])) absent.push(part);
+    else say(`! [${part.part}] ${t('run.scriptNotNode', { tool: part.foreign })}`);
+  }
+  // A script that needs a program this computer does not have (bun…): said before starting,
+  // with the folders that start without it.
+  if (absent.length) {
+    for (const part of absent) say(`✗ [${part.part}] ${t('run.scriptNeeds', { command: part.script?.command ?? part.command.join(' '), tool: part.foreign })}`);
+    const others = [...new Set([...parts.filter(part => !absent.includes(part)).map(part => part.part), ...startableFolders(root)])].filter(folder => folder !== '.');
+    say(`  ${t('run.installAndRerun', { tools: [...new Set(absent.map(part => part.foreign))].join(` ${t('steps.and')} `),
+      others: others.length ? `, ${t('run.orStartOnly', { parts: others.map(folder => `--part ${folder}`).join(' ') })}` : '' })}`);
+    process.exit(1);
   }
 
   // 2. Dependencies. Python (DP5): an environment in the project, always asked first.
   for (const [index, part] of parts.entries()) {
     if (part.language === 'python' && !part.installed) parts[index] = await preparePython(part, root, options);
   }
-  for (const part of parts) say(`  Start: ${describeStart(part)}`);
+  for (const part of parts) say(`  ${t('run.start', { start: describeStart(part) })}`);
   for (const part of parts) for (const note of part.notes ?? []) say(`! ${parts.length > 1 ? `[${part.part}] ` : ''}${note}`);
   for (const part of parts.filter(part => part.language !== 'python' && !part.installed)) {
     const manager = part.manager === 'bun' ? 'npm' : part.manager;
@@ -569,25 +572,35 @@ async function main() {
     // without one (or when it is out of date), `npm install --no-package-lock` writes none.
     const locked = manager === 'npm' && existsSync(join(where, 'package-lock.json'));
     const commands = manager !== 'npm' ? [[manager, 'install']] : locked ? [['npm', 'ci'], ['npm', 'install', '--no-package-lock']] : [['npm', 'install', '--no-package-lock']];
-    const yes = await confirm(`The dependencies of ${part.part === '.' ? 'the project' : part.part} are not installed. Install them now with "${commands[0].join(' ')}"?`, options);
-    if (yes === null) { say(`The dependencies are not installed. Run "${commands[0].join(' ')}" in the folder or use --yes.`); process.exit(2); }
+    const yes = await confirm(t('run.installDeps', { part: part.part === '.' ? t('run.theProjectLower') : part.part, command: commands[0].join(' ') }), options);
+    if (yes === null) { say(t('run.depsNotInstalled', { command: commands[0].join(' ') })); process.exit(2); }
     if (!yes) continue;
     let result = null;
     for (const [index, command] of commands.entries()) {
       const [bin, ...args] = runnable(command);
-      if (index) say(`! "${commands[index - 1].join(' ')}" failed (does the package-lock.json not match the package.json?). Trying without the lockfile, without changing it.`);
-      say(`  Installing (${bin} ${args.join(' ')})…`);
+      if (index) say(`! ${t('run.lockfileFailed', { command: commands[index - 1].join(' ') })}`);
+      say(`  ${t('run.installing', { command: `${bin} ${args.join(' ')}` })}`);
       result = spawnSync(bin, args, { cwd: where, stdio: 'inherit', shell: process.platform === 'win32' });
       if (result.status === 0) break;
     }
-    if (result.status !== 0) { say(`✗ The installation failed (code ${result.status}). See the messages above.`); process.exit(1); }
+    if (result.status !== 0) { say(`✗ ${t('run.installFailed', { code: result.status })}`); process.exit(1); }
     for (const other of parts) if ((other.installFolder ?? other.folder) === where || (where === root && !other.installFolder)) other.installed = true;
+  }
+
+  // Prisma 4, 5 or 6.0 without the tracing preview: its operations would be missing, silently.
+  for (const part of parts.filter(part => part.language !== 'python')) {
+    const prisma = prismaWithoutTracing(part.folder, root);
+    if (!prisma) continue;
+    say(`! ${parts.length > 1 ? `[${part.part}] ` : ''}${t('run.prismaNoTracing', { version: prisma.version })}`);
+    say(`  ${t('run.prismaHow', { schema: prisma.schema })}`);
   }
 
   // A Python app gets its port on the command line: a port another program
   // holds (AirPlay on 5000, another API on 8000) is replaced before starting.
   // A Vite proxy that reads the API's port from a variable follows it.
   const extraEnv = {};
+  const asked = withAskedPort(parts, options);
+  if (asked !== parts) { parts = asked; say(`  ${t('run.start', { start: describeStart(parts[0]) })}  (${t('run.portFromOption')})`); }
   for (const [index, part] of parts.entries()) {
     const old = part.port?.value;
     if (part.language !== 'python' || !old || options.command?.length) continue;
@@ -597,24 +610,30 @@ async function main() {
     const proxies = parts.filter(other => other.language !== 'python').map(other => ({ other, proxy: proxyOf(other.folder, other.script?.command) })).filter(item => item.proxy);
     const fixed = proxies.find(item => item.proxy.literal.includes(old) && !item.proxy.variables.some(variable => variable.port === old));
     if (fixed) {
-      say(`✗ Port ${old}, the API's, is already taken ${portTakenBy(old, who)}.`);
-      say(`  The Vite proxy in ${fixed.other.part} sends requests to that port, written in vite.config: if I moved the API to another port, the requests would go to that program.`);
-      say('  Close that program, or change the port in vite.config and in the API start command, and run the command again.');
+      say(`✗ ${t('run.apiPortTaken', { port: old, by: ` ${portTakenBy(old, who)}` })}`);
+      say(`  ${t('run.proxyFixed', { part: fixed.other.part })}`);
+      say(`  ${t('run.closeOrChange')}`);
       process.exit(1);
     }
     const port = await freePort();
     const variable = proxies.flatMap(item => item.proxy.variables).find(item => item.port === old);
     parts[index] = moveTo(part, port);
     if (variable) extraEnv[variable.variable] = String(port);
-    say(`! Port ${old} is already taken ${portTakenBy(old, who)}.`);
-    say(`  Starting ${parts.length > 1 ? `the part ${part.part}` : 'the app'} on port ${port}${variable ? `, and the Vite proxy follows it (variable ${variable.variable})` : ''}.`);
-    say(`  Start: ${describeStart(parts[index])}`);
+    // The frontend's .env may give the API's address (VITE_API_URL=http://localhost:8000):
+    // the variable goes to the frontend with the new port (the environment wins over .env).
+    const addresses = parts.filter(other => other.language !== 'python').flatMap(other => envAddressesOn(other.folder, old).map(item => ({ ...item, part: other.part })));
+    for (const item of addresses) extraEnv[item.variable] = item.value.replace(`:${old}`, `:${port}`);
+    say(`! ${t('run.portTaken', { port: old, by: ` ${portTakenBy(old, who)}` })}`);
+    say(`  ${t('run.startingOn', { what: parts.length > 1 ? t('run.thePartLower', { part: part.part }) : t('run.theApp'), port,
+      proxy: variable ? `, ${t('run.proxyFollows', { variable: variable.variable })}` : '' })}`);
+    for (const item of addresses) say(`  ${t('run.frontendFollows', { variable: item.variable, file: `${item.part === '.' ? '' : `${item.part}/`}${item.file}`, port })}`);
+    say(`  ${t('run.start', { start: describeStart(parts[index]) })}`);
   }
   // Frontend and Python API without a proxy: requests go to another origin (DP3).
   if (parts.some(part => part.language === 'python')) {
     for (const part of parts.filter(part => part.stack === 'Vite' && !proxyOf(part.folder, part.script?.command))) {
-      say(`! [${part.part}] Vite has no proxy for the API: the browser's requests to the API go to another origin, and CodeTAC links them by approximation ("probable link").`);
-      say('  For an exact link, set server.proxy in vite.config.');
+      say(`! [${part.part}] ${t('run.viteNoProxy')}`);
+      say(`  ${t('run.setProxy')}`);
     }
   }
 
@@ -624,14 +643,14 @@ async function main() {
   const panel = await ensurePanel(options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000), predicted);
   const panelUrl = `http://127.0.0.1:${panel.port}`;
   for (const other of panel.others) {
-    say(`! A CodeTAC panel of ${other.version ? `version ${other.version}` : 'an older version'} is running on port ${other.port}; this run uses its own panel (${panel.version}).`);
-    say(`  To close the old one: ${other.pid ? `kill ${other.pid}` : `stop the codetac that started it, or run: lsof -ti tcp:${other.port} -sTCP:LISTEN | xargs kill`}`);
+    say(`! ${t('run.otherPanel', { version: other.version ? t('run.version', { version: other.version }) : t('run.olderVersion'), port: other.port, own: panel.version })}`);
+    say(`  ${t('run.closeOld', { how: other.pid ? `kill ${other.pid}` : t('run.stopOldPanel', { port: other.port }) })}`);
   }
-  say(panel.reused ? `  Panel: ${panelUrl} (already running)` : `  Panel: ${panelUrl}${panel.line ? ` · ${panel.line}` : ''}`);
+  say(panel.reused ? `  ${t('run.panel', { url: panelUrl })} (${t('run.alreadyRunning')})` : `  ${t('run.panel', { url: panelUrl })}${panel.line ? ` · ${panel.line}` : ''}`);
 
   // 4. The application, with the fine capture; minimal mode if it does not start.
   let minimal = Boolean(options.minimal);
-  let reason = minimal ? 'requested with --minimal' : null;
+  let reason = minimal ? t('run.minimalRequested') : null;
   let run = recordingName(project.name) + (minimal ? '-minimal' : '');
   let app = null;
   let found = null;
@@ -640,7 +659,7 @@ async function main() {
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    say('\nStopping the app and the panel…');
+    say(`\n${t('run.stopping')}`);
     cleanup();
     setTimeout(() => { stopAll(app?.children ?? [], 'SIGKILL'); process.exit(0); }, 4000).unref();
     const check = setInterval(() => { if (!running(app?.children ?? []).length) { clearInterval(check); panel.child?.kill(); process.exit(0); } }, 200);
@@ -653,11 +672,11 @@ async function main() {
   const sharedWarning = (port, command, host) => {
     if (warnedShared.has(port)) return;
     warnedShared.add(port);
-    say(`! Port ${port} is also used by another program (${command}). To avoid opening it by mistake, I use the address ${host === '::1' ? '[::1]' : host}.`);
+    say(`! ${t('run.portShared', { port, command, host: host === '::1' ? '[::1]' : host })}`);
   };
   for (let attempt = 0; attempt < 4 && !found; attempt++) {
-    say(`  Recording: ${run}${minimal ? ' (minimal mode)' : ''}`);
-    say('  Starting the app…');
+    say(`  ${t('run.recording', { run })}${minimal ? ` (${t('run.minimalMode')})` : ''}`);
+    say(`  ${t('run.startingApp')}`);
     app = startApp(parts, { run, panelPort: panel.port, minimal, reason, root, extraEnv });
     const summary = createSummary();
     const recording = follow(join(recordings, run), summary.add);
@@ -694,7 +713,7 @@ async function main() {
       if (failed().length) break;
       if (!warned && Date.now() - started > 60_000) {
         warned = true;
-        say(`  … the app has not answered yet (${seconds()}). Some take a while the first time.`);
+        say(`  … ${t('run.notAnsweredYet', { time: seconds() })}`);
       }
     }
     if (found) { app.recording = recording; app.summary = summary; break; }
@@ -717,8 +736,8 @@ async function main() {
     // part is moved.
     if (busy && parts.length > 1) {
       const who = holder(busy);
-      say(`✗ Port ${busy} is already taken${who ? ` by another program (${who})` : ''}, and a part of the app needs it.`);
-      say('  I do not change it myself: the other parts of the app rely on that port. Close that program and run the command again.');
+      say(`✗ ${t('run.portNeeded', { port: busy, by: who ? ` ${t('run.takenBy', { who })}` : '' })}`);
+      say(`  ${t('run.notMoving')}`);
       cleanup();
       process.exit(1);
     }
@@ -729,23 +748,23 @@ async function main() {
       predicted.add(port);
       if (parts[0].language === 'python') {
         parts[0] = moveTo(parts[0], port);
-        say(`! Port ${busy} is already taken ${portTakenBy(busy, who)}. Starting the app on port ${port}.`);
+        say(`! ${t('run.portTaken', { port: busy, by: ` ${portTakenBy(busy, who)}` })} ${t('run.startingAppOn', { port })}`);
       } else {
         extraEnv.PORT = String(port);
-        say(`! Port ${busy} is already taken${who ? ` by another program (${who})` : ''}. Starting the app on port ${port} (PORT variable).`);
+        say(`! ${t('run.portTaken', { port: busy, by: who ? ` ${t('run.takenBy', { who })}` : '' })} ${t('run.startingAppOnVariable', { port })}`);
       }
       run = recordingName(project.name) + (minimal ? '-minimal' : '');
       continue;
     }
     if (busy) {
-      say(`✗ Port ${busy} is still taken${holder(busy) ? ` (${holder(busy)})` : ''} and the app does not accept another through the PORT variable.`);
-      say('  Close the program using that port and run the command again.');
+      say(`✗ ${t('run.stillTaken', { port: busy, who: holder(busy) ? ` (${holder(busy)})` : '' })}`);
+      say(`  ${t('run.closeProgram')}`);
       cleanup();
       process.exit(1);
     }
     if (!stopped.length) {
-      say(`✗ The app did not open any port in ${seconds()}.`);
-      say('  If the app uses a port it does not print in the terminal, give it: codetac . --port <n>');
+      say(`✗ ${t('run.noPort', { time: seconds() })}`);
+      say(`  ${t('run.givePort')}`);
       cleanup();
       process.exit(1);
     }
@@ -756,62 +775,72 @@ async function main() {
     const missing = stopped.find(child => child.spawnError);
     if (missing) {
       say(`✗ ${missing.spawnError}`);
-      say('  Give the command as it is typed in this Terminal: codetac . -- <command>');
+      say(`  ${t('run.giveTypedCommand')}`);
+      cleanup();
+      process.exit(1);
+    }
+    // Exit code 127: the shell did not find a command of the script (bun, a CLI not installed).
+    // Minimal mode would fail the same way; the lines that say it are that part's.
+    const notFound = stopped.find(child => child.exitCode === 127);
+    if (notFound) {
+      say(`✗ ${parts.length > 1 ? `[${notFound.part.part}] ` : ''}${t('run.exit127')}`);
+      for (const line of notFound.tail.slice(-4)) say(`    ${line}`);
+      say(`  ${t('run.installProgram')}`);
       cleanup();
       process.exit(1);
     }
     if (own) {
-      say(`✗ The app itself failed while starting: ${describeFailure({ ...own.child, part: own.child.part.part }, parts.length > 1)}`);
-      say(`  Raised in ${own.where.file}:${own.where.line}, in the app's code (the full error is above). Running without CodeTAC would fail the same way.`);
-      say('  Tip: this is often configuration: a folder, key or service in .env that does not exist on this computer.');
+      say(`✗ ${t('run.appFailed', { failure: describeFailure({ ...own.child, part: own.child.part.part }, parts.length > 1) })}`);
+      say(`  ${t('run.raisedIn', { place: `${own.where.file}:${own.where.line}` })}`);
+      say(`  ${t('run.tipConfig')}`);
       cleanup();
       process.exit(1);
     }
     if (minimal) {
-      say(`✗ The app failed in minimal mode too (${codes}).`);
-      say('  The problem seems to be in the app itself, not in the capture. Last lines:');
+      say(`✗ ${t('run.failedMinimal', { codes })}`);
+      say(`  ${t('run.problemInApp')}`);
       for (const line of app.tail.slice(-12)) say(`    ${line}`);
-      say('  Tip: missing dependencies or environment variables (.env)? "codetac diagnose" helps to find out.');
+      say(`  ${t('run.tipDiagnose')}`);
       cleanup();
       process.exit(1);
     }
     minimal = true;
-    reason = `the app failed to start with the full instrumentation (${codes})`;
+    reason = t('run.fullFailedReason', { codes });
     run = `${run}-minimal`;
-    say(`! The app failed while starting with the full capture (${codes}).`);
-    say('  Starting it again in minimal mode: requests, boundaries and browser, without following the project\'s functions.');
+    say(`! ${t('run.fullFailed', { codes })}`);
+    say(`  ${t('run.retryMinimal')}`);
   }
-  if (!found) { say('✗ The app could not be started.'); cleanup(); process.exit(1); }
+  if (!found) { say(`✗ ${t('run.couldNotStartApp')}`); cleanup(); process.exit(1); }
 
   // 5. Ready: where to go, and the first dossier.
   const appUrl = found.url ?? `http://localhost:${found.port}/`;
   say('');
-  say(`✓ App ready at ${appUrl} (${seconds()})${minimal ? ' · minimal mode' : ''}`);
+  say(`✓ ${t('run.ready', { url: appUrl, time: seconds() })}${minimal ? ` · ${t('run.minimalMode')}` : ''}`);
   // The capture may have chosen the minimal mode by itself (Python below the minimum…).
   // (Unless it was announced before starting: a Python below the minimum.)
   if (!minimal && !parts.some(part => part.python?.version && versionBelow(part.python.version))) {
     const own = app.summary.starts.find(start => start.level === 'minimo');
-    if (own) say(`! Minimal mode: ${own.reason}. The dossiers show requests, boundaries and browser, without the project's functions.`);
+    if (own) say(`! ${t('run.minimalBySelf', { reason: own.reason })}`);
   }
-  if (found.status >= 500) say(`! The home page answered with error ${found.status}. See the app's messages above (missing environment variables?). That request's dossier shows where it failed.`);
+  if (found.status >= 500) say(`! ${t('run.homeError', { status: found.status })}`);
   if (found.page) {
-    say('  Open it in the browser and use it: the CodeTAC bar shows up in the bottom right corner.');
-    say('  Each action (click, form…) gets a dossier; the bar opens it.');
+    say(`  ${t('run.openIt')}`);
+    say(`  ${t('run.eachAction')}`);
     if (!options.noOpen && interactive) openBrowser(appUrl);
   } else if (found.status === 404 && parts.some(part => /Vite|Next|Nuxt|Astro|Svelte|Remix|React|Angular/.test(part.stack ?? ''))) {
     // A frontend that answers 404 on its home page is not an API: it did not find its page.
-    say(`! The home page answered 404. The frontend did not find the page (is index.html missing, or does the root in vite.config point to another folder?).`);
-    say('  That request\'s dossier shows it. Requests to the API are still recorded.');
+    say(`! ${t('run.home404')}`);
+    say(`  ${t('run.home404Dossier')}`);
   } else if (parts.length === 1 && parts[0].stack === 'FastAPI') {
     // The interactive documentation is a page: the bar appears there, and each «Try it out» is an action.
     const docs = `${appUrl}docs`;
-    say('  This app is an API. Each request gets a dossier in the panel.');
-    say(`  To try it in the browser, with the CodeTAC bar: ${docs} ("Try it out" on each route).`);
+    say(`  ${t('run.isApi')}`);
+    say(`  ${t('run.tryDocs', { url: docs })}`);
     if (!options.noOpen && interactive) openBrowser(docs);
   } else {
-    say('  This app answers without HTML pages (an API). Make requests as usual; each request gets a dossier in the panel.');
+    say(`  ${t('run.noPages')}`);
   }
-  say(`  Panel: ${panelUrl}  ·  Stop: Ctrl+C`);
+  say(`  ${t('run.panel', { url: panelUrl })}  ·  ${t('run.stopKeys')}`);
   say('');
   let firstShown = false;
   let silentWarned = false;
@@ -823,24 +852,24 @@ async function main() {
       if (seenActions.has(id)) continue;
       seenActions.add(id);
       const link = `${panelUrl}/?action=${encodeURIComponent(id)}`;
-      if (!firstShown) { firstShown = true; say(`✓ First dossier (${seconds()} since the command): ${link}`); }
-      else say(`• Action recorded: ${link}`);
+      if (!firstShown) { firstShown = true; say(`✓ ${t('run.firstDossier', { time: seconds(), link })}`); }
+      else say(`• ${t('run.actionRecorded', { link })}`);
     }
     // A page that loads but where nothing is clicked yet (or that fails to
     // render): the dossier of its own load.
     if (!firstShown && summary.firstPage && Date.now() - summary.firstPage.seenAt > 8000) {
       firstShown = true;
-      say(`✓ First dossier (${seconds()} since the command), the one of the page load: ${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}`);
-      say('  Each click in the app will get its own dossier.');
+      say(`✓ ${t('run.firstDossierPage', { time: seconds(), link: `${panelUrl}/?request=${encodeURIComponent(summary.firstPage.requestId)}` })}`);
+      say(`  ${t('run.eachClick')}`);
     }
     if (!firstShown && summary.firstRequest && !found.page) {
       firstShown = true;
-      say(`✓ First dossier (${seconds()} since the command): ${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}`);
+      say(`✓ ${t('run.firstDossier', { time: seconds(), link: `${panelUrl}/?request=${encodeURIComponent(summary.firstRequest.requestId)}` })}`);
     }
     if (!silentWarned && !minimal && summary.requests >= 3 && !summary.withFunctions.size && summary.functions === 0) {
       silentWarned = true;
-      say('! Requests have arrived, but no project function was observed. The dossiers show requests and boundaries.');
-      say('  "codetac diagnose" explains why.');
+      say(`! ${t('run.noFunctions')}`);
+      say(`  ${t('run.diagnoseExplains')}`);
     }
     // A part that fails later with a taken port: its requests could reach the
     // other program (a proxy to that port). Everything stops.
@@ -848,14 +877,14 @@ async function main() {
     if (app.state.busy && down.length && parts.length > 1 && !stopping) {
       clearInterval(watcher);
       const who = holder(app.state.busy);
-      say(`✗ A part of the app failed: port ${app.state.busy} is taken${who ? ` by another program (${who})` : ''}.`);
-      say('  Stopping the app, so its requests do not reach that program. Close it and run the command again.');
+      say(`✗ ${t('run.partFailedPort', { port: app.state.busy, by: who ? ` ${t('run.takenBy', { who })}` : '' })}`);
+      say(`  ${t('run.stoppingForPort')}`);
       stop();
       return;
     }
     if (!running(app.children).length && !stopping) {
       clearInterval(watcher);
-      say('The app has stopped.');
+      say(t('run.stopped'));
       panel.child?.kill();
       process.exit(0);
     }

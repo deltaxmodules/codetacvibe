@@ -10,7 +10,8 @@
   const config = window.__CODETAC_CONFIG__ || {};
   // The Structure sentences, from src/structure/text/<language>.json (sent with
   // the config), escaped for the markup they go into.
-  const barText = key => String((config.text || {})[key] ?? key).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const rawText = key => String((config.text || {})[key] ?? key);
+  const barText = key => rawText(key).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const ENDPOINT = '/__codetac/events';
   const HEADER = 'x-codetac-action';
   const COOKIE = 'codetac_action';
@@ -531,7 +532,7 @@
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}' +
       '.debt{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.debt[hidden]{display:none}</style>' +
       '<div class="row"><button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
-      '<button class="pill main" part="pill" title="CodeTAC: click to see the dossier of the last action"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
+      '<button class="pill main" part="pill" title="' + barText('pillTitle') + '"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
     shadow.querySelector('.pill.main').addEventListener('click', () => { if (shown && view === 'structure') { view = 'action'; shown.remove(); shown = null; } toggleSheet(); });
     shadow.querySelector('.pill.structure').addEventListener('click', () => {
       if (shown && view === 'structure') { shown.remove(); shown = null; return; }
@@ -604,7 +605,7 @@
       if (!frame) return;
       const message = document.createElement('div');
       message.className = 'msg';
-      message.textContent = 'The CodeTAC panel is not running. Stop the app (Ctrl+C) and run codetac again.';
+      message.textContent = rawText('panelMissing');
       frame.replaceWith(message);
     });
   }
@@ -628,9 +629,8 @@
     // Nothing recorded on this page yet: say so instead of doing nothing.
     const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
     sheet().style.height = 'auto';
-    shown.innerHTML = '<div class="top">' + tabs() + '<b></b><a target="_blank" rel="noopener">panel ↗</a><button data-close title="Close">✕</button></div>' +
-      '<div class="msg">No actions recorded on this page yet. Click a button, submit a form or follow a link in the app: ' +
-      'the action shows up here. Actions from other pages are in the panel.</div>';
+    shown.innerHTML = '<div class="top">' + tabs() + '<b></b><a target="_blank" rel="noopener">' + barText('openPanel') + '</a><button data-close title="' + barText('close') + '">✕</button></div>' +
+      '<div class="msg">' + barText('noActions') + '</div>';
     shown.querySelector('a').href = panel + '/';
     shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
     wireTabs();
@@ -641,9 +641,9 @@
     const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
     const url = panel + '/?embed=1&action=' + encodeURIComponent(item.id);
     view = 'action';
-    sheet().innerHTML = '<div class="top">' + tabs() + '<b></b><button data-go="-1" title="Previous action">◀</button><button data-go="1" title="Next action">▶</button>' +
-      '<a target="_blank" rel="noopener" title="Open in the panel">panel ↗</a><button data-close title="Close">✕</button></div>' +
-      '<iframe title="Action dossier"></iframe>';
+    sheet().innerHTML = '<div class="top">' + tabs() + '<b></b><button data-go="-1" title="' + barText('previous') + '">◀</button><button data-go="1" title="' + barText('next') + '">▶</button>' +
+      '<a target="_blank" rel="noopener" title="' + barText('openPanelTitle') + '">' + barText('openPanel') + '</a><button data-close title="' + barText('close') + '">✕</button></div>' +
+      '<iframe title="' + barText('actionFrameTitle') + '"></iframe>';
     shown.querySelector('b').textContent = (index + 1) + '/' + recorded.length + ' · ' + item.label;
     shown.querySelector('a').href = panel + '/?action=' + encodeURIComponent(item.id);
     shown.querySelector('iframe').src = url;

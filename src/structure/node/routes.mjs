@@ -5,6 +5,8 @@
 // (object.get('/path', handler)), joined across files through the mounts
 // (app.use('/prefix', router), app.register(plugin, { prefix })). A prefix
 // that is not a fixed text is never guessed: that route is left out.
+import { t } from '../text.mjs';
+
 const NEXT_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const byProof = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
 
@@ -212,12 +214,12 @@ export function projectRoutes(modules, symbolsOf, { next = false, runsOn = new M
     for (const request of module.requests ?? []) {
       const proof = [{ file: path, line: request.line }];
       if (request.dynamic) {
-        notes.push({ message: `Unknown destination: the URL of this ${request.client}() call is built at run time.`, proof });
+        notes.push({ message: t('notes.unknownDestination', { client: request.client }), proof });
         continue;
       }
       const matches = matchRoutes(index, request);
       if (!matches.length) {
-        const note = { message: `No route of the project answers ${request.method ?? 'a request to'} ${request.path} (${request.client}() call).`, proof };
+        const note = { message: t('notes.noRoute', { method: request.method ?? t('notes.aRequestTo'), path: request.path, client: request.client }), proof };
         notes.push(note);
         // Another reader of the same project may have the route (a Python API behind a Node frontend, phase 11).
         unanswered.push({ from: from(path, request.line), method: request.method ?? null, path: request.path, proof, ...edgeRunsOn(path), note });

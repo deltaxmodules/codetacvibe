@@ -4,11 +4,13 @@
 // is reduced to its name as it is read. Principle 4 of the specification.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { t } from '../text.mjs';
 
 const MAX_PROOFS = 12;
 // Names that hold secrets, and keys made to be public (they never alert).
 const SECRET_NAME = /SECRET|KEY|TOKEN|PASSWORD|PASSWD|SERVICE_ROLE|PRIVATE|CREDENTIAL/i;
-const PUBLIC_BY_DESIGN = /(^|_)(ANON|PUBLISHABLE)_KEY$|(^|_)PUBLIC_KEY$/i;
+// The environment may follow (STRIPE_PUBLISHABLE_KEY_LIVE).
+const PUBLIC_BY_DESIGN = /(^|_)(ANON|PUBLISHABLE|PUBLIC)_KEY(_(LIVE|TEST|PROD|PRODUCTION|DEV|DEVELOPMENT|STAGING|LOCAL))?$/i;
 
 // The browser prefixes of the frameworks of the project (step 2 adds the
 // project's own settings, such as Vite's envPrefix).
@@ -91,19 +93,14 @@ export function environment(root, files, modules, { types = [], prefixes = null 
 
 // Keys written in the code (phase 5, step 4), as notes of the graph: the kind
 // and the public prefix only, never the value (modules.mjs keeps no value).
-const KEY_LABELS = {
-  'stripe-live': 'A live Stripe secret key (sk_live_…)', 'stripe-test': 'A test Stripe secret key (sk_test_…)',
-  'stripe-webhook': 'A Stripe webhook secret (whsec_…)', anthropic: 'An Anthropic API key (sk-ant-…)', openai: 'An OpenAI API key (sk-…)',
-  aws: 'An AWS access key (AKIA…)', github: 'A GitHub token (ghp_…)', slack: 'A Slack token (xox…)', google: 'A Google API key (AIza…)',
-  sendgrid: 'A SendGrid API key (SG.…)', 'private-key': 'A private key (-----BEGIN … PRIVATE KEY-----)',
-  'supabase-service-role': 'A Supabase service_role key (a JWT with role service_role)',
-};
+// The kinds of key written in the code (notes.keyLabels.<kind> in en.json).
+const KEY_KINDS = new Set(['stripe-live', 'stripe-test', 'stripe-webhook', 'anthropic', 'openai', 'aws', 'github', 'slack', 'google', 'sendgrid', 'private-key', 'supabase-service-role']);
 export function literalKeyNotes(files, modules) {
   const notes = [];
   for (const file of files) {
     if (file.language === 'dotenv') continue;
     for (const { kind, line } of modules.get(file.path)?.keys ?? []) {
-      notes.push({ kind: 'literal-key', message: `${KEY_LABELS[kind] ?? 'A key'} is written in the code, in ${file.path}. Its value is not shown.`,
+      notes.push({ kind: 'literal-key', message: t('notes.literalKey', { key: KEY_KINDS.has(kind) ? t(`notes.keyLabels.${kind}`) : t('notes.keyLabels.unknown'), path: file.path }),
         proof: [{ file: file.path, line }] });
     }
   }

@@ -56,20 +56,58 @@ _keywords = re.compile(r'^(select|if|not|exists)$', re.ASCII | re.IGNORECASE)
 _js_trim = re.compile('^' + _S + '+|' + _S + '+$')
 
 
+_STATEMENTS = {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE', 'UPSERT'}
+_SQL_WRITES = {'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE', 'UPSERT'}
+_word = re.compile(r'\b\w+\b', re.ASCII)
+_cte = re.compile(r'(?:^with(?: recursive)?|,) ?("[^"]*"|\w+) ?(?:\([^)]*\) ?)?as (?:not )?(?:materialized )?\(', re.ASCII | re.IGNORECASE)
+
+
 def describe_sql(sql):
     if isinstance(sql, bytes):
         sql = sql.decode('utf-8', 'replace')
     if not isinstance(sql, str):
         return {'operation': 'consulta'}
     text = _js_trim.sub('', _space.sub(' ', _literal.sub("'?'", sql)))
+    depth = []
+    level = 0
+    for char in text:
+        if char == '(':
+            level += 1
+        depth.append(level)
+        if char == ')':
+            level = max(0, level - 1)
     first = _first.match(text)
     operation = (first.group(1) if first else 'consulta').upper()
-    tables = []
+    start = 0
+    ctes = set()
+    if operation == 'WITH':
+        main = next((word for word in _word.finditer(text) if word.start() > 0 and depth[word.start()] == 0
+                     and word.group(0).upper() in _STATEMENTS), None)
+        if main:
+            operation, start = main.group(0).upper(), main.start()
+        for match in _cte.finditer(text[:main.start() if main else len(text)]):
+            if depth[match.start()] == 0:
+                ctes.add(match.group(1).replace('"', '').lower())
+    found = []
     for match in _tables.finditer(text):
         name = _default_schema.sub('', _quotes.sub('', match.group(1)), count=1)
-        if name and not _keywords.match(name) and name not in tables:
+        if name and not _keywords.match(name) and name.lower() not in ctes:
+            found.append((name, match.start()))
+    target = next((item for item in found if item[1] >= start and depth[item[1]] == 0), None) if operation in _SQL_WRITES else None
+    tables = []
+    for name, _ in ([target] if target else found):
+        if name not in tables:
             tables.append(name)
-    return {'operation': operation, 'tables': tables[:10], 'sql': text[:2000]}
+    reads = []
+    if target:
+        for name, _ in found:
+            if name != target[0] and name not in reads:
+                reads.append(name)
+    out = {'operation': operation, 'tables': tables[:10]}
+    if reads:
+        out['reads'] = reads[:10]
+    out['sql'] = text[:2000]
+    return out
 
 
 # Boundaries ------------------------------------------------------------------------

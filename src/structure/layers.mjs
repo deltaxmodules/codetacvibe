@@ -5,6 +5,7 @@
 // while the file is unchanged. `classes` is Map(path → { path, layer, rule,
 // runsOn? }), changed in place; the problems found are returned as notes.
 import { readSuggestions } from './suggest.mjs';
+import { t } from './text.mjs';
 
 export function applyUserLayers(folder, files, classes, config) {
   const notes = [];
@@ -15,10 +16,10 @@ export function applyUserLayers(folder, files, classes, config) {
     unusedLayers.delete(rule.pattern);
     classes.set(path, { ...item, layer: rule.layer, rule: `config:${rule.pattern}` });
   }
-  for (const pattern of unusedLayers) notes.push({ message: `codetac.structure.json: the layer rule ${pattern} matches no file of the project.` });
+  for (const pattern of unusedLayers) notes.push({ message: t('notes.layerRuleUnused', { pattern }) });
   for (const [path, layer] of Object.entries(config.reclassify)) {
     if (classes.has(path)) classes.set(path, { ...classes.get(path), layer, rule: 'manual' });
-    else notes.push({ message: `codetac.structure.json reclassifies ${path}, which is not a file of the project.` });
+    else notes.push({ message: t('notes.reclassifyMissing', { path }) });
   }
   const suggestions = readSuggestions(folder);
   for (const file of files) {

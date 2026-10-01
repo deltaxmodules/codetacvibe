@@ -814,7 +814,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
     'unused-export': ['smell_unused_export', 'smell_unused_export_why'] };
   const COUPLING_TEXT = { 'uses-all': ['smell_coupling_uses_all', 'smell_coupling_uses_all_why'], 'used-by-all': ['smell_coupling_used_by_all', 'smell_coupling_used_by_all_why'],
     'file-used-by-many': ['smell_file_used_by_many', 'smell_coupling_used_by_all_why'], 'file-uses-many': ['smell_file_uses_many', 'smell_file_uses_many_why'] };
-  const BECAUSE = { folder: 'healthBecauseFolder', name: 'healthBecauseName', public: 'healthBecausePublic' };
+  const BECAUSE = { folder: 'healthBecauseFolder', name: 'healthBecauseName', public: 'healthBecausePublic', 'by-name': 'healthBecauseByName', vendor: 'healthBecauseVendor' };
   function smellText(item) {
     const files = item.files || [];
     const vars = { files: files.join(' ⇄ '), file: files[0] || '', from: files[0] || '', to: files[1] || '', block: item.blockName || item.block || '',
@@ -823,7 +823,8 @@ header a.plain { color:var(--accent); text-decoration:none; }
     if (item.kind === 'duplicate') vars.files = files.join(', ') + (item.stretches > 1 ? ' (' + t('smell_duplicate_stretches', { count: item.stretches }) + ')' : '');
     if (item.kind === 'skipped-layer' && item.to) vars.to = files[1] + ' (' + (LAYER_NAMES[item.to.slice(6)] || item.to) + ')';
     const [what, why] = item.kind === 'coupling' ? COUPLING_TEXT[item.direction]
-      : item.kind === 'dead-file' ? [item.certainty === 'possible' ? 'smell_dead_file_possible' : 'smell_dead_file', 'smell_dead_file_why'] : SMELL_TEXT[item.kind];
+      : item.kind === 'dead-file' ? [item.certainty === 'possible' ? 'smell_dead_file_possible' : 'smell_dead_file', 'smell_dead_file_why']
+      : item.kind === 'unused-export' && item.certainty === 'possible' ? ['smell_unused_export_possible', 'smell_unused_export_why'] : SMELL_TEXT[item.kind];
     return [t(what, vars), t(why)];
   }
   function drawHealth(health) {

@@ -69,22 +69,25 @@ export const nodeReader = {
       for (const item of module.runtimeImports ?? []) {
         const folder = item.prefix == null ? null : posix.normalize(posix.join(posix.dirname(path), item.prefix.replace(/[^/]*$/, ''))).replace(/\/?$/, '/').replace(/^\.\//, '');
         const inside = folder && !folder.startsWith('../');
-        notes.push({ kind: 'dynamic-import', message: inside ? `${path} loads a module of ${folder === './' ? 'the project root' : folder} chosen at run time: the reading cannot see which.`
-          : `${path} loads a module chosen at run time: the reading cannot see which.`, ...(inside ? { path: folder === './' ? '' : folder } : {}), proof: [{ file: path, line: item.line }] });
+        notes.push({ kind: 'dynamic-import', message: inside ? t('notes.dynamicImportIn', { path, folder: folder === './' ? t('notes.projectRoot') : folder })
+          : t('notes.dynamicImport', { path }), ...(inside ? { path: folder === './' ? '' : folder } : {}), proof: [{ file: path, line: item.line }] });
       }
     }
     // What leaves the machine: services reached by HTTP or by an SDK of the catalogue (phase 4).
     const catalogue = serviceCatalogue(config.services);
     notes.push(...catalogue.problems.map(message => ({ message })));
-    const outgoing = outgoingServices(files, modules, { catalogue, symbolsOf, runsOn: runsOnOf });
+    // The data model (phase 6) is read here: a Prisma client is the service of its schema's datasource.
+    const packages = new Set([...dependencies(folder), ...[...imported.values()].flatMap(set => [...set])]);
+    const model = dataModel(folder, files, { packages, modules });
+    const prismaStore = model.tables.find(table => table.source === 'prisma')?.store ?? null;
+    const outgoing = outgoingServices(files, modules, { catalogue, symbolsOf, runsOn: runsOnOf, skip: path => classes.get(path)?.layer === 'tests', prismaStore });
     nodes.push(...outgoing.nodes);
     // Environment variables: defined in .env* (names only), read in the code (phase 5).
     const env = environment(folder, files, modules, { types: project.types });
     nodes.push(...env.nodes);
     notes.push(...literalKeyNotes(files, modules));
     // Tables defined by the project's schema files and used by its code (phase 6).
-    const packages = new Set([...dependencies(folder), ...[...imported.values()].flatMap(set => [...set])]);
-    const data = tableGraph(dataModel(folder, files, { packages, modules }), modules, { symbolsOf, packages });
+    const data = tableGraph(model, modules, { symbolsOf, packages });
     nodes.push(...data.nodes);
     // One block per layer present, proved by its first file (paths are sorted).
     for (const layer of [...new Set([...classes.values()].map(item => item.layer))]) {

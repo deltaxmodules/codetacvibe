@@ -120,6 +120,10 @@ export function pythonUsage(files, facts, modules, { catalogue, store = 'sql' })
         return value.head ? destination(value.head, depth + 1) : null;
       }
       if (value.t === 'call' && value.func?.t === 'name' && ['os.getenv', 'getenv', 'os.environ.get', 'environ.get'].includes(value.func.v) && text(value.args[0])) return { env: text(value.args[0]) };
+      // Elasticsearch([url]): the first address of a list.
+      if (value.t === 'list' && value.items?.length) return destination(value.items[0], depth + 1);
+      // 'https://api.x.com/translate?to={}'.format(lang): the host is in the text.
+      if (value.t === 'call' && value.func?.t === 'attr' && value.func.name === 'format') return destination(value.func.of, depth + 1);
       if (value.t === 'sub' && ['os.environ', 'environ'].includes(value.of?.v) && text(value.key)) return { env: text(value.key) };
       if (value.t === 'name') {
         const variable = settingsField(file.path, value.v);

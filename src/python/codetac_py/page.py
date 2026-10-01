@@ -38,6 +38,8 @@ _OPENING_DOCTYPE = re.compile(_LEADING + br'<!doctype html[^>]*>', re.IGNORECASE
 _HTML = re.compile(r'text/html', re.IGNORECASE)
 DROPPED = ('content-length', 'etag', 'last-modified')
 BAR_JS = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'browser', 'bar.js'))
+# The bar's sentences (src/structure/text/en.json, section bar), as src/page.mjs gives them.
+TEXT_JSON = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'structure', 'text', 'en.json'))
 
 
 def enabled():
@@ -52,10 +54,18 @@ def panel_url():
 _script = None
 
 
+def bar_text():
+    try:
+        with open(TEXT_JSON, encoding='utf-8') as file:
+            return json.load(file).get('bar', {})
+    except (OSError, ValueError):
+        return {}
+
+
 def bar_script():
     global _script
     if _script is None:
-        config = {'panel': panel_url(), 'run': os.environ.get('CODETAC_RUN', '')}
+        config = {'panel': panel_url(), 'run': os.environ.get('CODETAC_RUN', ''), 'text': bar_text()}
         with open(os.environ.get('CODETAC_BAR_JS') or BAR_JS, 'rb') as file:
             source = file.read()
         _script = ('window.__CODETAC_CONFIG__=%s;\n' % json.dumps(config, separators=(',', ':'))).encode('utf-8') + source

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.1
+
+**Fixes from trying codeTAC on five real open-source projects (Next.js, Express, Flask, FastAPI, React + FastAPI).**
+
+- **Routes:** Express routers mounted in a chain (`export default Router().use('/api', api)`) keep their prefix; a FastAPI `include_router(prefix=settings.API_V1_STR)` reads the prefix from the settings' default value (and says so when it cannot); the pages of a frontend router (`src/routes` used only in the browser) are Interface, not Routes.
+- **A frontend with a generated API client** (hey-api `client.post({ url })`, openapi-typescript-codegen `__request(OpenAPI, …)`) is linked to the Python routes, so the path of an action goes from the button to the API.
+- **Data model:** Alembic tables created in helper functions called by `upgrade()`; `WITH … INSERT` is a write (the CTE names are not tables, and subqueries are reads, not writes).
+- **Services:** calls made in tests no longer add services; `PrismaClient` gives the database of the schema; Flask-Mail, `emails` and Elasticsearch are recognised.
+- **Secrets:** a key that is public by design keeps being public when its name ends with the environment (`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE` is no longer "a secret with a public prefix").
+- **Fewer false "unused" warnings:** generated code (a generated header or `*.gen.*`) gets no warnings; `FLASK_APP`, `prisma.seed`, `*.preset.js` and React Email templates are used; components copied by shadcn/ui (the `ui` folder of `components.json`) are only "possibly" unused; a Python module loaded by name is only "possibly" unused.
+- **Starting the app:**
+  - Prisma 4, 5 or 6.0 without `previewFeatures = ["tracing"]` now gets a warning (at the start and in `codetac diagnose`): its database operations would otherwise be missing from the dossiers without a word.
+  - When the API's port is taken and the API moves, the frontend's `.env` variables with that address (`VITE_API_URL=http://localhost:8000`) follow it while codeTAC runs; the file does not change.
+  - `--port` works for a Python app whose start command codeTAC builds.
+  - A start script that needs a program this computer does not have (`bun`) is said before starting, with the parts that start without it; exit code 127 is no longer retried in minimal mode.
+- **Fix:** a dossier with a function that only ran database commands without a table (a connection pool reset) failed to open.
+- **Fix:** in Python apps, the bar showed internal names ("structure", "structureTitle") instead of its texts.
+- Every sentence of the interface (terminal, panel, bar, requests to the AI) is now in one file, `src/structure/text/en.json`, ready for translation. Nothing shown has changed.
+
 ## 0.8.0
 
 **The structure of Python projects: FastAPI and Flask, and a Node frontend with a Python API as one plan.**

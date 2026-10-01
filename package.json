@@ -1,6 +1,6 @@
 {
   "name": "codetac",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "codeTAC — see what your Node or Python app's code does, one action at a time: from the browser click to the server functions, database and external services.",
   "keywords": [
     "debug",
@@ -51,7 +51,11 @@
     "test:structure": "node scripts/structure-test.mjs",
     "test:structure:start": "node scripts/structure-fixtures-start.mjs",
     "test:structure:large": "node scripts/structure-large.mjs",
-    "test:structure:e2e": "node scripts/structure-e2e.mjs"
+    "test:structure:e2e": "node scripts/structure-e2e.mjs",
+    "site:dev": "vitepress dev site",
+    "site:build": "vitepress build site",
+    "site:preview": "vitepress preview site",
+    "site:captures": "node scripts/site-captures.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -75,6 +79,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "undici": "^7.30.0",
+    "vite": "^8.3.0",
+    "vitepress": "^1.6.4"
   }
 }

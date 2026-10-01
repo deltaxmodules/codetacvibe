@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRedactor } from './redact.mjs';
+import { t } from './structure/text.mjs';
 import { blocked, blockedText, guarded, requestHash, send } from './privacy.mjs';
 
 // 7: English (0.3.0); the Portuguese answers in the cache are not reused.
@@ -34,24 +35,24 @@ export async function loadConfig({ env = process.env, directory } = {}) {
   if (provider === 'auto' || provider === 'ollama') {
     const url = config.url || OLLAMA_URL;
     const models = await ollamaModels(url);
-    if (!models) return provider === 'ollama' ? { ...config, provider: null, problem: `Ollama does not answer at ${url}.` } : { ...config, provider: null };
+    if (!models) return provider === 'ollama' ? { ...config, provider: null, problem: t('ai.config.ollamaDown', { url }) } : { ...config, provider: null };
     const chat = models.filter(name => !NOT_CHAT.test(name));
     const model = config.model || OLLAMA_PREFERRED.map(pattern => chat.find(name => pattern.test(name))).find(Boolean) || chat[0];
-    if (!model) return { ...config, provider: null, problem: 'Ollama has no chat model installed.' };
+    if (!model) return { ...config, provider: null, problem: t('ai.config.noChatModel') };
     return { ...config, provider: 'ollama', url, model, local: /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(url) };
   }
   if (provider === 'anthropic') {
-    if (!config.key) return { ...config, provider: null, problem: 'The Anthropic key is missing (CODETAC_AI_KEY).' };
+    if (!config.key) return { ...config, provider: null, problem: t('ai.config.anthropicKey') };
     return { ...config, model: config.model || ANTHROPIC_MODEL, local: false };
   }
   if (provider === 'openai' || provider === 'compatible') {
-    if (!config.model) return { ...config, provider: null, problem: 'The model is missing (CODETAC_AI_MODEL).' };
+    if (!config.model) return { ...config, provider: null, problem: t('ai.config.noModel') };
     const url = config.url || (provider === 'openai' ? 'https://api.openai.com' : null);
-    if (!url) return { ...config, provider: null, problem: 'The address of the compatible API is missing (CODETAC_AI_URL).' };
-    if (provider === 'openai' && !config.key) return { ...config, provider: null, problem: 'The OpenAI key is missing (CODETAC_AI_KEY).' };
+    if (!url) return { ...config, provider: null, problem: t('ai.config.compatibleUrl') };
+    if (provider === 'openai' && !config.key) return { ...config, provider: null, problem: t('ai.config.openaiKey') };
     return { ...config, url, local: /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(url) };
   }
-  return { ...config, provider: null, problem: `Unknown provider: ${provider}.` };
+  return { ...config, provider: null, problem: t('ai.config.unknownProvider', { provider }) };
 }
 
 async function ollamaModels(url) {
@@ -85,25 +86,10 @@ const SCHEMA = {
 const ACTION_SCHEMA = { type: 'object', properties: { purpose: { type: 'string' } }, required: ['purpose'], additionalProperties: false };
 
 function instructions() {
-  return [
-    'You write purpose sentences, in English, for people who do not read code easily.',
-    'You receive the code of a function and the facts observed when it ran.',
-    'Say what the step is for, in one short sentence (at most 15 words), without programming jargon.',
-    'Mandatory rules:',
-    '- Do not claim effects (writing or reading data, emails, payments, files, calls to external services or to AI) that are not in the observed facts, even if the code could do them.',
-    '- Do not mention tables, services, domains or names that do not appear in the facts or in the code.',
-    '- Do not invent the business reason: if the code does not show it, describe only what the step does.',
-    '- Describe only what happened in this run. Do not describe other branches of the code ("if not…", "otherwise…").',
-    '- Do not repeat numbers from the facts; they are already shown beside the sentence.',
-    'Answer only with JSON in the requested format. For each boundary listed, give a short sentence explaining what it is for in this step.',
-  ].join('\n');
+  return t('ai.system.purpose');
 }
 function actionInstructions() {
-  return [
-    'Summarise in one sentence (at most 25 words), in English, what a user action in an app does, for people who do not read code.',
-    'Use only the facts given: the element pressed, the requests, the purposes of the steps and the observed effects.',
-    'Do not claim effects that are not in the observed effects. Do not invent the business reason. Answer only with JSON.',
-  ].join('\n');
+  return t('ai.system.action');
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +193,7 @@ export function validateSentence(text, { boundaries, allowedWords, knownTables, 
     const match = text.match(claim.pattern);
     if (match && !claim.kinds.some(kind => kinds.has(kind)) && !negated(text, match.index)) return `mentions “${match[0]}” without that boundary in the facts`;
   }
-  const tables = new Set(boundaries.flatMap(item => item.tables ?? []).map(name => name.toLowerCase()));
+  const tables = new Set(boundaries.flatMap(item => [...(item.tables ?? []), ...(item.reads ?? [])]).map(name => name.toLowerCase()));
   const hosts = new Set(boundaries.map(item => item.host).filter(Boolean).map(name => name.toLowerCase()));
   for (const raw of text.match(WORD) ?? []) {
     const word = raw.replace(/^[.-]+|[.-]+$/g, '');
@@ -247,14 +233,7 @@ function wordsOf(...texts) {
 const ANSWER_SCHEMA = { type: 'object', properties: { known: { type: 'boolean' }, answer: { type: 'string' } },
   required: ['known', 'answer'], additionalProperties: false };
 function questionInstructions() {
-  return [
-    'You answer, in English, a question about one step of an app, asked by someone who does not read code easily.',
-    'Use only the facts given: the code of the step, what was observed when it ran and, if present, the recorded values and the lines run.',
-    'If the facts are not enough to answer, set "known": false and say in "answer" what is missing, without guessing.',
-    'Do not claim effects (writing data, emails, payments, files, external services) that are not in the observed facts.',
-    'Tell apart what happened in this run from what the code would do in other cases; if you talk about other cases, say so explicitly.',
-    'Answer in at most 120 words, without jargon. Answer only with JSON.',
-  ].join('\n');
+  return t('ai.system.question');
 }
 
 // The exact request for a question about one step of a request dossier (with
@@ -272,23 +251,25 @@ export function questionRequest({ config, dossier, stepId, question, readCode, r
   const facts = target ? subtree(target) : { boundaries: [step], functions: [] };
   const withValues = Boolean(config.local);
   const lines = [
-    `Request: ${dossier.request.method} ${dossier.request.path} (status ${dossier.request.status ?? 'unknown'}).`,
-    step.type === 'function' ? `Step: function ${step.function} (${step.purpose.text}).` : `Step: boundary — ${step.purpose.text}${step.sql ? ` — SQL: ${step.sql}` : ''}${target ? `, inside the function ${target.function}` : ''}.`,
-    step.error ? 'The step ended with an error.' : '',
-    facts.functions.length ? `Project functions called inside it: ${[...new Set(facts.functions.map(item => item.function))].slice(0, 30).join(', ')}.` : '',
-    facts.boundaries.length ? `Observed boundaries:\n${facts.boundaries.slice(0, 40).map(item => `- ${item.purpose.text}${item.sql ? ` — SQL: ${item.sql.slice(0, 300)}` : ''}`).join('\n')}` : 'No boundary observed in this step.',
+    t('ai.question.request', { method: dossier.request.method, path: dossier.request.path, status: dossier.request.status ?? t('ai.question.unknown') }),
+    step.type === 'function' ? t('ai.question.stepFunction', { function: step.function, purpose: step.purpose.text })
+      : t('ai.question.stepBoundary', { purpose: step.purpose.text, sql: step.sql ? ` — ${t('ai.sql', { sql: step.sql })}` : '', inside: target ? `, ${t('ai.question.inside', { function: target.function })}` : '' }),
+    step.error ? t('ai.question.error') : '',
+    facts.functions.length ? t('ai.question.functions', { list: [...new Set(facts.functions.map(item => item.function))].slice(0, 30).join(', ') }) : '',
+    facts.boundaries.length ? t('ai.question.boundaries', { list: facts.boundaries.slice(0, 40).map(item => `- ${item.purpose.text}${item.sql ? ` — ${t('ai.sql', { sql: item.sql.slice(0, 300) })}` : ''}`).join('\n') }) : t('ai.question.noBoundary'),
   ];
   const detail = target?.detail;
   if (detail && withValues) {
-    lines.push(`Values recorded in this call: arguments ${JSON.stringify(detail.args).slice(0, 4000)}; ${'returned' in detail ? `returned ${JSON.stringify(detail.returned).slice(0, 4000)}` : `threw ${JSON.stringify(detail.threw)}`}.`);
-    lines.push(`Lines run (of the original file): ${detail.lines.join(', ') || 'none recorded'}.`);
+    lines.push(t('ai.question.values', { args: JSON.stringify(detail.args).slice(0, 4000),
+      result: 'returned' in detail ? t('ai.question.returned', { value: JSON.stringify(detail.returned).slice(0, 4000) }) : t('ai.question.threw', { value: JSON.stringify(detail.threw) }) }));
+    lines.push(t('ai.question.lines', { lines: detail.lines.join(', ') || t('ai.question.noneRecorded') }));
   } else if (detail) {
-    lines.push(`Lines run (of the original file): ${detail.lines.join(', ') || 'none recorded'}. The recorded values are not sent to models outside this computer.`);
+    lines.push(t('ai.question.linesWithheld', { lines: detail.lines.join(', ') || t('ai.question.noneRecorded') }));
   } else {
-    lines.push('There are no recorded values for this step (detail was not requested).');
+    lines.push(t('ai.question.noValues'));
   }
-  if (code) lines.push('', `Code (${target.function}, from line ${code.start}):`, redact(code.lines.join('\n')).slice(0, config.local ? 6000 : 12000));
-  lines.push('', `Question: ${String(question).slice(0, 1000)}`);
+  if (code) lines.push('', t('ai.question.code', { function: target.function, line: code.start }), redact(code.lines.join('\n')).slice(0, config.local ? 6000 : 12000));
+  lines.push('', t('ai.question.question', { question: String(question).slice(0, 1000) }));
   const system = questionInstructions();
   const text = redact(lines.filter(line => line !== '').join('\n'));
   return { system, text, hash: requestHash(system, text), valuesSent: Boolean(detail && withValues), valuesWithheld: Boolean(detail && !withValues),
@@ -298,16 +279,16 @@ export function questionRequest({ config, dossier, stepId, question, readCode, r
 // Asks the question. With `hash`, only when the request is still the one the
 // user saw. `call` is the AI layer's complete (injected in tests).
 export async function answerQuestion({ config, dossier, stepId, question, readCode, redact = createRedactor(), hash = null, call = complete }) {
-  if (!config?.provider) return { available: false, text: 'Questions need an AI model (see “AI explanations” in the README).' };
+  if (!config?.provider) return { available: false, text: t('ai.question.noModel') };
   const reason = blocked('questions', config);
   if (reason) return { available: false, blocked: reason, text: blockedText(reason) };
   const request = questionRequest({ config, dossier, stepId, question, readCode, redact });
-  if (!request) return { available: true, known: false, text: 'This step was not found in the dossier.' };
-  if (hash !== null && hash !== request.hash) return { available: true, changed: true, text: 'The request changed since you saw it. Look at it again before sending.' };
+  if (!request) return { available: true, known: false, text: t('ai.question.notFound') };
+  if (hash !== null && hash !== request.hash) return { available: true, changed: true, text: t('ai.question.changed') };
   const { code, lines, facts } = request.check;
   const result = await send('questions', call, config, request.system, request.text, ANSWER_SCHEMA);
   const text = String(result?.answer ?? '');
-  const knownTables = new Set([...dossier.digest.nodes.flatMap(node => { const all = []; walk([node], item => all.push(...(item.tables ?? []))); return all; }), ...tablesInCode(code?.lines.join('\n'))].map(name => name.toLowerCase()));
+  const knownTables = new Set([...dossier.digest.nodes.flatMap(node => { const all = []; walk([node], item => all.push(...(item.tables ?? []), ...(item.reads ?? []))); return all; }), ...tablesInCode(code?.lines.join('\n'))].map(name => name.toLowerCase()));
   const knownHosts = new Set();
   walk(dossier.digest.nodes, item => { if (item.host) knownHosts.add(item.host.toLowerCase()); });
   const allowedWords = wordsOf(code?.lines.join('\n'), question, ...lines);
@@ -337,7 +318,7 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
     const knownHosts = new Set();
     for (const dossier of dossiers) {
       walk(dossier.digest.nodes, node => {
-        for (const table of node.tables ?? []) knownTables.add(table.toLowerCase());
+        for (const table of [...(node.tables ?? []), ...(node.reads ?? [])]) knownTables.add(table.toLowerCase());
         if (node.host) knownHosts.add(node.host.toLowerCase());
       });
     }
@@ -382,15 +363,15 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
   function prompt(task) {
     const { node, facts, direct } = task;
     const lines = [
-      `Function: ${node.function} (${task.code ? 'code below' : 'no code'})`,
-      `Facts observed in this run: ${node.purpose.text}.`,
-      facts.functions.length ? `Project functions called (in order): ${[...new Set(facts.functions.map(item => item.function))].slice(0, 30).join(', ')}.` : 'It called no other project functions.',
-      facts.boundaries.length ? `Boundaries observed inside this function:\n${facts.boundaries.slice(0, 40).map(item => `- ${item.purpose.text.replace(/\d+/g, 'N')}${item.sql ? ` — SQL: ${item.sql.slice(0, 300)}` : ''}`).join('\n')}`
-        : 'No boundary observed (it did not read or write data, send emails or call external services).',
-      node.error ? 'The function ended with an error.' : '',
-      direct.length ? `Boundaries to explain (id — fact):\n${direct.map((item, index) => `- b${index + 1} — ${item.purpose.text.replace(/\d+/g, 'N')}`).join('\n')}` : 'There are no boundaries to explain: return "boundaries": [].',
+      t('ai.purpose.function', { function: node.function, code: t(task.code ? 'ai.purpose.codeBelow' : 'ai.purpose.noCode') }),
+      t('ai.purpose.facts', { purpose: node.purpose.text }),
+      facts.functions.length ? t('ai.purpose.functions', { list: [...new Set(facts.functions.map(item => item.function))].slice(0, 30).join(', ') }) : t('ai.purpose.noFunctions'),
+      facts.boundaries.length ? t('ai.purpose.boundaries', { list: facts.boundaries.slice(0, 40).map(item => `- ${item.purpose.text.replace(/\d+/g, 'N')}${item.sql ? ` — ${t('ai.sql', { sql: item.sql.slice(0, 300) })}` : ''}`).join('\n') })
+        : t('ai.purpose.noBoundary'),
+      node.error ? t('ai.purpose.error') : '',
+      direct.length ? t('ai.purpose.toExplain', { list: direct.map((item, index) => `- b${index + 1} — ${item.purpose.text.replace(/\d+/g, 'N')}`).join('\n') }) : t('ai.purpose.nothingToExplain'),
       '',
-      'Code:',
+      t('ai.purpose.code'),
       task.code,
     ];
     return redact(lines.filter(line => line !== '').join('\n'));
@@ -398,7 +379,7 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
 
   function check(text, task, boundaries) {
     const allowedWords = wordsOf(task.code, task.node.function, ...task.facts.functions.map(item => item.function),
-      ...boundaries.flatMap(item => [...(item.tables ?? []), item.host, item.provider, item.sql]));
+      ...boundaries.flatMap(item => [...(item.tables ?? []), ...(item.reads ?? []), item.host, item.provider, item.sql]));
     const knownTables = new Set([...task.knownTables, ...tablesInCode(task.code)]);
     return validateSentence(text, { boundaries, allowedWords, knownTables, knownHosts: task.knownHosts });
   }
@@ -434,9 +415,9 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
       if (node.type === 'function' && parent?.type !== 'group' && steps.length < 30) steps.push(`${node.function}: ${purposes[node.id]?.text ?? node.purpose.text}`);
     });
     const facts = [
-      `Action: ${action.digest.summary}.`,
-      steps.length ? `Server steps:\n${steps.map(item => `- ${item}`).join('\n')}` : 'There were no project steps on the server.',
-      `Observed effects: ${action.digest.effects.items.map(item => item.text).join('; ') || action.digest.effects.none}.`,
+      t('ai.action.action', { summary: action.digest.summary }),
+      steps.length ? t('ai.action.steps', { list: steps.map(item => `- ${item}`).join('\n') }) : t('ai.action.noSteps'),
+      t('ai.action.effects', { effects: action.digest.effects.items.map(item => item.text).join('; ') || action.digest.effects.none }),
     ].join('\n');
     const cacheKey = key('action', facts.replace(/\d+/g, 'N'));
     let answer = cache.get(cacheKey);
@@ -445,7 +426,7 @@ export function createPurposes({ config, cache, readCode, redact = createRedacto
       cache.set(cacheKey, answer);
     }
     const boundaries = dossiers.flatMap(dossier => { const all = []; walk(dossier.digest.nodes, node => { if (node.type === 'boundary') all.push(node); }); return all; });
-    const knownTables = new Set(boundaries.flatMap(item => item.tables ?? []).map(name => name.toLowerCase()));
+    const knownTables = new Set(boundaries.flatMap(item => [...(item.tables ?? []), ...(item.reads ?? [])]).map(name => name.toLowerCase()));
     const knownHosts = new Set(boundaries.map(item => item.host).filter(Boolean).map(name => name.toLowerCase()));
     const allowedWords = wordsOf(facts, action.label, ...dossiers.flatMap(dossier => [dossier.request.path]));
     const rejected = validateSentence(answer.finalidade, { boundaries, allowedWords, knownTables, knownHosts });

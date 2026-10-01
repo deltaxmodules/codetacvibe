@@ -146,7 +146,7 @@ export async function readProject(folder, { readers = builtInReaders, cache = tr
   }
   if (!chosen.length) {
     const graph = canonical({ schemaVersion: SCHEMA_VERSION, project: { name, types: [] }, reader: { name: 'none', version: '0' }, nodes: [], edges: [],
-      notes: [{ message: 'No reader recognised this folder, so its structure is not shown.' }] });
+      notes: [{ message: t('notes.noReader') }] });
     return { graph, readers: [], problems: [] };
   }
   const graphs = [];
@@ -159,7 +159,7 @@ export async function readProject(folder, { readers = builtInReaders, cache = tr
     } catch (error) {
       problems.push(`Reader ${reader.name} failed: ${String(error?.message ?? error).slice(0, 300)}`);
       graphs.push({ schemaVersion: SCHEMA_VERSION, project: { name, types, languages: reader.languages }, reader: { name: reader.name, version: reader.version },
-        nodes: [], edges: [], notes: [{ message: `The ${reader.name} reader failed, so this part of the project is not shown.` }] });
+        nodes: [], edges: [], notes: [{ message: t('notes.readerFailed', { reader: reader.name }) }] });
     }
   }
   const graph = canonical(merge(graphs, name));

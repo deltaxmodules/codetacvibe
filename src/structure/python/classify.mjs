@@ -20,6 +20,8 @@ const SERVICE_MODULES = new Set(['openai', 'anthropic', 'google', 'mistralai', '
 const APPS = new Set(['FastAPI', 'Flask', 'Starlette', 'Quart']);
 const ROUTE_VERBS = /\.(get|post|put|patch|delete|options|head|route|api_route)$/;
 const MODEL_BASES = /(^|\.)(Base|Model|DeclarativeBase|SQLModel|Document)$/;
+const HOOKS = /\.(app_errorhandler|errorhandler|exception_handler|before_request|after_request|before_app_request|after_app_request|teardown_request|teardown_appcontext|middleware)$/;
+const MAIL_MODULES = new Set(['flask_mail', 'fastapi_mail', 'emails', 'yagmail', 'aiosmtplib', 'smtplib']);
 
 const folders = path => path.split('/').slice(0, -1).map(folder => folder.toLowerCase());
 const inFolder = (path, names) => folders(path).some(folder => names.includes(folder));
@@ -27,12 +29,16 @@ const last = name => name.split('.').pop();
 const topModules = item => new Set((item.imports ?? []).filter(entry => !entry.level).map(entry => entry.module.split('.')[0]));
 const callNames = item => (item.calls ?? []).filter(call => call.func?.t === 'name').map(call => last(call.func.v));
 const baseNames = definition => (definition.bases ?? []).filter(base => base?.t === 'name').map(base => base.v);
+const decorated = (item, pattern) => (item.definitions ?? []).some(definition => definition.decorators.some(decorator => {
+  const name = decorator?.t === 'call' ? decorator.func : decorator;
+  return name?.t === 'name' && pattern.test(name.v);
+}));
 const isEmpty = item => !item.definitions?.length && !item.imports?.length && !item.assignments?.length && !item.calls?.length;
 
 // The rules for .py files. Each returns [layer, rule] or null.
 const RULES = [
   (file, item) => basename(file.path) === '__init__.py' && isEmpty(item) && ['config', 'python:package-marker'],
-  (file) => (/^test_.*\.py$|_test\.py$|^conftest\.py$/.test(basename(file.path)) || inFolder(file.local, ['tests', 'test'])) && ['tests', 'test-file'],
+  (file) => (/^test_.*\.py$|_test\.py$|^conftest\.py$|^tests?\.py$/.test(basename(file.path)) || inFolder(file.local, ['tests', 'test'])) && ['tests', 'test-file'],
   (file) => META.has(basename(file.path)) && ['config', 'project-meta'],
   (file, item) => (inFolder(file.local, ['migrations', 'alembic']) || topModules(item).has('alembic')) && ['data', 'python:alembic-migration'],
   (file, item) => ((item.definitions ?? []).some(definition => baseNames(definition).some(base => last(base) === 'BaseSettings'))
@@ -40,6 +46,12 @@ const RULES = [
   (file, item) => callNames(item).some(name => APPS.has(name)) && ['routes', 'python:app-entry'],
   (file, item) => (item.definitions ?? []).some(definition => definition.decorators.some(decorator => decorator?.t === 'call'
     && decorator.func?.t === 'name' && ROUTE_VERBS.test(decorator.func.v))) && ['routes', 'python:routes'],
+  // Request hooks and error pages (@bp.app_errorhandler(404), @app.before_request…): the request's path.
+  (file, item) => decorated(item, HOOKS) && ['routes', 'python:request-hooks'],
+  // Terminal commands (click, typer, @bp.cli.command()): project tooling.
+  (file, item) => ([...topModules(item)].some(name => name === 'click' || name === 'typer') || decorated(item, /\.cli\.(command|group)$/)) && ['config', 'python:cli'],
+  // A package that creates a blueprint or a router (bp = Blueprint('auth', __name__)).
+  (file, item) => callNames(item).some(name => name === 'Blueprint' || name === 'APIRouter') && ['routes', 'python:blueprint'],
   (file) => inFolder(file.local, ['routers', 'routes', 'api', 'endpoints', 'views', 'blueprints', 'controllers', 'handlers']) && ['routes', 'folder:routers'],
   (file, item) => ((item.definitions ?? []).some(definition => definition.kind === 'class' && (baseNames(definition).some(base => MODEL_BASES.test(base))
     && (item.assignments ?? []).some(assignment => assignment.scope === definition.qualname && assignment.targets[0]?.v === '__tablename__')
@@ -49,11 +61,16 @@ const RULES = [
     && ['data', 'database-client'],
   (file, item, context) => (context.importsOf.get(file.path) ?? []).some(target => context.data.has(target))
     && ['data', 'database-queries'],
+  // Folders of data access (db/, repositories/, crud/, queries/), when nothing above decided.
+  (file) => inFolder(file.local, ['db', 'database', 'repositories', 'repository', 'crud', 'queries', 'dal']) && ['data', 'folder:data'],
   (file) => (/^schemas?\.py$/.test(basename(file.path)) || inFolder(file.local, ['schemas'])) && ['logic', 'python:schemas'],
   (file) => inFolder(file.local, ['services', 'usecases', 'use_cases', 'domain', 'actions']) && ['logic', 'folder:services'],
   (file) => (inFolder(file.local, ['utils', 'util', 'helpers', 'helper', 'shared', 'common']) || /(^|_)(utils?|helpers?)(_|\.py$)/.test(basename(file.path)))
     && ['utilities', 'utilities'],
   (file, item) => [...topModules(item)].some(name => HTTP_MODULES.has(name) || SERVICE_MODULES.has(name)) && ['external', 'outgoing-call'],
+  // Email (Flask-Mail, emails, an email.py) and search engines reached through the app (current_app.elasticsearch.index…).
+  (file, item) => ([...topModules(item)].some(name => MAIL_MODULES.has(name)) || /^(e?mails?|mailer)\.py$/.test(basename(file.path))) && ['external', 'python:email'],
+  (file, item) => (item.calls ?? []).some(call => call.func?.t === 'name' && /(^|\.)(elasticsearch|opensearch|meilisearch)(\.|$)/i.test(call.func.v)) && ['external', 'python:search'],
   (file) => /^(scripts|bin|tools)\//.test(file.local) && ['config', 'folder:scripts'],
   (file) => inFolder(file.local, ['core', 'lib', 'logic', 'modules', 'features']) && ['logic', 'folder:lib'],
 ];

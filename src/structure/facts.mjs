@@ -103,7 +103,7 @@ export function alertFacts(source, item, graph) {
     add('what', what);
     if (why) add('why', why);
     if (item.severity) add('details', `Severity: ${item.severity}.`);
-    if (item.certainty === 'possible') add('details', `Only possibly: ${TEXT.plan[{ folder: 'healthBecauseFolder', name: 'healthBecauseName', public: 'healthBecausePublic' }[item.because]] ?? item.because ?? 'the reading cannot be sure'}`);
+    if (item.certainty === 'possible') add('details', `Only possibly: ${TEXT.plan[{ folder: 'healthBecauseFolder', name: 'healthBecauseName', public: 'healthBecausePublic', 'by-name': 'healthBecauseByName', vendor: 'healthBecauseVendor' }[item.because]] ?? item.because ?? 'the reading cannot be sure'}`);
     if (item.variable) { names.add(item.variable); add('details', `Variable: ${item.variable}.`); }
     if (item.table) { names.add(item.table); add('details', `Table: ${item.table}.`); }
     if (item.name) { names.add(item.name); add('details', `Function or value: ${item.name}.`); }

@@ -28,7 +28,9 @@ function sdkDestination(service, call) {
 
 // { nodes, edges } for the files' outgoing calls. symbolsOf: path → symbols;
 // runsOn: path → 'client' | 'server' | 'both'.
-export function outgoingServices(files, modules, { catalogue, symbolsOf, runsOn }) {
+// A Prisma client is the service of the schema's datasource (provider = "postgresql").
+const PRISMA_SERVICES = new Set(['postgres', 'mysql', 'mongodb']);
+export function outgoingServices(files, modules, { catalogue, symbolsOf, runsOn, skip = () => false, prismaStore = null }) {
   const services = new Map();
   const edges = new Map();
   const serviceFor = (id, make) => { if (!services.has(id)) services.set(id, { ...make(), proof: [] }); return services.get(id); };
@@ -44,7 +46,8 @@ export function outgoingServices(files, modules, { catalogue, symbolsOf, runsOn 
   };
   for (const file of files) {
     const module = modules.get(file.path);
-    if (!module) continue;
+    // Tests call test servers (http://testserver, a Mailpit): not services the app uses.
+    if (!module || skip(file.path)) continue;
     for (const call of module.outgoing ?? []) {
       if (call.host) {
         if (LOCAL.test(call.host)) continue;
@@ -60,7 +63,8 @@ export function outgoingServices(files, modules, { catalogue, symbolsOf, runsOn 
       }
     }
     for (const call of module.sdk ?? []) {
-      const known = catalogue.bySdk(call.package, call.name);
+      const known = call.package === '@prisma/client' && call.name === 'PrismaClient' && PRISMA_SERVICES.has(prismaStore)
+        ? catalogue.byId(prismaStore) : catalogue.bySdk(call.package, call.name);
       if (!known) continue;
       const service = serviceFor(`service:${known.id}`, () => ({ id: `service:${known.id}`, kind: 'service', name: known.name, category: known.category,
         destination: sdkDestination(known, call), origin: 'static' }));
