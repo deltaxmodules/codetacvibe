@@ -53,10 +53,15 @@ export function unionGraph(before, after, diff) {
 // Each sentence also has boxes (the ids of the plan it is about, with their
 // file and block, for the filter) and target { id, open } (what to open and
 // light to show it).
-export function changesView(before, after, { expanded = [], prediction = null } = {}) {
-  const diff = diffGraphs(before, after);
-  const sentences = changeSummary(diff, before, after);
-  const { graph, status, edgeStatus } = unionGraph(before, after, diff);
+// The boxes of the plan each sentence is about (phase D3: the Diff's report
+// lights them on its map): sentences with boxes and target added. The union
+// of the two graphs, so what was removed has its box too.
+export function sentenceBoxes(before, after, sentences, diff = diffGraphs(before, after)) {
+  const { graph } = unionGraph(before, after, diff);
+  return describe(graph, sentences).described;
+}
+
+function describe(graph, sentences) {
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const routeFile = new Map();
   for (const edge of graph.edges) if (edge.kind === 'exposes' && nodes.get(edge.to)?.kind === 'route' && !routeFile.has(edge.to)) routeFile.set(edge.to, edge.from);
@@ -70,6 +75,24 @@ export function changesView(before, after, { expanded = [], prediction = null } 
     if (!file) return [];
     return node.kind === 'file' ? [file.block, id] : [file.block, file.id, id];
   };
+  const described = sentences.map(sentence => {
+    const boxes = new Set();
+    let target = null;
+    for (const id of sentence.ids) {
+      const ids = chain(id);
+      for (const box of ids) boxes.add(box);
+      if (!target && ids.length) target = { id: ids[ids.length - 1], open: ids.slice(0, -1) };
+    }
+    return { ...sentence, boxes: [...boxes], target };
+  });
+  return { nodes, chain, described };
+}
+
+export function changesView(before, after, { expanded = [], prediction = null } = {}) {
+  const diff = diffGraphs(before, after);
+  const sentences = changeSummary(diff, before, after);
+  const { graph, status, edgeStatus } = unionGraph(before, after, diff);
+  const { nodes, chain, described } = describe(graph, sentences);
   // Boxes with something changed inside (a function of a file, a file of a block).
   const inside = new Set();
   const touch = id => { for (const box of chain(id).slice(0, -1)) inside.add(box); };
@@ -85,16 +108,6 @@ export function changesView(before, after, { expanded = [], prediction = null } 
     const change = status.get(box.id) ?? (inside.has(box.id) ? 'inside' : null);
     if (change) box.change = change;
   }
-  const described = sentences.map(sentence => {
-    const boxes = new Set();
-    let target = null;
-    for (const id of sentence.ids) {
-      const ids = chain(id);
-      for (const box of ids) boxes.add(box);
-      if (!target && ids.length) target = { id: ids[ids.length - 1], open: ids.slice(0, -1) };
-    }
-    return { ...sentence, boxes: [...boxes], target };
-  });
   const counts = { alert: 0, warning: 0, info: 0, touching: 0 };
   for (const sentence of sentences) { counts[sentence.severity] += 1; if (sentence.touches.length) counts.touching += 1; }
   const touchedBlocks = plan.boxes.filter(box => box.kind === 'block' && box.change).map(box => box.id);

@@ -49,6 +49,13 @@ function parseArgs(argv) {
     else if (!options.sub && !options.folder && arg === 'report') options.sub = 'report';
     else if (!options.sub && !options.folder && arg === 'structure') options.sub = 'structure';
     else if (!options.sub && !options.folder && arg === 'privacy') options.sub = 'privacy';
+    else if (!options.sub && !options.folder && arg === 'hooks') options.sub = 'hooks';
+    else if (!options.sub && !options.folder && arg === 'diff') options.sub = 'diff';
+    else if (options.sub === 'diff' && arg === '--list') options.list = true;
+    else if (options.sub === 'diff' && arg === '--code') options.code = true;
+    else if (options.sub === 'diff' && arg === '--open') options.open = true;
+    else if (options.sub === 'diff' && options.prompt === undefined && /^\d+$/.test(arg)) options.prompt = Number(arg);
+    else if (options.sub === 'hooks' && !options.hooks && !options.folder && ['install', 'uninstall', 'status'].includes(arg)) options.hooks = arg;
     else if (options.sub === 'privacy' && (arg === '--no-ai' || arg === '--ai')) options.noAi = arg === '--no-ai';
     else if (options.sub === 'privacy' && ['--on', '--off', '--default'].includes(arg)) (options[arg.slice(2)] ??= []).push(value());
     else if (options.sub === 'privacy' && arg === '--log') options.log = /^\d+$/.test(argv[index + 1] ?? '') ? Number(value()) : 5;
@@ -169,6 +176,25 @@ async function ensurePanel(port, avoid) {
     throw new Error(t('run.panelDidNotStart', { output: first.trim().split('\n').slice(-3).join(' ') }));
   }
   throw new Error(t('run.noFreePort'));
+}
+
+// A panel of this version for `codetac diff --open`: one already running, or a
+// new one on the first free port, started apart so it stays after the command.
+async function panelForReport(port) {
+  const version = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version;
+  for (let candidate = port; candidate < port + 20; candidate++) {
+    const ping = await get(candidate, '/api/ping');
+    if (panelOnPort(ping, version)?.kind === 'same') return candidate;
+    if (ping) continue;
+    const child = spawn(process.execPath, [join(workspace, 'src', 'panel.mjs'), '--port', String(candidate)], { cwd: workspace, stdio: 'ignore', detached: true, env: { ...process.env } });
+    child.unref();
+    for (let tries = 0; tries < 40; tries++) {
+      await wait(250);
+      if ((await get(candidate, '/api/ping'))?.status === 200) return candidate;
+    }
+    return null;
+  }
+  return null;
 }
 
 function recordingName(name) {
@@ -458,6 +484,19 @@ function portTakenBy(port, who) {
 }
 
 async function main() {
+  // Phase D1: what the Claude Code hooks run (codetac hook <event> --project <folder>).
+  // Read before the other options: it prints nothing and always exits with 0.
+  if (process.argv[2] === 'hook') {
+    try {
+      const argv = process.argv.slice(3);
+      const at = argv.indexOf('--project');
+      const { prepareReport, runHook } = await import('./diff/hook.mjs');
+      const prompt = argv.indexOf('--prompt');
+      if (argv[0] === 'Prepare') await prepareReport(argv[at + 1], Number(argv[prompt + 1]));
+      else runHook(argv[0], { project: at >= 0 ? argv[at + 1] : null });
+    } catch {}
+    process.exit(0);
+  }
   const options = parseArgs(process.argv.slice(2));
   if (options.sub === 'help') { say(HELP); return; }
   if (options.sub === 'version') { say(JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version); return; }
@@ -496,6 +535,28 @@ async function main() {
     process.exitCode = await structureCommand(root, { reclassify: options.reclassify, suggest: options.suggest, yes: options.yes, confirm,
       snapshot: options.snapshot ?? null, snapshots: options.snapshots ?? false, diff: options.diff ?? null,
       predict: options.predict ?? false, ask: interactive ? ask : null });
+    return;
+  }
+  if (options.sub === 'diff') {
+    const { diffCommand, reportAddress } = await import('./diff/cli.mjs');
+    if (options.open) {
+      // Phase D3: the report in the panel, with no app running (a panel of this version, or one started apart that stays).
+      const address = reportAddress(root, options.prompt ?? 'latest');
+      if (address.error) { say(`✗ ${address.error}`); process.exitCode = 2; return; }
+      const panel = await panelForReport(options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000));
+      if (!panel) { say(`✗ ${t('prompts.cli.noPanel')}`); process.exitCode = 1; return; }
+      const url = `http://127.0.0.1:${panel}${address.path}`;
+      say(t('prompts.cli.opening', { url }));
+      openBrowser(url);
+      return;
+    }
+    process.exitCode = await diffCommand(root, { n: options.prompt ?? 'latest', list: options.list ?? false, code: options.code ?? false });
+    return;
+  }
+  if (options.sub === 'hooks') {
+    const { hooksCommand } = await import('./diff/install.mjs');
+    const confirm = interactive ? async question => /^y(es)?$/i.test(String(await ask(question) ?? '').trim()) : null;
+    process.exitCode = await hooksCommand(root, options.hooks ?? 'status', { yes: options.yes, confirm });
     return;
   }
   if (options.sub === 'diagnose') {

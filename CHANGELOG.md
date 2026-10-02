@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0
+
+**What did my last prompt change? A report for each prompt you give Claude Code, with no snapshot by hand.**
+
+- **`codetac hooks install`** adds three Claude Code hooks to `.claude/settings.local.json` (it shows them and asks first; nothing else is written in the project). From then on, each prompt is recorded: its text, with secrets hidden, and the project's files when it starts and when it ends, kept in `~/.codetac/diff/`, never in the project. `.env` files keep only the variable names, and keys written in the code are masked. `codetac hooks uninstall` puts the file back as it was; `codetac hooks status` says whether they are installed.
+- **The bar of your app** shows **Prompt running…** while a prompt runs, then **What changed?** with the number of changes and, in orange, the number to look at.
+- **The report of a prompt** (from the bar, or `codetac diff --open` with no app running):
+  - sentences made by rules, the most important first, in **Look at these** and **Flow and data**, each with its proof;
+  - new risks: a dependency added, removed or with another version (`package.json`, `requirements*.txt`, `pyproject.toml`), a test file deleted, a file with fewer tests, a new route *possibly* without a session check;
+  - the **Map**: the plan before and after the prompt;
+  - the **code**: old lines beside new ones, each block with the sentences it explains, and how many blocks no sentence explains;
+  - press a sentence to light its lines and boxes; press a box to light its sentences;
+  - **◀ previous prompt**, **next prompt ▶** and **History**, with what you have not opened yet.
+- **In the terminal:** `codetac diff [n]` (files, structure, risks), `--code` (the lines), `--list` (the prompts recorded).
+- Interrupted prompts (Esc) and subagents still working when the next prompt starts are handled: the report says when changes may be mixed.
+- The 50 newest prompts are kept for each project (`diff.keep` in `codetac.structure.json`).
+- The view **Changes** can compare against a prompt (**before prompt N**).
+- **Fix:** a sentence about a secret could end in "(—)" when no file was listed, and a line could be given twice as proof.
+- New page in the manual: *What did my last prompt change?*
+
 ## 0.8.1
 
 **Fixes from trying codeTAC on five real open-source projects (Next.js, Express, Flask, FastAPI, React + FastAPI).**

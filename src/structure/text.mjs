@@ -13,6 +13,11 @@ export function planPageWithText(page, text = TEXT) {
   return page.replace('/*CODETAC_TEXT*/null', () => json);
 }
 
+// The Diff's report page (phase D3) with its sentences.
+export function reportPageWithText(page, text = TEXT) {
+  return page.replace('/*CODETAC_TEXT*/null', () => JSON.stringify({ report: text.report }).replace(/</g, '\\u003c'));
+}
+
 // The Privacy page (phase 10, step 5) with its sentences.
 export function privacyPageWithText(page, text = TEXT) {
   return page.replace('/*CODETAC_TEXT*/null', () => JSON.stringify({ privacy: text.privacy }).replace(/</g, '\\u003c'));

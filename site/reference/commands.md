@@ -16,6 +16,9 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | `codetac structure --snapshot [label] --predict` | first asks what you expect the next change to do, and saves it with the snapshot |
 | `codetac structure --snapshots` | lists the saved snapshots, newest first |
 | `codetac structure --diff [from] [to]` | what changed since the newest snapshot, or between two points: a snapshot id, a commit (`HEAD~3`, a branch, a tag) or now |
+| `codetac hooks install` / `uninstall` | the Claude Code hooks that record each prompt and the files before and after it (asks first; written in `.claude/settings.local.json`) |
+| `codetac diff [n]` | what prompt `n` changed (the newest by default): files, structure, risks; `--code` adds the lines, `--open` opens the report in the panel |
+| `codetac diff --list` | the prompts recorded, newest first |
 | `codetac privacy` | what codeTAC may send to an AI, with a switch for each kind |
 | `codetac help` | all the options |
 | `codetac --version` | the installed version |

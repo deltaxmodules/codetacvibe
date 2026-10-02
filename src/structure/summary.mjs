@@ -18,10 +18,12 @@ import { importCycles } from './smells.mjs';
 
 const SEVERITY = { alert: 0, warning: 1, info: 2 };
 // Within a severity, the order of the rules: what matters more first.
-const ORDER = ['public-secret', 'secret-in-browser', 'no-rls-browser', 'literal-key', 'new-service', 'sends-data', 'destination', 'new-secret-variable',
+// (route-no-auth to dependency-removed: the Diff's own rules, src/diff/risk.mjs, phase D2.)
+const ORDER = ['public-secret', 'secret-in-browser', 'no-rls-browser', 'literal-key', 'new-service', 'sends-data', 'destination', 'route-no-auth',
+  'dependency-added', 'test-deleted', 'tests-removed', 'new-secret-variable',
   'uses-secret', 'rls-off', 'new-cycle', 'table-gone', 'runs-on', 'depends-on', 'new-table', 'columns', 'new-write', 'new-route', 'route-gone',
   'moved-block', 'new-block', 'block-gone', 'service-gone', 'stops-sending', 'exposure-gone', 'rls-alert-gone', 'rls-on', 'cycle-gone',
-  'no-longer-depends-on', 'new-variable', 'variable-gone', 'project-types', 'project-types-gone', 'files-added', 'files-removed', 'files-renamed',
+  'no-longer-depends-on', 'new-variable', 'variable-gone', 'dependency-changed', 'dependency-removed', 'project-types', 'project-types-gone', 'files-added', 'files-removed', 'files-renamed',
   'files-changed'];
 const MAX_LIST = 5;
 const MAX_PROOF = 8;
@@ -46,6 +48,9 @@ const firstProofs = items => items.flatMap(item => (item.proof ?? []).slice(0, 1
 export function changeSummary(diff, before, after) {
   const sentences = [];
   const add = (kind, severity, text, { touches = [], side = 'after', proof = [], ids = [] } = {}) => {
+    // The same line can prove a sentence twice (the read and the variable itself).
+    const places = new Set();
+    proof = proof.filter(item => { const at = JSON.stringify(item); return !places.has(at) && places.add(at); });
     sentences.push({ kind, severity, touches, text, side, proof: proof.slice(0, MAX_PROOF), ids: [...new Set(ids)] });
   };
   const nodesBefore = new Map(before.nodes.map(node => [node.id, node]));
@@ -58,8 +63,9 @@ export function changeSummary(diff, before, after) {
   const exposedAfter = new Map(exposure(after).map(item => [exposureKey(item), item]));
   for (const [key, item] of exposedAfter) {
     if (exposedBefore.has(key)) continue;
-    const files = item.browserFiles.length ? list(item.browserFiles) : '—';
-    add(item.kind, item.severity, t(item.kind === 'public-secret' ? 'diff.publicSecret' : 'diff.secretInBrowser', { variable: item.variable, files }),
+    // A public name puts the value in the browser even before a page imports the file.
+    const text = item.kind !== 'public-secret' ? 'diff.secretInBrowser' : item.browserFiles.length ? 'diff.publicSecret' : 'diff.publicSecretNoFiles';
+    add(item.kind, item.severity, t(text, { variable: item.variable, files: list(item.browserFiles) }),
       { touches: ['secrets'], proof: item.proof, ids: [`env:${item.variable}`, ...item.browserFiles.map(path => `file:${path}`)] });
   }
   const stillExposed = new Set([...exposedAfter.values()].map(item => item.variable));
@@ -124,7 +130,7 @@ export function changeSummary(diff, before, after) {
   for (const node of diff.env.added) {
     if (!node.secretLike) { plainAdded.push(node); continue; }
     const edges = readers(after, node.id);
-    add('new-secret-variable', 'warning', t('diff.newSecretVariable', { variable: node.name, files: edges.length ? list(edges.map(edge => place(edge.from))) : '—' }),
+    add('new-secret-variable', 'warning', edges.length ? t('diff.newSecretVariable', { variable: node.name, files: list(edges.map(edge => place(edge.from))) }) : t('diff.newSecretVariableUnread', { variable: node.name }),
       { touches: ['secrets'], proof: [...edges.flatMap(edge => edge.proof), ...node.proof], ids: [node.id, ...edges.map(edge => edge.from)] });
   }
   if (plainAdded.length) add('new-variable', 'info', t('diff.newVariable', { count: plainAdded.length, list: list(plainAdded.map(node => node.name)) }), { proof: firstProofs(plainAdded), ids: plainAdded.map(node => node.id) });
@@ -224,5 +230,10 @@ export function changeSummary(diff, before, after) {
   if (diff.project.typesAdded.length) add('project-types', 'info', t('diff.projectTypes', { types: diff.project.typesAdded.join(', ') }));
   if (diff.project.typesRemoved.length) add('project-types-gone', 'info', t('diff.projectTypesGone', { types: diff.project.typesRemoved.join(', ') }), { side: 'before' });
 
+  return sortSentences(sentences);
+}
+
+// The most important first: by severity, then by the order of the rules, then by text.
+export function sortSentences(sentences) {
   return sentences.sort((a, b) => SEVERITY[a.severity] - SEVERITY[b.severity] || ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
 }

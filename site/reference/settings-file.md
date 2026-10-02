@@ -24,7 +24,8 @@ The file is called `codetac.structure.json` and goes in your project's **main fo
   ],
   "env": { "platform": ["PORT", "DATABASE_URL"] },
   "smells": { "largeFileLines": 600, "off": ["unused-export"] },
-  "snapshots": { "keep": 20 }
+  "snapshots": { "keep": 20 },
+  "diff": { "keep": 50 }
 }
 ```
 
@@ -39,6 +40,7 @@ The file is called `codetac.structure.json` and goes in your project's **main fo
 | `env.platform` | variables set outside the `.env` files (hosting platform, CI), so they are not listed as “used but never defined” |
 | `smells` | the limits of the structure health checks, and kinds turned off |
 | `snapshots.keep` | how many snapshots are kept for this project (default 20; the oldest go first) |
+| `diff.keep` | how many prompts [What did my last prompt change?](/guide/what-did-my-last-prompt-change) keeps for this project, with their files (default 50; the oldest go first) |
 
 **Blocks:** `interface`, `routes`, `logic`, `data`, `external`, `config`, `utilities`, `tests`, `unknown`.
 

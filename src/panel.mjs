@@ -13,7 +13,8 @@ import { LABELS } from './sentences.mjs';
 import { answerQuestion, complete, createPurposes, describeConfig, loadConfig, questionRequest } from './ai.mjs';
 import { blocked, blockedText, clearLog, privacyState, readLog, writeSettings } from './privacy.mjs';
 import { createStructureService, isLoopback } from './structure/service.mjs';
-import { TEXT, t, privacyPageWithText, planPageWithText } from './structure/text.mjs';
+import { createDiffService, projectById } from './diff/service.mjs';
+import { TEXT, t, privacyPageWithText, planPageWithText, reportPageWithText } from './structure/text.mjs';
 import { maskKeys } from './structure/node/modules.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -61,10 +62,16 @@ const editorScheme = EDITORS[editor] ?? null;
 
 // The project's structure (StructureTAC): the folder of each recording.
 const privacyPage = privacyPageWithText(readFileSync(new URL('./privacy-page.html', import.meta.url), 'utf8'));
+const reportPage = reportPageWithText(readFileSync(new URL('./diff/report-page.html', import.meta.url), 'utf8'));
 const structurePage = planPageWithText(readFileSync(new URL('./structure/plan-page.html', import.meta.url), 'utf8'));
-const structure = createStructureService({ rootOf: run => { store.ingest(); return store.root(run); }, editor: editorScheme, ai: { config: ai, complete },
+// A project without a recording (the Diff with no app running, phase D3) is named run=project:<id of its Diff folder>.
+const rootOfRun = run => { if (String(run).startsWith('project:')) return projectById(String(run).slice(8)); store.ingest(); return store.root(run); };
+const structure = createStructureService({ rootOf: rootOfRun, editor: editorScheme, ai: { config: ai, complete },
   recordings: { actions: run => { store.ingest(); return store.listActions({ run, limit: 50 }); }, action: id => view.resolvedAction(id), request: id => requestWithDigest(id),
     outgoing: run => { store.ingest(); return store.outgoing(run); } } });
+
+// The Diff (0.9.0, phase D3): the prompts of the project of a recording, or of a project picked in the panel.
+const diffService = createDiffService({ rootOf: rootOfRun });
 
 // Detail requests live in the recording's folder, where the running
 // application reads them (runtime.mjs).
@@ -116,6 +123,13 @@ const server = http.createServer(async (request, response) => {
       response.end(structurePage);
       return;
     }
+    // The Diff's report and history (phase D3), also inside the bar.
+    if (url.pathname === '/diff') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+        'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
+      response.end(reportPage);
+      return;
+    }
     if (url.pathname === '/privacy') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
         'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
@@ -159,6 +173,19 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       const answer = await structure.handle(url.pathname, url.searchParams, post ? { method: 'POST', body: await body(request) } : {});
+      json(response, answer.status, answer.body);
+      return;
+    }
+    // The Diff: read-only, except marking a report as opened (from the panel's own page).
+    if (url.pathname.startsWith('/api/diff/')) {
+      const post = request.method === 'POST' && url.pathname === '/api/diff/seen';
+      if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
+        || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
+        || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {
+        json(response, 403, { error: t('panel.api.refused') });
+        return;
+      }
+      const answer = await diffService.handle(url.pathname, url.searchParams, post ? { method: 'POST', body: await body(request) } : {});
       json(response, answer.status, answer.body);
       return;
     }

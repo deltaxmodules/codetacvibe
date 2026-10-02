@@ -8,6 +8,7 @@ at the protocol level (WSGI and ASGI), for any framework on top of them.
 - /__codetac/bar.js serves the same bar.js as the Node side (CODETAC_BAR_JS),
   /__codetac/events records the page's actions (`browser-action`), and
   /__codetac/review gives the panel's count of changes not opened (phase 11);
+  /__codetac/diff the state of the newest prompt of the Diff (phase D3);
 - the script tag goes into complete HTML documents: known length (or a body
   given whole), not compressed, not a file, 1 MB at most. The length is
   adjusted, and validators (ETag, Last-Modified) are dropped only when the
@@ -279,10 +280,9 @@ def _same_origin(origin, host):
 _LOOPBACK = ('127.0.0.1', 'localhost', '::1')
 
 
-def review_total(timeout=3):
-    """src/page.mjs reviewTotal: the panel's count of changes not opened, or None. Only
-    a panel on this computer is asked (the number never leaves it), with a short wait,
-    and the request is not recorded as a call of the app."""
+def panel_json(path, timeout=3):
+    """src/page.mjs panelJson: the JSON answer of the panel on this computer (never
+    another), or None, with a short wait; the request is not recorded as a call of the app."""
     run = os.environ.get('CODETAC_RUN', '')
     from urllib.parse import quote, urlsplit
     try:
@@ -301,13 +301,12 @@ def review_total(timeout=3):
     connection = None
     try:
         connection = http.client.HTTPConnection(parts.hostname, port, timeout=timeout)
-        connection.request('GET', '/api/structure/review?run=' + quote(run, safe=''), headers={INTERNAL_HEADER: '1'})
+        connection.request('GET', path + ('&' if '?' in path else '?') + 'run=' + quote(run, safe=''), headers={INTERNAL_HEADER: '1'})
         answer = connection.getresponse()
         body = answer.read()
         if answer.status != 200:
             return None
-        review = json.loads(body.decode('utf-8')).get('review') or {}
-        return int(review.get('total') or 0)
+        return json.loads(body.decode('utf-8'))
     except Exception:
         return None
     finally:
@@ -315,6 +314,27 @@ def review_total(timeout=3):
             connection.close()
         if token is not None:
             _inside.reset(token)
+
+
+def review_total(timeout=3):
+    """src/page.mjs reviewTotal: the panel's count of changes not opened, or None."""
+    answer = panel_json('/api/structure/review', timeout)
+    if answer is None:
+        return None
+    try:
+        return int((answer.get('review') or {}).get('total') or 0)
+    except Exception:
+        return None
+
+
+def diff_state(timeout=3):
+    """src/page.mjs diffState (the Diff, phase D3): the newest prompt and its badge, or None."""
+    answer = panel_json('/api/diff/state', timeout)
+    if not isinstance(answer, dict):
+        return None
+    latest = answer.get('latest') or None
+    return {'hooks': bool(answer.get('hooks')), 'latest': {'n': latest.get('n'), 'status': latest.get('status')} if latest else None,
+            'badge': answer.get('badge')}
 
 
 def own_route(method, path, origin, host, read_body, fetch_site=None):
@@ -328,6 +348,12 @@ def own_route(method, path, origin, host, read_body, fetch_site=None):
         if not _same_origin(origin, host) or fetch_site == 'cross-site':
             return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
         body = json.dumps({'total': review_total()}, separators=(',', ':')).encode('utf-8')
+        return 200, [('Content-Type', 'application/json; charset=utf-8'), ('Cache-Control', 'no-store')], body
+    # The Diff (phase D3): the state of the newest prompt, for the bar's «What changed?» button.
+    if path == PREFIX + 'diff' and method == 'GET':
+        if not _same_origin(origin, host) or fetch_site == 'cross-site':
+            return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
+        body = json.dumps(diff_state(), separators=(',', ':')).encode('utf-8')
         return 200, [('Content-Type', 'application/json; charset=utf-8'), ('Cache-Control', 'no-store')], body
     if path == PREFIX + 'events' and method == 'POST':
         # Only the page itself may report actions: another site open in the
@@ -503,7 +529,7 @@ async def asgi_own_route(scope, receive, send):
     size = await read_all() if scope.get('method') == 'POST' else 0
     arguments = (scope.get('method', 'GET'), scope.get('path', ''), headers.get('origin'), headers.get('host'),
                  lambda limit: None if size is None or size > limit else b''.join(received), headers.get('sec-fetch-site'))
-    if scope.get('path') == PREFIX + 'review':
+    if scope.get('path') in (PREFIX + 'review', PREFIX + 'diff'):
         # Asking the panel waits on the network: not on the event loop.
         import asyncio
         status, answer, body = await asyncio.get_running_loop().run_in_executor(None, lambda: own_route(*arguments))

@@ -25,6 +25,8 @@ import { listSnapshots, readSnapshot, saveSnapshot } from './snapshots.mjs';
 import { changesView } from './changes.mjs';
 import { alertFacts, planFacts, withKeys } from './facts.mjs';
 import { readPoint, recentCommits } from './commits.mjs';
+import { describePrompt, PROMPT_POINT } from '../diff/moments.mjs';
+import { listPrompts, readPrompt } from '../diff/prompts.mjs';
 import { cleanPrediction, predictionChoices } from './predict.mjs';
 import { answerQuestion, quizQuestions, readResults, withoutAnswers } from './quiz.mjs';
 import { changeSentences, markReviewed, readReview, reviewDebt, sentenceKey } from './review.mjs';
@@ -265,10 +267,15 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
       const commits = recentCommits(root);
       const wanted = params.get('snapshot') || 'latest';
       const open = (params.get('open') ?? '').split(',').map(item => item.trim()).filter(Boolean).slice(0, 500);
-      const isCommit = /^[0-9a-f]{40}$/.test(wanted);
+      // Phase D1: the prompts of the Diff, newest first (a prompt is the project just before it).
+      const prompts = listPrompts(root).slice(-15).reverse().map(describePrompt);
+      const promptPoint = PROMPT_POINT.exec(wanted);
+      const isCommit = /^[0-9a-f]{40}$/.test(wanted) || Boolean(promptPoint);
       let side = null;
       if (isCommit) {
-        const key = `${root}\n${wanted}`;
+        // A prompt's moment never changes once archived: kept like a commit, by the moment.
+        const prompt = promptPoint ? readPrompt(root, Number(promptPoint[1])) : null;
+        const key = `${root}\n${wanted}${prompt ? `\n${promptPoint[2] ? prompt.after : prompt.before}` : ''}`;
         if (!commitGraphs.has(key)) {
           const read = await readPoint(root, wanted, { readSnapshot });
           if (read.error) return { status: 404, body: { error: read.error } };
@@ -280,16 +287,30 @@ export function createStructureService({ rootOf, maxAge = 10_000, read = readInW
         const read = await readPoint(root, wanted, { readSnapshot });
         if (!read.error) side = read;
       }
-      if (!side) return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, against: null, missing: snapshots.length ? wanted : null }, review: debtOf(entry, root) } };
+      if (!side) return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, prompts, against: null, missing: snapshots.length ? wanted : null }, review: debtOf(entry, root) } };
       const against = side.point;
-      const key = `${entry.readAt}:${against.id ?? against.commit}:${against.createdAt ?? ''}:${open.join(',')}`;
-      if (entry.changes?.key !== key) entry.changes = { key, view: changesView(side.graph, entry.graph, { expanded: open, prediction: against.prediction ?? null }) };
+      // Phase D3: up to the end of a prompt (to=prompt-N-after) instead of the folder now: the report's map.
+      let until = null;
+      const toPoint = PROMPT_POINT.exec(params.get('to') ?? '');
+      if (toPoint?.[2]) {
+        const prompt = readPrompt(root, Number(toPoint[1]));
+        const key = `${root}\n${toPoint[0]}\n${prompt?.after ?? ''}`;
+        if (!commitGraphs.has(key)) {
+          const read = await readPoint(root, toPoint[0], { readSnapshot });
+          if (read.error) return { status: 404, body: { error: read.error } };
+          commitGraphs.set(key, read);
+          if (commitGraphs.size > MAX_COMMITS) commitGraphs.delete(commitGraphs.keys().next().value);
+        }
+        until = commitGraphs.get(key);
+      }
+      const key = `${until ? until.point.moment : entry.readAt}:${against.id ?? against.commit ?? against.moment}:${against.createdAt ?? ''}:${open.join(',')}`;
+      if (entry.changes?.key !== key) entry.changes = { key, view: changesView(side.graph, until?.graph ?? entry.graph, { expanded: open, prediction: against.prediction ?? null }) };
       // Each sentence says whether it was opened (against a snapshot), and the
       // changes carried from before the newest snapshot come along.
       const reviewed = new Set(against.id ? readReview(root).reviewed[against.id] ?? [] : []);
       const sentences = withKeys('changes', entry.changes.view.sentences).map(sentence => ({ ...sentence, reviewKey: sentenceKey(sentence),
         ...(against.id ? { reviewed: reviewed.has(sentenceKey(sentence)) } : {}) }));
-      return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, against, ...entry.changes.view, sentences }, review: debtOf(entry, root) } };
+      return { status: 200, body: { ...summary(entry), diff: { snapshots, commits, prompts, against, ...(until ? { until: until.point } : {}), ...entry.changes.view, sentences }, review: debtOf(entry, root) } };
     }
     if (pathname === '/api/structure/snapshot') {
       if (method !== 'POST') return { status: 405, body: { error: t('service.usePost') } };

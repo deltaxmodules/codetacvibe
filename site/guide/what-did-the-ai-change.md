@@ -4,6 +4,8 @@
 
 The idea is simple: take a **snapshot** before you ask the AI for a change, and compare after.
 
+Using **Claude Code**? It can be automatic, one report per prompt, with the lines of code: see [What did my last prompt change?](/guide/what-did-my-last-prompt-change).
+
 ## Steps
 
 1. Open **Structure** ([how](/guide/the-floor-plan#steps)) and press **Changes**.

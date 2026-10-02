@@ -61,6 +61,9 @@ pre .hit { background:var(--hit); display:block; }
 .note { fill:#d0566a; }
 .note-text { fill:#fff; font-size:10px; font-weight:700; pointer-events:none; }
 body.embed h1 { display:none; }
+/* The Diff's report (phase D3): only the plan, as its map. */
+body.maponly header, body.maponly #side, body.maponly #tracebar { display:none; }
+body.maponly .changes > :not(.marks) { display:none; }
 :root { --a-observed:#d97a1f; }
 #tracebar { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; padding:6px 12px; background:var(--code); border-bottom:1px solid var(--line); font-size:12px; }
 #tracebar b { font-weight:600; }
@@ -171,6 +174,10 @@ header a.plain { color:var(--accent); text-decoration:none; }
   const params = new URLSearchParams(location.search);
   const run = params.get('run') || '';
   if (params.get('embed') === '1') document.body.classList.add('embed');
+  // The map of the Diff's report (phase D3): the Changes view up to the end of a prompt (to=prompt-N-after), only the plan.
+  const mapOnly = params.get('map') === '1';
+  const diffTo = /^prompt-\d+-after$/.test(params.get('to') || '') ? params.get('to') : '';
+  if (mapOnly) document.body.classList.add('maponly');
   const LAYER_CLASS = { interface: 'interface', routes: 'routes', logic: 'logic', data: 'data', external: 'external' };
   // The sentences, from src/structure/text/<language>.json (put here by the panel).
   const TEXT = /*CODETAC_TEXT*/null || { layers: {}, plan: {} };
@@ -495,6 +502,18 @@ header a.plain { color:var(--accent); text-decoration:none; }
     return [cx + dx * Math.min(scale, 1), cy + dy * Math.min(scale, 1)];
   }
 
+  // The report around the map (phase D3) asks to light the boxes of a sentence.
+  window.addEventListener('message', event => {
+    if (!mapOnly || event.source !== window.parent || event.origin !== location.origin || event.data?.codetac !== 'light') return;
+    const target = event.data.target;
+    if (!target || typeof target.id !== 'string') { highlight = null; selected = null; lastDiff = ''; refreshDiff(); return; }
+    for (const id of Array.isArray(target.open) ? target.open : []) if (typeof id === 'string') open.add(id);
+    save();
+    highlight = target.id;
+    selected = { type: 'box', id: target.id };
+    lastDiff = '';
+    refreshDiff().then(() => document.querySelector('[data-id="' + CSS.escape(target.id) + '"]')?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }));
+  });
   function draw() {
     const canvas = $('canvas');
     canvas.textContent = '';
@@ -557,6 +576,8 @@ header a.plain { color:var(--accent); text-decoration:none; }
         selected = { type: 'box', id: box.id };
         details();
         mark();
+        // The report around the map shows the sentences of this box.
+        if (mapOnly && window.parent !== window) window.parent.postMessage({ codetac: 'box', id: box.id }, location.origin);
       };
       g.addEventListener('click', activate);
       g.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); } });
@@ -994,7 +1015,32 @@ header a.plain { color:var(--accent); text-decoration:none; }
     const inPlay = item.from ? allowed.has(item.from) || allowed.has(item.to) : allowed.has(item.id);
     return inPlay ? item.change : 'none';
   }
+  // The value of a point in the picker: a commit, a prompt of the Diff (phase D1) or a snapshot.
+  function pointValue(item) {
+    if (item.type === 'commit') return item.commit;
+    if (item.type === 'prompt') return 'prompt-' + item.prompt.n;
+    return item.id;
+  }
+  function promptText(prompt) {
+    let state = '';
+    if (prompt.status === 'running') state = ' · ' + t('diffPromptRunning');
+    if (prompt.status === 'waiting') state = ' · ' + t('diffPromptWaiting');
+    if (prompt.status === 'interrupted') state = ' · ' + t('diffPromptInterrupted');
+    return t('diffPrompt', { n: prompt.n, date: prompt.startedAt.replace('T', ' ').slice(0, 16) + ' UTC', text: prompt.text.length > 60 ? prompt.text.slice(0, 59) + '…' : prompt.text }) + state;
+  }
+  // The prompts recorded by the Claude Code hooks (phase D1): the project just before each one.
+  function promptsGroup(data, selected) {
+    const group = html('optgroup');
+    group.label = t('diffPrompts');
+    for (const prompt of data.prompts || []) {
+      const option = html('option', promptText(prompt), { value: 'prompt-' + prompt.n });
+      if (selected === 'prompt-' + prompt.n) option.selected = true;
+      group.appendChild(option);
+    }
+    return group;
+  }
   function snapshotText(item) {
+    if (item.type === 'prompt') return promptText(item.prompt);
     if (item.type === 'commit' || !item.createdAt) return t('diffCommit', { commit: item.commit.slice(0, 12), date: (item.date || '').slice(0, 10), subject: item.subject || '' });
     const when = item.createdAt.replace('T', ' ').slice(0, 16) + ' UTC';
     const source = item.source === 'commit' ? t('diffSnapshotCommit', { commit: item.commit.slice(0, 12) })
@@ -1194,7 +1240,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
     } else proofList(slot, sentence.proof);
     li.appendChild(slot);
     if (sentence.key && diffShown?.against) {
-      const snapshot = diffShown.against.type === 'commit' ? diffShown.against.commit : diffShown.against.id;
+      const snapshot = pointValue(diffShown.against);
       explainArea(li, { kind: 'alert', source: 'changes', key: sentence.key, snapshot }, { small: true });
     }
     if (onPlan && diffLit === sentence) li.classList.add('lit');
@@ -1207,12 +1253,13 @@ header a.plain { color:var(--accent); text-decoration:none; }
       box.appendChild(html('p', data.missing ? t('diffMissing', { id: data.missing }) : t('diffNoSnapshot'), { className: 'muted' }));
       const bar = html('div', null, { className: 'bar' });
       saveControls(bar);
-      if ((data.commits || []).length) {
+      if ((data.commits || []).length || (data.prompts || []).length) {
         const pick = html('select', null, { id: 'diffSnapshot' });
         pick.setAttribute('aria-label', t('diffOrCommit'));
         pick.appendChild(html('option', t('diffOrCommit'), { value: '' }));
-        for (const item of data.commits) pick.appendChild(html('option', snapshotText({ ...item, type: 'commit' }), { value: item.commit }));
-        pick.addEventListener('change', () => { if (!pick.value) return; diffSnapshot = pick.value; lastDiff = ''; refreshDiff(); });
+        if ((data.prompts || []).length) pick.appendChild(promptsGroup(data, null));
+        for (const item of data.commits || []) pick.appendChild(html('option', snapshotText({ ...item, type: 'commit' }), { value: item.commit }));
+        pick.addEventListener('change', () => { if (!pick.value) return; diffSnapshot = pick.value; lastDiff = ''; showReadingCommit(); refreshDiff(); });
         bar.appendChild(pick);
       }
       box.appendChild(bar);
@@ -1232,6 +1279,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
       snapshotsGroup.appendChild(option);
     });
     if (data.snapshots.length) pick.appendChild(snapshotsGroup);
+    if ((data.prompts || []).length) pick.appendChild(promptsGroup(data, pointValue(data.against)));
     // Commits are read from a temporary copy (git archive): the folder and .git are not touched.
     const commitsGroup = html('optgroup');
     commitsGroup.label = t('diffCommits');
@@ -1241,7 +1289,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
       commitsGroup.appendChild(option);
     }
     if ((data.commits || []).length) pick.appendChild(commitsGroup);
-    pick.addEventListener('change', () => { diffSnapshot = pick.value; diffLit = null; lastDiff = ''; if (/^[0-9a-f]{40}$/.test(pick.value)) showReadingCommit(); refreshDiff(); });
+    pick.addEventListener('change', () => { diffSnapshot = pick.value; diffLit = null; lastDiff = ''; if (/^[0-9a-f]{40}$|^prompt-/.test(pick.value)) showReadingCommit(); refreshDiff(); });
     const label = html('label', t('diffCompareWith') + ' ');
     label.appendChild(pick);
     bar.appendChild(label);
@@ -1334,7 +1382,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
   async function refreshDiff(wait) {
     let response;
     try {
-      response = await fetch('/api/structure/diff?run=' + encodeURIComponent(run) + '&snapshot=' + encodeURIComponent(diffSnapshot) + '&open=' + encodeURIComponent([...open].join(',')) + (wait ? '&wait=5000' : ''), { cache: 'no-store' });
+      response = await fetch('/api/structure/diff?run=' + encodeURIComponent(run) + '&snapshot=' + encodeURIComponent(diffSnapshot) + '&open=' + encodeURIComponent([...open].join(',')) + (diffTo ? '&to=' + encodeURIComponent(diffTo) : '') + (wait ? '&wait=5000' : ''), { cache: 'no-store' });
     } catch { showStatus(t('panelSilent')); return; }
     const body = await response.json().catch(() => ({}));
     if (view !== 'diff') return;
@@ -1348,7 +1396,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
     // A block is opened the first time it has changes (against this snapshot);
     // after that, the user's choice to close it stays.
     if (data.against) {
-      const key = data.against.type === 'commit' ? data.against.commit : data.against.id + data.against.createdAt;
+      const key = pointValue(data.against) + (data.against.createdAt || data.against.moment || '');
       if (diffOpenedFor?.key !== key) diffOpenedFor = { key, blocks: new Set() };
       let changed = false;
       for (const id of data.touchedBlocks) {

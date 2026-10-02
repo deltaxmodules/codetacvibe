@@ -25,8 +25,8 @@ export function pathPattern(pattern) {
   return path => regex.test(path);
 }
 
-const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells', 'snapshots']);
-const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, snapshots: {}, problems: [] });
+const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells', 'snapshots', 'diff']);
+const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, snapshots: {}, diff: {}, problems: [] });
 
 // The project's configuration:
 //   ignore: [pattern]           files left out of the plan (on top of .gitignore)
@@ -36,6 +36,7 @@ const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env
 //   env: { platform: [names] }  variables set outside the .env files (hosting, CI): never "undefined"
 //   smells: { limit: n, off: [kinds] }  thresholds of the structural smells (phase 8, smells.mjs), and smells turned off
 //   snapshots: { keep: n }      how many snapshots of the structure are kept (phase 9, snapshots.mjs; default 20)
+//   diff: { keep: n }           how many prompts the Diff keeps, with their files (phase D1, src/diff/prompts.mjs; default 50)
 // A broken file or entry is reported in problems, never fatal: the plan is
 // still drawn, with what is valid.
 export function readConfig(root) {
@@ -106,14 +107,17 @@ export function readConfig(root) {
       }
     }
   }
-  if (raw.snapshots !== undefined) {
-    const keep = raw.snapshots?.keep;
-    if (!raw.snapshots || typeof raw.snapshots !== 'object' || Array.isArray(raw.snapshots)) problems.push(t('config.snapshotsShape', { file: CONFIG_FILE }));
+  // How many to keep: snapshots of the structure (phase 9) and prompts of the Diff (phase D1).
+  for (const section of ['snapshots', 'diff']) {
+    if (raw[section] === undefined) continue;
+    const value = raw[section];
+    const keep = value?.keep;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) problems.push(t(`config.${section}Shape`, { file: CONFIG_FILE }));
     else {
-      for (const key of Object.keys(raw.snapshots)) if (key !== 'keep') problems.push(t('config.snapshotsUnknownKey', { file: CONFIG_FILE, key }));
+      for (const key of Object.keys(value)) if (key !== 'keep') problems.push(t(`config.${section}UnknownKey`, { file: CONFIG_FILE, key }));
       if (keep !== undefined) {
-        if (Number.isInteger(keep) && keep > 0) config.snapshots.keep = keep;
-        else problems.push(t('config.snapshotsKeep', { file: CONFIG_FILE }));
+        if (Number.isInteger(keep) && keep > 0) config[section].keep = keep;
+        else problems.push(t(`config.${section}Keep`, { file: CONFIG_FILE }));
       }
     }
   }

@@ -223,6 +223,27 @@ A mistake in the file is shown on the plan and never stops it.
 
 The path of an action fills part of that gap: what really ran is lit, and an arrow that was not in the code shows up as observed.
 
+### What did my last prompt change? (Claude Code)
+
+With Claude Code, codeTAC can record **each prompt**, with no snapshot by hand. Once, in the project's folder:
+
+```
+codetac hooks install
+```
+
+It shows what it writes and asks first: three hooks in `.claude/settings.local.json`, nothing else in the project (`codetac hooks uninstall` puts the file back as it was). From then on, while a prompt runs, the bar in your app shows **Prompt running…**; when it ends, **What changed?** with the number of changes and, in orange, the number to look at. Press it to open the report of that prompt:
+
+- the text of the prompt, and the files added, changed and removed;
+- sentences made by rules, the most important first. **Look at these**: a secret that now reaches the browser, a new outside service, a new, removed or changed dependency (`package.json`, `requirements.txt`, `pyproject.toml`), a test file deleted or a file with fewer tests, a new route *possibly* without a session check. **Flow and data**: blocks, routes, tables, variables and files;
+- the **Map** (the plan before and after the prompt) and the **code**, old lines beside new ones. Press a sentence to light its lines and boxes; press a box to light its sentences. A block of lines no sentence explains is counted, so you know what to read yourself;
+- **◀ previous prompt**, **next prompt ▶** and **History** (how many changes each prompt had, how many to look at and how many you have not opened).
+
+Without the app: `codetac diff` (the newest prompt in the terminal), `codetac diff 3`, `--list`, `--code` (the lines), `--open` (the same report in the panel).
+
+The prompts are kept in `~/.codetac/diff/`, never in the project, and nothing is sent: the text of the prompt with secrets hidden (`.env` values, known keys, emails, phones), and a copy of the project's files before and after it, with only the **names** of `.env` variables and keys written in the code masked; files over 2 MB are listed without a copy. The 50 newest prompts are kept (`diff.keep` in `codetac.structure.json`).
+
+Limits: only Claude Code says when a prompt starts and ends (with other tools, use **Changes** with a snapshot); two sessions on the same project at once, or a subagent still working when the next prompt starts, mix their changes (the report says so); edits by hand during a prompt count as the prompt's; the diff is of whole lines; the risks are found by rules.
+
 ## 6. AI explanations (optional)
 
 With no configuration:
@@ -316,6 +337,8 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 | `codetac structure --snapshot [label] --predict` | Asks first what you expect the next change to do (files, blocks that start depending on another, new services) and saves it with the snapshot; `--diff` then says what you got right, what you missed and what did not happen |
 | `codetac structure --snapshots` | Lists the saved snapshots, newest first |
 | `codetac structure --diff [from] [to]` | What changed in the structure since the newest snapshot, or between two points — a snapshot id, a commit (`HEAD~3`, a branch, a tag, a hash) or the folder now (`codetac structure --diff v1.2 HEAD`). A commit is read from a temporary copy made with `git archive` and removed at the end: no checkout, your folder and `.git` are not touched. sentences made by rules, the most important first (`!!` alert, `!` warning, `·` information), each with the file and line; `[leaks]` / `[secrets]` mark what touches data leaving the machine or secrets |
+| `codetac hooks install` / `uninstall` | The Claude Code hooks that record each prompt and the files before and after it (asks first; written in `.claude/settings.local.json`) |
+| `codetac diff [n]` | What prompt `n` changed (the newest by default): files, structure, risks. `--code`: the lines; `--open`: the report in the panel, with no app running; `--list`: the prompts recorded |
 | `codetac privacy` | What CodeTAC may send to an AI model: each kind of request with its switch, and **No AI**. `--no-ai` / `--ai`, `--on <kind>`, `--off <kind>`, `--default <kind>` (kinds: `purposes`, `questions`, `suggestions`, `explanations`); `--log [n]` shows the last requests sent, `--clear-log` clears them |
 | `codetac help` | All the options |
 | `codetac --version` | The installed version |

@@ -512,8 +512,10 @@
   // ---------------------------------------------------------------------------
   let shadow = null;
   let shown = null;
-  // The sheet has two views: the dossier of an action, and the project's structure.
+  // The sheet has three views: the dossier of an action, the project's
+  // structure, and what the last prompt changed (the Diff, phase D3).
   let view = 'action';
+  let diff = null;
   function mountBar() {
     if (host || !document.documentElement) return;
     host = document.createElement('codetac-bar');
@@ -530,19 +532,74 @@
       '.top button,.top a{all:unset;cursor:pointer;padding:2px 8px;border-radius:5px;color:#e4e4e7}.top button:hover,.top a:hover{background:#3f3f46}' +
       '.top .tab{color:#a1a1aa}.top .tab.on{background:#3f3f46;color:#fff}.sheet.wide{width:min(1100px,calc(100vw - 24px));height:min(760px,calc(100vh - 72px))}' +
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}' +
-      '.debt{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.debt[hidden]{display:none}</style>' +
-      '<div class="row"><button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
+      '.debt{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.debt[hidden]{display:none}' +
+      '.pill.diff[hidden]{display:none}.count{background:#52525b;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;line-height:16px}.count.new{background:#2563eb}' +
+      '.warn{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.warn[hidden],.count[hidden]{display:none}' +
+      '.diff.running .dot{background:#3b82f6;animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.3}}</style>' +
+      '<div class="row"><button class="pill diff" part="diff" hidden><span class="dot"></span><span class="label"></span><span class="count" hidden></span><span class="warn" hidden></span></button>' +
+      '<button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
       '<button class="pill main" part="pill" title="' + barText('pillTitle') + '"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
     shadow.querySelector('.pill.main').addEventListener('click', () => { if (shown && view === 'structure') { view = 'action'; shown.remove(); shown = null; } toggleSheet(); });
     shadow.querySelector('.pill.structure').addEventListener('click', () => {
       if (shown && view === 'structure') { shown.remove(); shown = null; return; }
       showStructure();
     });
+    shadow.querySelector('.pill.diff').addEventListener('click', () => {
+      if (shown && view === 'diff') { shown.remove(); shown = null; return; }
+      showDiff();
+    });
     document.documentElement.appendChild(host);
     updateBar(false);
     pollDebt();
     setInterval(pollDebt, 15000);
     document.addEventListener('visibilitychange', pollDebt);
+    pollDiff();
+    setInterval(pollDiff, 4000);
+    document.addEventListener('visibilitychange', pollDiff);
+  }
+  // The Diff (phase D3): the state of the newest prompt given to the coding
+  // assistant, asked of the app's own server (/__codetac/diff), which asks the
+  // panel on 127.0.0.1. The button shows only in a project with the hooks
+  // installed or prompts recorded: «Prompt running…» while the prompt runs,
+  // then «What changed?» with its badge (changes, warnings).
+  let lastDiffState = '';
+  async function pollDiff() {
+    if (!shadow || document.hidden) return;
+    let state = null;
+    try {
+      const response = await originalFetch.call(window, '/__codetac/diff', { cache: 'no-store', credentials: 'same-origin' });
+      if (response.ok) state = await response.json();
+    } catch {}
+    const key = JSON.stringify(state);
+    if (key === lastDiffState) return;
+    const finished = diff && diff.latest && ['running', 'waiting'].includes(diff.latest.status) && state && state.latest && !['running', 'waiting'].includes(state.latest.status);
+    lastDiffState = key;
+    diff = state;
+    const pill = shadow.querySelector('.pill.diff');
+    const latest = state && state.latest;
+    pill.hidden = !state || (!state.hooks && !latest);
+    if (pill.hidden) return;
+    const running = Boolean(latest) && ['running', 'waiting'].includes(latest.status);
+    pill.classList.toggle('running', running);
+    shadow.querySelector('.pill.diff .dot').classList.toggle('on', Boolean(latest) && !running);
+    let label = rawText('diffWhat');
+    if (running) label = latest.status === 'waiting' ? rawText('diffWaiting') : rawText('diffRunning');
+    shadow.querySelector('.pill.diff .label').textContent = label;
+    const badge = state.badge;
+    const count = shadow.querySelector('.pill.diff .count');
+    const warn = shadow.querySelector('.pill.diff .warn');
+    count.hidden = running || !badge;
+    warn.hidden = running || !badge || !(badge.alerts + badge.warnings);
+    if (badge && !running) {
+      count.textContent = String(badge.changes);
+      count.classList.toggle('new', !badge.opened);
+      warn.textContent = '⚠ ' + (badge.alerts + badge.warnings);
+    }
+    pill.title = !latest ? rawText('diffNone') : running ? rawText('diffRunningTitle')
+      : badge ? rawText('diffBadgeTitle').replace('{n}', latest.n).replace('{changes}', badge.changes).replace('{warnings}', badge.alerts + badge.warnings) : rawText('diffWhatTitle');
+    if (finished) { pill.classList.remove('flash'); void pill.offsetWidth; pill.classList.add('flash'); }
+    // With the report open, the next prompt's report replaces it when it ends.
+    if (finished && shown && view === 'diff') showDiff();
   }
   // Comprehension debt (phase 10, step 4): the structural changes not opened
   // yet in Structure → Changes, as a number on the Structure pill. Asked of
@@ -574,7 +631,8 @@
   // Action / Structure tabs at the start of the sheet's top line.
   function tabs() {
     return '<button class="tab' + (view === 'action' ? ' on' : '') + '" data-tab="action" title="' + barText('actionTabTitle') + '">' + barText('actionTab') + '</button>' +
-      '<button class="tab' + (view === 'structure' ? ' on' : '') + '" data-tab="structure" title="' + barText('structureTabTitle') + '">' + barText('structure') + '</button>';
+      '<button class="tab' + (view === 'structure' ? ' on' : '') + '" data-tab="structure" title="' + barText('structureTabTitle') + '">' + barText('structure') + '</button>' +
+      (diff && (diff.hooks || diff.latest) ? '<button class="tab' + (view === 'diff' ? ' on' : '') + '" data-tab="diff" title="' + barText('diffWhatTitle') + '">' + barText('diffWhat') + '</button>' : '');
   }
   function wireTabs() {
     for (const button of shown.querySelectorAll('[data-tab]')) {
@@ -582,6 +640,7 @@
         if (button.dataset.tab === view) return;
         view = button.dataset.tab;
         if (view === 'structure') showStructure();
+        else if (view === 'diff') showDiff();
         else if (recorded.length) showAction(recorded.length - 1);
         else { shown.remove(); shown = null; toggleSheet(); }
       });
@@ -593,7 +652,7 @@
       shown.className = 'sheet';
       shadow.appendChild(shown);
     }
-    shown.classList.toggle('wide', view === 'structure');
+    shown.classList.toggle('wide', view === 'structure' || view === 'diff');
     shown.style.height = '';
     return shown;
   }
@@ -618,6 +677,19 @@
       '<iframe title="' + barText('frameTitle') + '"></iframe>';
     shown.querySelector('a').href = panel + '/structure?' + query;
     shown.querySelector('iframe').src = panel + '/structure?embed=1&' + query;
+    shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
+    wireTabs();
+    panelMissing(panel);
+  }
+  // The report of the newest prompt, from the panel (the Diff, phase D3).
+  function showDiff() {
+    view = 'diff';
+    const panel = String(config.panel || 'http://127.0.0.1:4000').replace(/\/$/, '');
+    const query = 'run=' + encodeURIComponent(config.run || '') + '&n=latest';
+    sheet().innerHTML = '<div class="top">' + tabs() + '<b></b><a target="_blank" rel="noopener" title="' + barText('openPanelTitle') + '">' + barText('openPanel') + '</a><button data-close title="' + barText('close') + '">✕</button></div>' +
+      '<iframe title="' + barText('diffFrameTitle') + '"></iframe>';
+    shown.querySelector('a').href = panel + '/diff?' + query;
+    shown.querySelector('iframe').src = panel + '/diff?embed=1&' + query;
     shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
     wireTabs();
     panelMissing(panel);

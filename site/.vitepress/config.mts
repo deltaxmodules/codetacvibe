@@ -40,6 +40,7 @@ export default defineConfig({
           { text: 'Are my secrets safe?', link: '/guide/are-my-secrets-safe' },
           { text: 'My database tables', link: '/guide/my-database-tables' },
           { text: 'Is my project getting messy?', link: '/guide/is-my-project-getting-messy' },
+          { text: 'What did my last prompt change?', link: '/guide/what-did-my-last-prompt-change' },
           { text: 'What did the AI change?', link: '/guide/what-did-the-ai-change' },
           { text: 'Test yourself (Quiz)', link: '/guide/test-yourself' },
         ],

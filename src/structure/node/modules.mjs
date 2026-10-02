@@ -437,7 +437,7 @@ function packageCall(node, byLocal, constants) {
 // Keys written in the code (phase 5, step 4), by known shapes. Only the kind
 // and the line are kept (also in the parse cache); the value never is. A JWT
 // counts only when its payload says role service_role (an anon key is public).
-const KEY_SHAPES = [
+export const KEY_SHAPES = [
   ['stripe-live', /\b(?:sk|rk)_live_[0-9A-Za-z]{10,}/], ['stripe-test', /\b(?:sk|rk)_test_[0-9A-Za-z]{10,}/],
   ['stripe-webhook', /\bwhsec_[0-9A-Za-z]{20,}/], ['anthropic', /\bsk-ant-[0-9A-Za-z_-]{20,}/],
   ['openai', /\bsk-(?!ant-)(?:proj-|svcacct-)?[0-9A-Za-z_-]{20,}/], ['aws', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
@@ -461,10 +461,10 @@ export function literalKeys(source) {
 // The same shapes, masked in a text shown to the user (code excerpts): the
 // public prefix stays, the rest becomes dots. Any JWT is masked (its role is
 // not worth the risk), and so are the base64 lines of a private key block.
-const PREFIX = /^(?:[sr]k_(?:live|test)_|whsec_|sk-ant-|sk-(?:proj-|svcacct-)?|AKIA|ASIA|gh[pousr]_|github_pat_|xox[baprs]-|AIza|SG\.|eyJ)/;
+export const KEY_PREFIX = /^(?:[sr]k_(?:live|test)_|whsec_|sk-ant-|sk-(?:proj-|svcacct-)?|AKIA|ASIA|gh[pousr]_|github_pat_|xox[baprs]-|AIza|SG\.|eyJ)/;
 export function maskKeys(text) {
   let masked = text;
-  for (const [, shape] of KEY_SHAPES) masked = masked.replace(new RegExp(shape.source, 'g'), match => (match.startsWith('-----') ? match : `${match.match(PREFIX)?.[0] ?? ''}••••••`));
+  for (const [, shape] of KEY_SHAPES) masked = masked.replace(new RegExp(shape.source, 'g'), match => (match.startsWith('-----') ? match : `${match.match(KEY_PREFIX)?.[0] ?? ''}••••••`));
   masked = masked.replace(/\beyJ[0-9A-Za-z_-]{8,}\.eyJ[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}/g, 'eyJ••••••');
   if (/^\s*[A-Za-z0-9+/=]{40,}\s*$/.test(masked)) masked = masked.replace(/[A-Za-z0-9+/=]{40,}/, '••••••');
   return masked;

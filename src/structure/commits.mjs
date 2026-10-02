@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { readProject } from './readers.mjs';
 import { CONFIG_FILE } from './config.mjs';
+import { PROMPT_POINT, readPromptPoint } from '../diff/moments.mjs';
 
 const ARCHIVE_LIMIT = 1024 * 1024 * 1024;
 
@@ -88,7 +89,8 @@ function sharedFiles(root) {
 }
 
 // One side of a comparison: 'now' (the folder as it is), a snapshot id
-// ('latest' for the newest), or a commit (any name git knows: a hash, HEAD~2,
+// ('latest' for the newest), a prompt of the Diff ('prompt-3': just before
+// prompt 3; 'prompt-3-after': just after it, phase D1), or a commit (any name git knows: a hash, HEAD~2,
 // a branch or a tag). Returns { graph, point, problems } or { error }; point
 // describes it without the graph: { type: 'now' | 'snapshot' | 'commit', … }.
 export const SNAPSHOT_ID = /^(commit|content)-[0-9a-f]{12}$/;
@@ -103,6 +105,7 @@ export async function readPoint(root, ref, { readSnapshot, current = null } = {}
     const { graph, ...about } = snapshot;
     return { graph, point: { type: 'snapshot', ...about }, problems: [] };
   }
+  if (PROMPT_POINT.test(ref)) return readPromptPoint(root, ref);
   const read = await readCommit(root, ref);
   if (read.error) return read;
   return { graph: read.graph, point: { type: 'commit', ref, commit: read.commit, date: read.date, subject: read.subject }, problems: read.problems };

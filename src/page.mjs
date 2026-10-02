@@ -64,6 +64,19 @@ export function handleOwnRoute(request, response, runtime, options) {
     });
     return true;
   }
+  // The Diff (phase D3): the state of the newest prompt, for the bar's «What changed?» button.
+  if (path === `${PREFIX}diff` && request.method === 'GET') {
+    if (!sameOrigin(request) || request.headers['sec-fetch-site'] === 'cross-site') {
+      response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end('CodeTAC: origin refused.');
+      return true;
+    }
+    diffState(options).then(state => {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(JSON.stringify(state));
+    });
+    return true;
+  }
   if (path === `${PREFIX}events` && request.method === 'POST') {
     // Only the page itself may report actions: another site open in the
     // browser cannot write into the recording (browsers always send Origin here).
@@ -98,24 +111,37 @@ function sameOrigin(request) {
   try { return new URL(origin).host === request.headers.host; } catch { return false; }
 }
 
-// The panel's count of changes not opened, or null. Only a panel on this
-// computer is asked (the number never leaves it), with a short wait.
+// Asks the panel on this computer (never another): its JSON answer, or null,
+// with a short wait. The answer never leaves the computer.
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
-export function reviewTotal({ panel, run }, timeout = 3000) {
+export function panelJson({ panel, run }, path, timeout = 3000) {
   let url;
-  try { url = new URL(`/api/structure/review?run=${encodeURIComponent(run ?? '')}`, panel); } catch { return Promise.resolve(null); }
+  try { url = new URL(`${path}${path.includes('?') ? '&' : '?'}run=${encodeURIComponent(run ?? '')}`, panel); } catch { return Promise.resolve(null); }
   if (url.protocol !== 'http:' || !LOOPBACK.has(url.hostname) || !run) return Promise.resolve(null);
   return new Promise(resolve => {
     const ask = httpGet(url, { timeout, headers: { [INTERNAL_HEADER]: '1' } }, answer => {
       const chunks = [];
       answer.on('data', chunk => chunks.push(chunk));
       answer.on('end', () => {
-        try { resolve(answer.statusCode === 200 ? Number(JSON.parse(Buffer.concat(chunks).toString('utf8')).review?.total ?? 0) : null); } catch { resolve(null); }
+        try { resolve(answer.statusCode === 200 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null); } catch { resolve(null); }
       });
     });
     ask.on('timeout', () => ask.destroy());
     ask.on('error', () => resolve(null));
   });
+}
+
+// The panel's count of changes not opened, or null.
+export async function reviewTotal(options, timeout = 3000) {
+  const answer = await panelJson(options, '/api/structure/review', timeout);
+  return answer ? Number(answer.review?.total ?? 0) : null;
+}
+
+// The Diff (phase D3): the newest prompt and its badge, for the bar's «What changed?» button, or null.
+export async function diffState(options, timeout = 3000) {
+  const answer = await panelJson(options, '/api/diff/state', timeout);
+  if (!answer) return null;
+  return { hooks: Boolean(answer.hooks), latest: answer.latest ? { n: answer.latest.n, status: answer.latest.status } : null, badge: answer.badge ?? null };
 }
 
 // Only known fields are kept; URLs lose their query values, and everything

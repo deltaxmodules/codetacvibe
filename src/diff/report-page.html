@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeTAC — what changed</title>
+<style>
+:root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e3de; --accent:#2f5bd3; --code:#f3f2ee; --hit:#fff3bf;
+  --alert:#c2410c; --warning:#b7791f; --info:#6b6b66; --add:#e6f4ea; --add-line:#1e7d3c; --del:#fdecea; --del-line:#b42318; --lit:#fff3bf; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --panel:#1f1f1d; --text:#ecebe6; --muted:#9a9993; --line:#33332f; --accent:#7ea2ff; --code:#262624; --hit:#4a4320;
+  --alert:#fb923c; --warning:#f2c94c; --info:#9a9993; --add:#173322; --add-line:#6fdc8c; --del:#3d1b1b; --del-line:#ff8a80; --lit:#4a4320; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:3; }
+header h1 { font-size:14px; margin:0; }
+body.embed header h1 { display:none; }
+header .spacer { margin-left:auto; }
+button.plain, a.plain { all:unset; cursor:pointer; color:var(--accent); }
+button.plain[disabled] { color:var(--muted); cursor:default; }
+main { padding:12px 14px 40px; max-width:1500px; margin:0 auto; }
+.muted { color:var(--muted); }
+.small { font-size:11px; }
+section { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:0 0 12px; }
+section h2 { font-size:13px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.prompt-text { font-size:15px; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 6px; }
+.note { border-left:3px solid var(--warning); padding:2px 8px; margin:6px 0 0; }
+.verdict { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.chip { border-radius:999px; padding:2px 9px; background:var(--code); font-weight:600; }
+.chip.alert { background:var(--alert); color:#fff; } .chip.warning { background:var(--warning); color:#1d1d1b; }
+.grid { display:grid; grid-template-columns:minmax(320px, 1fr) minmax(320px, 1fr); gap:12px; }
+@media (max-width:900px) { .grid { grid-template-columns:1fr; } }
+ol.sentences { list-style:none; margin:0; padding:0; }
+ol.sentences li { border-left:3px solid var(--info); padding:4px 8px; margin:0 0 6px; border-radius:0 6px 6px 0; }
+ol.sentences li.alert { border-color:var(--alert); } ol.sentences li.warning { border-color:var(--warning); }
+ol.sentences li.lit { background:var(--lit); }
+ol.sentences li.unread .fact::after { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-left:6px; vertical-align:2px; }
+.fact { all:unset; cursor:pointer; display:block; overflow-wrap:anywhere; }
+.fact:hover, .fact:focus-visible { text-decoration:underline; }
+.tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
+.tag { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:0 6px; color:var(--muted); }
+.tag.possibly { border-style:dashed; }
+.tag.code { all:unset; cursor:pointer; font-size:11px; color:var(--accent); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.map iframe { width:100%; height:460px; border:1px solid var(--line); border-radius:6px; background:var(--bg); }
+.file { margin:0 0 14px; }
+.file h3 { font-size:13px; margin:0 0 4px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+.hunk { border:1px solid var(--line); border-radius:6px; margin:0 0 8px; overflow:auto; }
+.hunk.lit { outline:2px solid var(--accent); }
+.hunk-head { display:flex; gap:8px; align-items:center; padding:3px 8px; background:var(--code); font-size:12px; }
+.hunk-head .why { color:var(--muted); }
+table.code { border-collapse:collapse; width:100%; table-layout:fixed; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+table.code td { padding:0 6px; vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; }
+table.code td.n { width:44px; text-align:right; color:var(--muted); user-select:none; }
+table.code td.del { background:var(--del); } table.code td.add { background:var(--add); }
+table.code td.n.del { color:var(--del-line); } table.code td.n.add { color:var(--add-line); }
+table.code td.empty { background:var(--bg); }
+ul.history { list-style:none; margin:0; padding:0; }
+ul.history li { display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); }
+ul.history li .text { flex:1; overflow-wrap:anywhere; }
+.status { padding:24px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-t="title"></h1>
+  <span id="where" class="muted"></span>
+  <button class="plain" id="previous" data-t="previous"></button>
+  <button class="plain" id="next" data-t="next"></button>
+  <span class="spacer"></span>
+  <button class="plain" id="historyLink" data-t="history"></button>
+  <a class="plain" id="structureLink" data-t="structure"></a>
+</header>
+<main id="main"><div class="status" data-t="loading"></div></main>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get('embed') === '1') document.body.classList.add('embed');
+  // The sentences, from src/structure/text/<language>.json (put here by the panel).
+  const TEXT = /*CODETAC_TEXT*/null || { report: {} };
+  const t = (key, vars = {}) => {
+    let value = TEXT.report[key];
+    if (value && typeof value === 'object' && 'other' in value) value = vars.count === 1 ? value.one : value.other;
+    if (typeof value !== 'string') return key;
+    return value.replace(/\{(\w+)\}/g, (hole, name) => (name in vars ? String(vars[name]) : hole));
+  };
+  for (const node of document.querySelectorAll('[data-t]')) node.textContent = t(node.dataset.t);
+  let run = params.get('run') || (params.get('project') ? 'project:' + params.get('project') : '');
+  let wanted = params.get('n') || 'latest';
+  let view = params.get('view') === 'history' ? 'history' : 'report';
+  let shown = null;
+  let lastText = '';
+  const $ = id => document.getElementById(id);
+  function html(tag, text, props = {}) {
+    const node = document.createElement(tag);
+    if (text !== null && text !== undefined) node.textContent = text;
+    for (const [key, value] of Object.entries(props)) node[key] = value;
+    return node;
+  }
+  const when = iso => iso ? iso.replace('T', ' ').slice(0, 16) + ' UTC' : '';
+  const api = (path, extra = '') => path + '?run=' + encodeURIComponent(run) + extra;
+  function go(next) {
+    const query = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(next)) { if (value === null) query.delete(key); else query.set(key, value); }
+    history.replaceState(null, '', '?' + query.toString());
+  }
+  const STATUS = { running: t('statusRunning'), waiting: t('statusWaiting'), done: t('statusDone'), interrupted: t('statusInterrupted') };
+  const statusText = status => STATUS[status] ?? status;
+  const NOTES = { large: t('noteLarge'), binary: t('noteBinary'), names: t('noteNames'), values: t('noteValues'), masked: t('noteMasked') };
+
+  // --- Projects (no recording, no project chosen) -----------------------------
+  async function showProjects() {
+    const main = $('main');
+    main.textContent = '';
+    const response = await fetch('/api/diff/projects', { cache: 'no-store' });
+    const { projects = [] } = await response.json().catch(() => ({}));
+    const box = html('section');
+    box.appendChild(html('h2', t('projects')));
+    if (!projects.length) box.appendChild(html('p', t('noProjects'), { className: 'muted' }));
+    const list = html('ul', null, { className: 'history' });
+    for (const project of projects) {
+      const li = html('li');
+      const open = html('button', project.name, { className: 'plain' });
+      open.addEventListener('click', () => { run = 'project:' + project.id; params.set('run', run); go({ run, n: 'latest', view: null }); view = 'report'; refresh(); });
+      li.append(open, html('span', t('promptCount', { count: project.prompts }), { className: 'muted' }), html('span', when(project.last), { className: 'muted small' }));
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    main.appendChild(box);
+  }
+
+  // --- History -------------------------------------------------------------------
+  async function showHistory() {
+    view = 'history';
+    go({ view: 'history' });
+    const response = await fetch(api('/api/diff/prompts'), { cache: 'no-store' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { $('main').textContent = ''; $('main').appendChild(html('div', body.error || t('unreadable'), { className: 'status' })); return; }
+    const text = JSON.stringify(body);
+    if (text === lastText) return;
+    lastText = text;
+    $('where').textContent = body.project.name;
+    $('previous').hidden = $('next').hidden = true;
+    $('historyLink').textContent = t('backToReport');
+    const main = $('main');
+    main.textContent = '';
+    const box = html('section');
+    box.appendChild(html('h2', t('historyTitle', { count: body.prompts.length })));
+    if (!body.prompts.length) box.appendChild(html('p', t('noPrompts'), { className: 'muted' }));
+    const list = html('ul', null, { className: 'history', id: 'historyList' });
+    for (const prompt of body.prompts) {
+      const li = html('li');
+      li.dataset.n = prompt.n;
+      const open = html('button', '#' + prompt.n, { className: 'plain' });
+      open.addEventListener('click', () => { wanted = String(prompt.n); view = 'report'; lastText = ''; go({ view: null, n: wanted }); refresh(); });
+      li.append(open, html('span', when(prompt.startedAt), { className: 'muted small' }), html('span', '«' + prompt.text + '»', { className: 'text' }));
+      if (prompt.status !== 'done') li.appendChild(html('span', statusText(prompt.status), { className: 'tag' }));
+      if (prompt.badge) {
+        li.appendChild(html('span', t('changes', { count: prompt.badge.changes }), { className: 'chip' }));
+        if (prompt.badge.alerts + prompt.badge.warnings) li.appendChild(html('span', t('toLook', { count: prompt.badge.alerts + prompt.badge.warnings }), { className: 'chip warning' }));
+        if (prompt.badge.unread && prompt.badge.changes) li.appendChild(html('span', t('unread', { count: prompt.badge.unread }), { className: 'tag' }));
+      }
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    main.appendChild(box);
+  }
+
+  // --- Report --------------------------------------------------------------------
+  function markSeen(n, keys) {
+    fetch(api('/api/diff/seen'), { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify({ n, keys }) }).catch(() => {});
+  }
+  let lit = null;
+  function light(sentence) {
+    lit = sentence;
+    for (const li of document.querySelectorAll('ol.sentences li')) li.classList.toggle('lit', Number(li.dataset.index) === sentence?.index);
+    for (const block of document.querySelectorAll('.hunk')) block.classList.toggle('lit', Boolean(sentence) && sentence.blocks.includes(Number(block.dataset.id)));
+    const frame = document.querySelector('.map iframe');
+    if (frame?.contentWindow) frame.contentWindow.postMessage({ codetac: 'light', target: sentence?.target ?? null }, location.origin);
+  }
+  function lightSentences(indexes, scroll) {
+    for (const li of document.querySelectorAll('ol.sentences li')) li.classList.toggle('lit', indexes.includes(Number(li.dataset.index)));
+    if (scroll && indexes.length) document.querySelector('ol.sentences li[data-index="' + indexes[0] + '"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  // A box clicked on the map: the sentences about it.
+  window.addEventListener('message', event => {
+    if (event.origin !== location.origin || event.data?.codetac !== 'box' || !shown) return;
+    for (const block of document.querySelectorAll('.hunk')) block.classList.remove('lit');
+    lightSentences(shown.sentences.filter(sentence => sentence.boxes.includes(event.data.id)).map(sentence => sentence.index), true);
+  });
+
+  function sentenceItem(sentence, report) {
+    const li = html('li', null, { className: sentence.severity + (sentence.read ? '' : ' unread') });
+    li.dataset.index = sentence.index;
+    const fact = html('button', (sentence.index + 1) + '. ' + sentence.text, { className: 'fact', title: t('showIt') });
+    fact.addEventListener('click', () => {
+      light(sentence);
+      if (sentence.blocks.length) document.querySelector('.hunk[data-id="' + sentence.blocks[0] + '"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (!sentence.read) { sentence.read = true; li.classList.remove('unread'); markSeen(report.prompt.n, [sentence.key]); }
+    });
+    li.appendChild(fact);
+    const tags = html('div', null, { className: 'tags' });
+    tags.appendChild(html('span', sentence.origin === 'possibly' ? t('possibly') : t('readInCode'), { className: 'tag' + (sentence.origin === 'possibly' ? ' possibly' : '') }));
+    for (const touch of sentence.touches) tags.appendChild(html('span', touch === 'leaks' ? t('tagLeaks') : t('tagSecrets'), { className: 'tag' }));
+    for (const id of sentence.blocks.slice(0, 8)) {
+      const code = html('button', '#' + (id + 1), { className: 'tag code', title: t('showCode') });
+      code.addEventListener('click', () => { light(sentence); document.querySelector('.hunk[data-id="' + id + '"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+      tags.appendChild(code);
+    }
+    if (!sentence.blocks.length) tags.appendChild(html('span', t('noCode'), { className: 'tag' }));
+    li.appendChild(tags);
+    return li;
+  }
+
+  // Side by side: a run of removed lines next to the run of added lines that replaced it.
+  function hunkTable(hunk) {
+    const table = html('table', null, { className: 'code' });
+    let old = hunk.before.start;
+    let now = hunk.after.start;
+    const row = (left, right) => {
+      const tr = html('tr');
+      for (const cell of [left, right]) {
+        if (!cell) { tr.append(html('td', '', { className: 'n empty' }), html('td', '', { className: 'empty' })); continue; }
+        tr.append(html('td', String(cell.line), { className: 'n ' + cell.kind }), html('td', cell.text, { className: cell.kind }));
+      }
+      table.appendChild(tr);
+    };
+    const lines = hunk.lines;
+    for (let index = 0; index < lines.length;) {
+      if (lines[index][0] === ' ') { row({ line: old++, text: lines[index][1], kind: '' }, { line: now++, text: lines[index][1], kind: '' }); index++; continue; }
+      const removed = [];
+      const added = [];
+      while (index < lines.length && lines[index][0] === '-') removed.push({ line: old++, text: lines[index++][1], kind: 'del' });
+      while (index < lines.length && lines[index][0] === '+') added.push({ line: now++, text: lines[index++][1], kind: 'add' });
+      for (let pair = 0; pair < Math.max(removed.length, added.length); pair++) row(removed[pair] ?? null, added[pair] ?? null);
+    }
+    return table;
+  }
+
+  function codeSection(report) {
+    const box = html('section', null, { id: 'code' });
+    const blocks = report.code.files.reduce((sum, file) => sum + file.hunks.length, 0);
+    box.appendChild(html('h2', t('codeTitle', { count: blocks, other: report.code.unexplained.length })));
+    if (!report.code.files.length) box.appendChild(html('p', t('noFiles'), { className: 'muted' }));
+    for (const file of report.code.files) {
+      const div = html('div', null, { className: 'file' });
+      div.appendChild(html('h3', (file.status === 'added' ? '+ ' : file.status === 'removed' ? '− ' : '~ ') + file.path));
+      if (file.note) div.appendChild(html('p', NOTES[file.note] ?? '', { className: 'muted small' }));
+      for (const hunk of file.hunks) {
+        const block = html('div', null, { className: 'hunk' });
+        block.dataset.id = hunk.id;
+        const head = html('div', null, { className: 'hunk-head' });
+        head.appendChild(html('b', '#' + (hunk.id + 1)));
+        head.appendChild(html('span', '−' + hunk.before.start + ',' + hunk.before.count + ' +' + hunk.after.start + ',' + hunk.after.count, { className: 'muted small' }));
+        const explained = !report.code.unexplained.includes(hunk.id);
+        const why = html('button', explained ? t('explains', { list: hunk.sentences.map(index => index + 1).join(', ') }) : t('otherChanges'), { className: 'plain why' });
+        why.addEventListener('click', () => {
+          for (const other of document.querySelectorAll('.hunk')) other.classList.toggle('lit', other === block);
+          lightSentences(hunk.sentences, true);
+        });
+        head.appendChild(why);
+        block.append(head, hunkTable(hunk));
+        div.appendChild(block);
+      }
+      box.appendChild(div);
+    }
+    return box;
+  }
+
+  function render(report) {
+    shown = report;
+    report.sentences.forEach((sentence, index) => { sentence.index = index; });
+    $('where').textContent = report.project.name + ' · ' + t('promptN', { n: report.prompt.n });
+    $('previous').hidden = $('next').hidden = false;
+    $('previous').disabled = report.previous === null;
+    $('next').disabled = report.next === null;
+    $('historyLink').textContent = t('history');
+    $('structureLink').href = '/structure?run=' + encodeURIComponent(run) + '&view=diff&snapshot=prompt-' + report.prompt.n;
+    const main = $('main');
+    main.textContent = '';
+    // The prompt and the verdict.
+    const head = html('section', null, { id: 'prompt' });
+    head.appendChild(html('p', '«' + report.prompt.text + '»', { className: 'prompt-text' }));
+    head.appendChild(html('div', when(report.prompt.startedAt) + ' · ' + statusText(report.prompt.status), { className: 'muted' }));
+    if (report.running) head.appendChild(html('p', t('runningNote'), { className: 'note' }));
+    if (report.prompt.status === 'interrupted') head.appendChild(html('p', t('interruptedNote'), { className: 'note' }));
+    if (report.prompt.overlap) head.appendChild(html('p', t('overlapNote'), { className: 'note' }));
+    const verdict = html('div', null, { className: 'verdict', id: 'verdict' });
+    const b = report.badge;
+    verdict.appendChild(html('span', t('changes', { count: b.changes }), { className: 'chip' }));
+    if (b.alerts) verdict.appendChild(html('span', t('alerts', { count: b.alerts }), { className: 'chip alert' }));
+    if (b.warnings) verdict.appendChild(html('span', t('warnings', { count: b.warnings }), { className: 'chip warning' }));
+    if (b.possibly) verdict.appendChild(html('span', t('possiblyCount', { count: b.possibly }), { className: 'tag possibly' }));
+    verdict.appendChild(html('span', t('filesLine', { added: report.files.added.length, changed: report.files.changed.length, removed: report.files.removed.length }), { className: 'muted' }));
+    head.appendChild(verdict);
+    main.appendChild(head);
+    // The sentences (risk first) and the map.
+    const grid = html('div', null, { className: 'grid' });
+    const left = html('section', null, { id: 'sentences' });
+    const risky = report.sentences.filter(sentence => sentence.severity !== 'info');
+    const flow = report.sentences.filter(sentence => sentence.severity === 'info');
+    if (!report.sentences.length) left.appendChild(html('p', t('nothing'), { className: 'muted' }));
+    for (const [title, group, id] of [[t('lookAt'), risky, 'risk'], [t('flowAndData'), flow, 'flow']]) {
+      if (!group.length) continue;
+      left.appendChild(html('h2', title));
+      const list = html('ol', null, { className: 'sentences', id: 'sentences-' + id });
+      for (const sentence of group) list.appendChild(sentenceItem(sentence, report));
+      left.appendChild(list);
+    }
+    const map = html('section', null, { className: 'map', id: 'map' });
+    map.appendChild(html('h2', t('mapTitle')));
+    const frame = html('iframe', null, { title: t('mapTitle') });
+    frame.src = '/structure?embed=1&map=1&view=diff&run=' + encodeURIComponent(run) + '&snapshot=prompt-' + report.prompt.n + (report.running ? '' : '&to=prompt-' + report.prompt.n + '-after');
+    map.appendChild(frame);
+    map.appendChild(html('p', t('mapNote'), { className: 'muted small' }));
+    grid.append(left, map);
+    main.appendChild(grid);
+    main.appendChild(codeSection(report));
+    if (lit) light(report.sentences.find(sentence => sentence.key === lit.key) ?? null);
+  }
+
+  async function showReport() {
+    const response = await fetch(api('/api/diff/report', '&n=' + encodeURIComponent(wanted)), { cache: 'no-store' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      $('main').textContent = '';
+      $('main').appendChild(html('div', body.error || t('unreadable'), { className: 'status' }));
+      $('previous').hidden = $('next').hidden = true;
+      return;
+    }
+    // The same report is not drawn again (the map would reload).
+    const text = JSON.stringify({ ...body, sentences: body.sentences.map(({ read, ...rest }) => rest), badge: { ...body.badge, unread: 0, opened: true } });
+    if (text === lastText) return;
+    const first = !shown || shown.prompt.n !== body.prompt.n;
+    lastText = text;
+    render(body);
+    if (first && !body.running) markSeen(body.prompt.n, []);
+  }
+
+  async function refresh() {
+    if (!run) return showProjects();
+    if (view === 'history') return showHistory();
+    return showReport();
+  }
+  $('previous').addEventListener('click', () => { if (shown?.previous !== null) { wanted = String(shown.previous); lastText = ''; go({ n: wanted }); refresh(); } });
+  $('next').addEventListener('click', () => { if (shown?.next !== null) { wanted = String(shown.next); lastText = ''; go({ n: wanted }); refresh(); } });
+  $('historyLink').addEventListener('click', () => {
+    lastText = '';
+    if (view === 'history') { view = 'report'; go({ view: null }); refresh(); } else showHistory();
+  });
+  refresh();
+  // The newest prompt: a new one, or the end of the one running, shows by itself;
+  // and a report with no next prompt yet learns when one arrives (its ▶ turns on).
+  setInterval(() => { if (!document.hidden && run && (view === 'history' || wanted === 'latest' || shown?.running || shown?.next === null)) refresh(); }, 4000);
+})();
+</script>
+</body>
+</html>

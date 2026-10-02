@@ -341,7 +341,12 @@
     "diffSnapshots": "Snapshots",
     "diffCommits": "Commits (read from a temporary copy; your folder is not touched)",
     "diffReadingCommit": "Reading the commit from a temporary copy…",
-    "diffOrCommit": "…or compare with a commit",
+    "diffOrCommit": "…or compare with a prompt or a commit",
+    "diffPrompts": "Prompts (the project just before each one, from CodeTAC's archive; your folder is not touched)",
+    "diffPrompt": "before prompt {n} · {date} · «{text}»",
+    "diffPromptRunning": "still running",
+    "diffPromptWaiting": "waiting for background work",
+    "diffPromptInterrupted": "interrupted",
     "explainAlert": "Explain with AI…",
     "explainPlan": "Explain the plan",
     "explainPlanTitle": "An explanation of the whole plan in five lines, written by AI from the facts of the structure (you see what is sent first)",
@@ -418,7 +423,15 @@
     "noActions": "No actions recorded on this page yet. Click a button, submit a form or follow a link in the app: the action shows up here. Actions from other pages are in the panel.",
     "previous": "Previous action",
     "next": "Next action",
-    "actionFrameTitle": "Action dossier"
+    "actionFrameTitle": "Action dossier",
+    "diffWhat": "What changed?",
+    "diffWhatTitle": "CodeTAC: what the last prompt to the AI changed in the project",
+    "diffRunning": "Prompt running…",
+    "diffWaiting": "Prompt running (background work)…",
+    "diffRunningTitle": "CodeTAC: the AI is working on a prompt; what it changed shows here when it ends",
+    "diffBadgeTitle": "CodeTAC: prompt {n} changed {changes} things ({warnings} to look at). Click to see them.",
+    "diffNone": "CodeTAC: the hooks are installed; the next prompt given to the AI shows up here",
+    "diffFrameTitle": "What the last prompt changed"
   },
   "card": {
     "list": "{items} and {more} more",
@@ -491,6 +504,7 @@
   },
   "diff": {
     "publicSecret": "The secret variable {variable} now has a public name: its value goes into the browser code ({files}).",
+    "publicSecretNoFiles": "The secret variable {variable} now has a public name: the build puts its value in the browser code.",
     "secretInBrowser": "The secret variable {variable} is now read in code that runs in the browser ({files}).",
     "noRlsBrowser": "Table {table} has row level security off and is now used from the browser ({files}).",
     "literalKey": "A key is now written in the code: {message}",
@@ -509,6 +523,7 @@
     "newCycle": "New import loop: {files}.",
     "cycleGone": "The import loop {files} is gone.",
     "newSecretVariable": "New secret variable {variable}, read in {files}.",
+    "newSecretVariableUnread": "New secret variable {variable}, not read in the code yet.",
     "usesSecret": "{from} now uses the secret {variable}.",
     "exposureGone": "The secret variable {variable} no longer reaches the browser.",
     "rlsOff": "Row level security of table {table} is now off.",
@@ -830,7 +845,10 @@
     "smellsNotNumber": "{file}: \"smells.{key}\" must be a whole number above 0; the default ({default}) is used.",
     "snapshotsShape": "{file}: \"snapshots\" must be { \"keep\": n }; it is ignored.",
     "snapshotsUnknownKey": "{file}: \"snapshots.{key}\" is not a setting (keep); it is ignored.",
-    "snapshotsKeep": "{file}: \"snapshots.keep\" must be a whole number above 0; the default (20) is used."
+    "snapshotsKeep": "{file}: \"snapshots.keep\" must be a whole number above 0; the default (20) is used.",
+    "diffShape": "{file}: \"diff\" must be { \"keep\": n }; it is ignored.",
+    "diffUnknownKey": "{file}: \"diff.{key}\" is not a setting (keep); it is ignored.",
+    "diffKeep": "{file}: \"diff.keep\" must be a whole number above 0; the default (50) is used."
   },
   "cli": {
     "suggest": {
@@ -1224,7 +1242,7 @@
     }
   },
   "run": {
-    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
+    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
     "unknownOption": "Unknown option: {arg}",
     "panelDidNotStart": "The panel did not start: {output}",
     "noFreePort": "No free port found for the panel.",
@@ -1618,5 +1636,217 @@
       "unverified": "Unverified answer ({reason}). Check it in the code.",
       "notEnough": "The recorded facts are not enough to answer with certainty:"
     }
+  },
+  "prompts": {
+    "noMoment": "There is no archived moment {id}.",
+    "locked": "The Diff data of this project is locked by another process.",
+    "hookNotJson": "The hook input is not JSON ({count} characters).",
+    "hookNoProject": "No project folder: neither --project nor the hook input names one that exists.",
+    "hookUnknownEvent": "Unknown hook event {event}.",
+    "noPrompt": "There is no prompt {n} recorded for this project.",
+    "noAfterYet": "Prompt {n} has not ended yet.",
+    "notStored": {
+      "one": "{count} file is too large to be archived and is not compared: {list}.",
+      "other": "{count} files are too large to be archived and are not compared: {list}."
+    },
+    "cli": {
+      "none": "No prompt has been recorded for this project yet.",
+      "install": "To record each prompt given to Claude Code, install the hooks: codetac hooks install",
+      "noneYet": "The hooks are installed: the next prompt given to Claude Code in this folder is recorded.",
+      "listTitle": {
+        "one": "{count} prompt recorded (newest first):",
+        "other": "{count} prompts recorded (newest first):"
+      },
+      "files": {
+        "one": "{count} file",
+        "other": "{count} files"
+      },
+      "older": {
+        "one": "…and {count} older one.",
+        "other": "…and {count} older ones."
+      },
+      "seeOne": "See what one changed: codetac diff <number>",
+      "seeList": "See the prompts recorded: codetac diff --list",
+      "title": "Prompt {n} · {date} · {status}",
+      "status": {
+        "running": "running",
+        "waiting": "waiting for background work",
+        "done": "done",
+        "interrupted": "interrupted"
+      },
+      "running": "Still running: compared with the folder as it is now.",
+      "waiting": "Claude Code ended its answer, but work it started in the background (a subagent) had not ended: compared with the files when it was last seen.",
+      "interrupted": "It was interrupted (no end was received): compared up to the next prompt, or to the end of the session.",
+      "overlap": "Another prompt was working on the project at the same time (another session or background work): some of these changes may be from it.",
+      "archiveGone": "The archived files of prompt {n} are gone (removed by the retention).",
+      "filesTitle": "Files: {added} added, {changed} changed, {removed} removed",
+      "noFiles": "No file changed.",
+      "moreFiles": "…and {count} more.",
+      "structureTitle": "What changed, the most important first:",
+      "possibly": "possibly",
+      "blocks": "code: {list}",
+      "codeSummary": {
+        "one": "Code: {count} block of lines in {files} files ({other} not explained by a sentence above).",
+        "other": "Code: {count} blocks of lines in {files} files ({other} not explained by a sentence above)."
+      },
+      "seeCode": "See the lines: codetac diff {n} --code",
+      "codeTitle": "The lines that changed (block number · the sentences it explains):",
+      "code": {
+        "added": "+ {path} (new file)",
+        "changed": "~ {path}",
+        "removed": "- {path} (deleted)",
+        "explains": "explains {list}",
+        "cut": "…and {count} more lines (only the first 400 are shown).",
+        "note": {
+          "large": "— too large to show",
+          "binary": "— not text",
+          "names": "— only the variable names are kept, never the values",
+          "values": "— only values changed (not kept)",
+          "masked": "— keys written in it are shown masked"
+        },
+        "unexplained": "other changes"
+      },
+      "onPanel": "The report with the map and the code, in the panel: codetac diff {n} --open (or the «What changed?» button in the app's bar).",
+      "noPanel": "The panel did not start. Run codetac in the project once to see why, or try --panel-port <n>.",
+      "opening": "Opening the report in the panel: {url}"
+    },
+    "service": {
+      "noProject": "No project: open it from the app's bar, or pick one in the panel's list of prompts."
+    }
+  },
+  "hooks": {
+    "notJson": "{file} is not valid JSON.",
+    "notObject": "{file} must hold an object.",
+    "badHooks": "\"hooks\" in {file} must be an object.",
+    "badEvent": "\"hooks.{event}\" in {file} must be a list.",
+    "fixFirst": "Fix the file first; CodeTAC does not change a file it cannot read.",
+    "already": "The CodeTAC hooks are already installed in {file}.",
+    "willCreate": "CodeTAC will create {file} with three Claude Code hooks:",
+    "willChange": "CodeTAC will add three Claude Code hooks to {file}:",
+    "keepsOthers": {
+      "one": "Your {count} hook already there stays as it is.",
+      "other": "Your {count} hooks already there stay as they are."
+    },
+    "npx": "CodeTAC is running from npx's temporary folder, which may be cleaned: install it with npm install -g codetac and run this again.",
+    "what": "They archive the project's files (outside the project) when a prompt starts and when it ends, so codetac diff can show what each prompt changed. They print nothing and never block a prompt.",
+    "needsYes": "Run it in a terminal to answer, or add --yes.",
+    "confirm": "Write {file}? [y/N]",
+    "cancelled": "Nothing was changed.",
+    "installed": "✓ Hooks installed in {file}.",
+    "notIgnored": "git does not ignore {file}; it holds folders of this computer: add it to .gitignore.",
+    "next": "From the next prompt in Claude Code (opened in this folder), each prompt is recorded. See them with: codetac diff",
+    "none": "There are no CodeTAC hooks in {file}.",
+    "willRestore": "CodeTAC will put {file} back as it was before the install.",
+    "willRemoveFile": "CodeTAC will remove {file} (it did not exist before the install).",
+    "willTakeOut": "{file} changed since the install: CodeTAC will take out only its own hooks.",
+    "confirmRemove": "Change {file}? [y/N]",
+    "removed": "✓ CodeTAC hooks removed. The prompts already recorded stay in CodeTAC's data folder.",
+    "statusNone": "The CodeTAC hooks are not installed here. To install them: codetac hooks install",
+    "statusOn": "The CodeTAC hooks are installed in {file}.",
+    "statusOld": "The CodeTAC hooks in {file} point to another CodeTAC or folder: run codetac hooks install again.",
+    "warmed": {
+      "one": "The project's {count} file is archived once now, so the first prompt is not slowed down.",
+      "other": "The project's {count} files are archived once now, so the first prompt is not slowed down."
+    }
+  },
+  "risk": {
+    "dev": "(development)",
+    "dependencyAdded": {
+      "one": "New dependency in {file}: {list}.",
+      "other": "{count} new dependencies in {file}: {list}."
+    },
+    "dependencyRemoved": {
+      "one": "Dependency removed from {file}: {list}.",
+      "other": "{count} dependencies removed from {file}: {list}."
+    },
+    "dependencyChanged": {
+      "one": "Another version in {file}: {list}.",
+      "other": "{count} other versions in {file}: {list}."
+    },
+    "testDeleted": {
+      "one": "Test file deleted: {list}.",
+      "other": "{count} test files deleted: {list}."
+    },
+    "testsRemoved": "{file} has fewer tests: {before} → {after}.",
+    "testsEmptied": "{file} has no tests left (it had {before}).",
+    "routeNoAuth": "New route {route} possibly without a session check: none of the known ones is in its handler or in the middleware of its file."
+  },
+  "report": {
+    "title": "What changed",
+    "previous": "◀ previous prompt",
+    "next": "next prompt ▶",
+    "history": "History",
+    "backToReport": "Back to the report",
+    "structure": "Structure ↗",
+    "loading": "Reading…",
+    "unreadable": "The panel did not answer. Is it still running?",
+    "projects": "Projects with prompts recorded",
+    "noProjects": "No prompt has been recorded yet. In a project folder, run codetac hooks install; the next prompts given to Claude Code there show up here.",
+    "promptCount": {
+      "one": "{count} prompt",
+      "other": "{count} prompts"
+    },
+    "historyTitle": {
+      "one": "{count} prompt, newest first",
+      "other": "{count} prompts, newest first"
+    },
+    "noPrompts": "No prompt recorded for this project yet.",
+    "promptN": "prompt {n}",
+    "statusRunning": "still running",
+    "statusWaiting": "waiting for background work",
+    "statusDone": "done",
+    "statusInterrupted": "interrupted",
+    "runningNote": "Still running: this compares the project before the prompt with the folder as it is now, and updates by itself.",
+    "interruptedNote": "It was interrupted (no end was received): compared up to the next prompt, or to the end of the session.",
+    "overlapNote": "Another prompt was working on the project at the same time: some of these changes may be from it.",
+    "changes": {
+      "one": "{count} change",
+      "other": "{count} changes"
+    },
+    "alerts": {
+      "one": "{count} alert",
+      "other": "{count} alerts"
+    },
+    "warnings": {
+      "one": "{count} warning",
+      "other": "{count} warnings"
+    },
+    "toLook": {
+      "one": "{count} to look at",
+      "other": "{count} to look at"
+    },
+    "unread": {
+      "one": "{count} not opened",
+      "other": "{count} not opened"
+    },
+    "possiblyCount": {
+      "one": "{count} possibly (a guess)",
+      "other": "{count} possibly (guesses)"
+    },
+    "filesLine": "files: {added} added, {changed} changed, {removed} removed",
+    "nothing": "Nothing changed in the files of the project.",
+    "lookAt": "Look at these",
+    "flowAndData": "Flow and data",
+    "showIt": "Show it on the map and in the code",
+    "possibly": "possibly",
+    "readInCode": "read in the code",
+    "tagLeaks": "leaves the machine",
+    "tagSecrets": "secrets",
+    "showCode": "Show these lines",
+    "noCode": "no lines of its own",
+    "mapTitle": "Map",
+    "mapNote": "The plan of the project: added in green, changed in orange, removed with a dashed border. Click a sentence to light what it is about; click a box to see the sentences about it.",
+    "codeTitle": {
+      "one": "Code: {count} block of lines ({other} not explained by a sentence)",
+      "other": "Code: {count} blocks of lines ({other} not explained by a sentence)"
+    },
+    "noFiles": "No file changed.",
+    "noteLarge": "Too large to show.",
+    "noteBinary": "Not a text file.",
+    "noteNames": "Only the variable names are kept, never the values.",
+    "noteValues": "Only values changed; they are not kept.",
+    "noteMasked": "Keys written in this file are shown masked.",
+    "explains": "explains {list}",
+    "otherChanges": "other changes"
   }
 }

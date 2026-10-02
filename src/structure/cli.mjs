@@ -141,6 +141,19 @@ function describePoint(point) {
   return t('cli.diff.commit', { commit: point.commit.slice(0, 12), ref: point.ref !== point.commit && !point.commit.startsWith(point.ref) ? ` (${point.ref})` : '',
     date: point.date ? ` ${t('cli.diff.of', { date: point.date.slice(0, 10) })}` : '', subject: point.subject ? ` "${point.subject}"` : '' });
 }
+// The sentences of a change, the most important first, with where each is
+// proven (also used by `codetac diff`, phase D1).
+export function printSentences(sentences, out) {
+  if (!sentences.length) out(`  ${TEXT.diff.nothing}`);
+  for (const sentence of sentences) {
+    const touches = sentence.touches.length ? ` [${sentence.touches.join(', ')}]` : '';
+    out(`  ${MARK[sentence.severity]} ${sentence.text}${touches}`);
+    const proof = sentence.proof.slice(0, 3).map(item => `${item.file}:${item.line}`);
+    if (proof.length) out(`       ${t(sentence.side === 'before' ? 'cli.diff.wasAt' : 'cli.diff.at')} ${proof.join(', ')}${sentence.proof.length > 3 ? ', …' : ''}`);
+  }
+  const alerts = sentences.filter(sentence => sentence.touches.length).length;
+  if (alerts) out(`  ${t('diff.touching', { count: alerts })}`);
+}
 async function diffCommand(root, { points = [], out }) {
   const [fromRef, toRef] = points.length ? [points[0], points[1] ?? 'now'] : ['latest', 'now'];
   const from = await readPoint(root, fromRef, { readSnapshot });
@@ -156,15 +169,7 @@ async function diffCommand(root, { points = [], out }) {
   const sentences = changeSummary(diff, from.graph, to.graph);
   out(to.point.type === 'now' ? t('cli.diff.since', { from: describePoint(from.point) }) : t('cli.diff.fromTo', { from: describePoint(from.point), to: describePoint(to.point) }));
   if ([from, to].some(side => side.point.type === 'commit')) out(`  ${t('cli.diff.temporaryCopy')}`);
-  if (!sentences.length) out(`  ${TEXT.diff.nothing}`);
-  for (const sentence of sentences) {
-    const touches = sentence.touches.length ? ` [${sentence.touches.join(', ')}]` : '';
-    out(`  ${MARK[sentence.severity]} ${sentence.text}${touches}`);
-    const proof = sentence.proof.slice(0, 3).map(item => `${item.file}:${item.line}`);
-    if (proof.length) out(`       ${t(sentence.side === 'before' ? 'cli.diff.wasAt' : 'cli.diff.at')} ${proof.join(', ')}${sentence.proof.length > 3 ? ', …' : ''}`);
-  }
-  const alerts = sentences.filter(sentence => sentence.touches.length).length;
-  if (alerts) out(`  ${t('diff.touching', { count: alerts })}`);
+  printSentences(sentences, out);
   if (from.point.prediction) printPrediction(comparePrediction(from.point.prediction, diff, from.graph, to.graph), out);
   for (const problem of [...from.problems, ...to.problems]) out(`  ! ${problem}`);
   out('');
