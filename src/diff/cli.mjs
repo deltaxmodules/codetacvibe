@@ -9,6 +9,8 @@ import { t, TEXT } from '../structure/text.mjs';
 import { archiveMoment, diffFolder, fileChanges, readMoment } from './archive.mjs';
 import { hooksStatus } from './install.mjs';
 import { promptReport } from './report.mjs';
+import { requestLayer } from './request.mjs';
+import { localRecordings, promptBehavior } from './behavior.mjs';
 import { listPrompts, readPrompt } from './prompts.mjs';
 
 const LISTED = 20;
@@ -70,6 +72,39 @@ function printCode(report, out) {
   if (shown > CODE_SHOWN) out(`  ${t('prompts.cli.code.cut', { count: shown - CODE_SHOWN })}`);
 }
 
+// The Request layer (phase D4), when the prompt was interpreted (in the panel).
+function printRequest(layer, out) {
+  if (!layer) return;
+  const { interpretation, comparison, error } = layer;
+  out('');
+  out(interpretation.source === 'user' ? t('prompts.cli.request.yours') : t('prompts.cli.request.ai', { model: interpretation.model || interpretation.provider || '' }));
+  if (interpretation.prediction.note) out(`  «${interpretation.prediction.note}»`);
+  if (error || !comparison) { if (error) out(`  ! ${error}`); return; }
+  const group = (title, items) => {
+    out(`  ${title}`);
+    if (!items.length) out(`    ${t('prompts.cli.request.none')}`);
+    for (const item of items) out(`    - ${item.text}${item.insteadText ? ` (${item.insteadText})` : ''}`);
+  };
+  group(t('prompts.cli.request.asked'), comparison.asked);
+  group(t('prompts.cli.request.also', { count: comparison.outside }), comparison.also);
+  group(t('prompts.cli.request.notDone'), comparison.notDone);
+}
+
+// The Behavior layer (phase D5): the actions run in the app before and after the prompt.
+function printBehavior(behavior, out) {
+  if (!behavior || behavior.error || behavior.running) return;
+  out('');
+  out(t('prompts.cli.behavior.title'));
+  if (!behavior.compared.length) out(`  ${t('prompts.cli.behavior.none')}`);
+  behavior.compared.forEach((item, index) => {
+    const sentences = behavior.sentences.filter(sentence => sentence.action === index);
+    out(`  «${item.label}»`);
+    if (!sentences.length) out(`    ${t('prompts.cli.behavior.same')}`);
+    for (const sentence of sentences) out(`    ${MARK[sentence.severity]} ${sentence.text}`);
+  });
+  if (behavior.onlyAfter.length) out(`  ${t('prompts.cli.behavior.onlyAfter', { list: behavior.onlyAfter.map(item => `«${item.label}»`).join(', ') })}`);
+}
+
 export async function diffCommand(root, { n = 'latest', list = false, code = false, out = text => process.stdout.write(`${text}\n`) } = {}) {
   root = realpathSync(root);
   if (list) return listCommand(root, out);
@@ -103,6 +138,8 @@ export async function diffCommand(root, { n = 'latest', list = false, code = fal
     if (proof.length) out(`        ${t(sentence.side === 'before' ? 'cli.diff.wasAt' : 'cli.diff.at')} ${proof.join(', ')}${sentence.proof.length > 3 ? ', …' : ''}${blocks}`);
   });
   const blocks = report.code.files.reduce((sum, file) => sum + file.hunks.length, 0);
+  printRequest(await requestLayer(root, prompt.n), out);
+  if (prompt.after) printBehavior(await promptBehavior(root, prompt.n, await localRecordings()), out);
   out('');
   out(t('prompts.cli.codeSummary', { count: blocks, files: report.code.files.length, other: report.code.unexplained.length }));
   if (code) printCode(report, out);

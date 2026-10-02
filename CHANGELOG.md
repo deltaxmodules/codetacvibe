@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0
+
+**What did my last prompt change? Now also what the prompt asked for, and what your app does differently.**
+
+- **Request:** in the report of a prompt, **Read the prompt with AI…** shows exactly what would be sent: the prompt with secrets hidden and the paths of the project's files, never code. It is sent only when you press **Send**. The AI writes the prompt as a list of changes (files, blocks that start depending on another, new services), marked as an interpretation; correct it with **Edit the request**, or **Write it yourself** with no AI. **The rules**, not the AI, compare that list with what changed:
+  - **You asked, and it was done**;
+  - **The AI also did**: what the prompt did not ask for, counted as **outside the request** in the report, the history, `codetac diff` and the bar (`↗ 2`);
+  - **Asked, not done**.
+- New Privacy kind `requests` (on request only; **No AI** turns it off).
+- **Behavior (observed):** run an action in your app before a prompt and the same action again after it. The report compares the two runs:
+  - the requests to the server and how they answered, the functions of your project that ran, what the action did outside the code (database, outside services, AI, email, payments, files) and its errors;
+  - for example: «button “Add user”» now also sends an email (Resend);
+  - **Show its path on the map** colours the action's path: new on the path, no longer on it, through code the prompt changed, unchanged;
+  - actions run only after the prompt are listed apart, because there is no point of comparison. Nothing is run again for you. Node and Python apps.
+- `codetac diff` prints the Request and the Behavior too.
+- **Fix:** a service whose name already says its category no longer repeats it in the sentences («SMTP (email, from …)», not «SMTP (email) (email, from …)»).
+- **Fix:** a request to the AI with the paths of a large project is no longer cut at 10 KB without a word.
+
 ## 0.9.0
 
 **What did my last prompt change? A report for each prompt you give Claude Code, with no snapshot by hand.**

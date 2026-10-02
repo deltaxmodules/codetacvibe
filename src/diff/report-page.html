@@ -57,6 +57,29 @@ ul.history { list-style:none; margin:0; padding:0; }
 ul.history li { display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); }
 ul.history li .text { flex:1; overflow-wrap:anywhere; }
 .status { padding:24px; color:var(--muted); }
+.chip.outside { background:#7c3aed; color:#fff; }
+.chip.observed { background:#0f766e; color:#fff; }
+#behavior h3 { font-size:13px; margin:10px 0 4px; display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; }
+#behavior h3 .muted { font-weight:400; }
+#behavior h3.shown { color:var(--accent); }
+#behavior .legend { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; margin:6px 0 0; }
+#behavior .legend span::before { content:''; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; border:2px solid var(--line); }
+#behavior .legend .added::before { border-color:#2e9d5b; } #behavior .legend .removed::before { border-color:#d0566a; border-style:dashed; }
+#behavior .legend .changed::before { border-color:#e0a100; } #behavior .legend .same::before { border-color:var(--accent); }
+.tag.observed { border-color:#0f766e; color:#0f766e; }
+#request .lists { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin:8px 0; }
+#request h3 { font-size:12px; margin:0 0 4px; }
+#request ul { list-style:none; margin:0; padding:0; }
+#request li { padding:2px 0 2px 8px; border-left:3px solid var(--line); margin:0 0 3px; overflow-wrap:anywhere; }
+#request .also li { border-color:#7c3aed; }
+#request .asked li { border-color:var(--add-line); }
+#request li button { all:unset; cursor:pointer; }
+#request li button:hover { text-decoration:underline; }
+#request .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:6px; }
+#request pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:320px; overflow:auto; background:var(--code); border-radius:6px; padding:8px; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+#request label { display:block; margin:6px 0 2px; font-weight:600; }
+#request textarea, #request input[type=text] { width:100%; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--code); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px; }
+#request .error { color:var(--alert); }
 </style>
 </head>
 <body>
@@ -156,6 +179,7 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
       if (prompt.badge) {
         li.appendChild(html('span', t('changes', { count: prompt.badge.changes }), { className: 'chip' }));
         if (prompt.badge.alerts + prompt.badge.warnings) li.appendChild(html('span', t('toLook', { count: prompt.badge.alerts + prompt.badge.warnings }), { className: 'chip warning' }));
+        if (prompt.badge.outside) li.appendChild(html('span', t('outside', { count: prompt.badge.outside }), { className: 'chip outside' }));
         if (prompt.badge.unread && prompt.badge.changes) li.appendChild(html('span', t('unread', { count: prompt.badge.unread }), { className: 'tag' }));
       }
       list.appendChild(li);
@@ -265,6 +289,206 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     return box;
   }
 
+  // --- Behavior (phase D5) ---------------------------------------------------------
+  // Observed: the last run of an action before the prompt against the first after.
+  let behaviorPath = null;
+  function showPath(item) {
+    behaviorPath = item;
+    for (const h3 of document.querySelectorAll('#behavior h3')) h3.classList.toggle('shown', Number(h3.dataset.index) === item?.index);
+    const frame = document.querySelector('.map iframe');
+    if (frame?.contentWindow) frame.contentWindow.postMessage({ codetac: 'path', marks: item?.path?.marks ?? null, open: item?.path?.open ?? [] }, location.origin);
+    if (item) document.getElementById('map')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  async function loadBehavior(report, box, verdict) {
+    const response = await fetch(api('/api/diff/behavior', '&n=' + report.prompt.n), { cache: 'no-store' }).catch(() => null);
+    const state = response && response.ok ? await response.json().catch(() => null) : null;
+    if (!state || shown !== report) return;
+    box.textContent = '';
+    box.appendChild(html('h2', t('behaviorTitle')));
+    if (state.running) { box.appendChild(html('p', t('behaviorRunning'), { className: 'muted' })); return; }
+    if (!state.compared.length) box.appendChild(html('p', state.onlyAfter.length || state.onlyBefore.length ? t('behaviorNoPair') : t('behaviorNone'), { className: 'muted' }));
+    if (state.sentences.length) verdict.insertBefore(html('span', t('observedCount', { count: state.sentences.length }), { className: 'chip observed', title: t('observedTitle') }), verdict.lastChild);
+    state.compared.forEach((item, index) => {
+      item.index = index;
+      const h3 = html('h3');
+      h3.dataset.index = index;
+      h3.append(html('span', '«' + item.label + '»'), html('span', t('ranAt', { before: when(new Date(item.before.at).toISOString()), after: when(new Date(item.after.at).toISOString()) }), { className: 'muted small' }));
+      if (item.path) {
+        const path = html('button', t('showPath'), { className: 'plain small' });
+        path.addEventListener('click', () => showPath(behaviorPath === item ? null : item));
+        h3.appendChild(path);
+      }
+      box.appendChild(h3);
+      const sentences = state.sentences.filter(sentence => sentence.action === index);
+      if (!sentences.length) { box.appendChild(html('p', t('sameBehavior'), { className: 'muted' })); return; }
+      const list = html('ol', null, { className: 'sentences' });
+      for (const sentence of sentences) {
+        const li = html('li', null, { className: sentence.severity });
+        const fact = html('button', sentence.text, { className: 'fact', title: t('showPath') });
+        fact.addEventListener('click', () => showPath(item));
+        li.appendChild(fact);
+        const tags = html('div', null, { className: 'tags' });
+        tags.appendChild(html('span', t('observed'), { className: 'tag observed' }));
+        for (const touch of sentence.touches) tags.appendChild(html('span', touch === 'leaks' ? t('tagLeaks') : t('tagSecrets'), { className: 'tag' }));
+        li.appendChild(tags);
+        list.appendChild(li);
+      }
+      box.appendChild(list);
+    });
+    if (state.compared.some(item => item.path)) {
+      const legend = html('div', null, { className: 'legend muted' });
+      const PATH = { added: t('path_added'), removed: t('path_removed'), changed: t('path_changed'), same: t('path_same') };
+      for (const [mark, text] of Object.entries(PATH)) legend.appendChild(html('span', text, { className: mark }));
+      box.appendChild(legend);
+    }
+    const names = items => items.map(item => '«' + item.label + '»').join(', ');
+    if (state.onlyAfter.length) box.appendChild(html('p', t('onlyAfter', { list: names(state.onlyAfter) }), { className: 'muted small' }));
+    if (state.onlyBefore.length) box.appendChild(html('p', t('onlyBefore', { list: names(state.onlyBefore) }), { className: 'muted small' }));
+  }
+
+  // --- Request (phase D4) ---------------------------------------------------------
+  // The AI only reads the prompt (an interpretation, marked as one and editable);
+  // what was asked and what was done besides is decided by the rules.
+  const post = (path, data) => fetch(api(path), { method: 'POST', headers: { 'content-type': 'application/json', 'x-codetac': '1' }, body: JSON.stringify(data) })
+    .then(async response => ({ ok: response.ok, body: await response.json().catch(() => ({})) }));
+  async function loadRequest(report, box, state = null) {
+    if (!state) {
+      const response = await fetch(api('/api/diff/request', '&n=' + report.prompt.n), { cache: 'no-store' }).catch(() => null);
+      state = response && response.ok ? await response.json().catch(() => null) : null;
+    }
+    if (!state || shown !== report) return;
+    box.textContent = '';
+    box.appendChild(html('h2', t('requestTitle')));
+    if (!state.layer) return requestEmpty(report, box, state);
+    const { interpretation, comparison, error } = state.layer;
+    const who = interpretation.source === 'user' ? t('yours') : t('aiInterpretation', { model: interpretation.model || interpretation.provider || '' });
+    box.appendChild(html('div', null, { className: 'tags' })).appendChild(html('span', who, { className: 'tag' + (interpretation.source === 'user' ? '' : ' possibly') }));
+    if (interpretation.prediction.note) box.appendChild(html('p', interpretation.prediction.note, { className: 'prompt-text' }));
+    if (error) box.appendChild(html('p', error, { className: 'muted' }));
+    if (comparison) {
+      const lists = html('div', null, { className: 'lists' });
+      const group = (title, items, className, empty) => {
+        const div = html('div', null, { className });
+        div.appendChild(html('h3', title));
+        if (!items.length) { div.appendChild(html('p', empty, { className: 'muted small' })); return div; }
+        const ul = html('ul');
+        for (const item of items) {
+          const li = html('li');
+          const button = html('button', item.text + (item.insteadText ? ' (' + item.insteadText + ')' : ''), { title: t('showIt') });
+          button.addEventListener('click', () => lightSentences(sentencesAbout(item), true));
+          li.appendChild(button);
+          ul.appendChild(li);
+        }
+        div.appendChild(ul);
+        return div;
+      };
+      lists.append(group(t('asked'), comparison.asked, 'asked', t('askedNone')),
+        group(t('alsoDid') + (comparison.outside ? ' · ' + t('outside', { count: comparison.outside }) : ''), comparison.also, 'also', t('alsoNone')),
+        group(t('notDone'), comparison.notDone, 'not-done', t('notDoneNone')));
+      box.appendChild(lists);
+      box.appendChild(html('p', t('byRules'), { className: 'muted small' }));
+    }
+    const actions = html('div', null, { className: 'actions' });
+    const edit = html('button', t('editRequest'), { className: 'plain' });
+    edit.addEventListener('click', () => requestEditor(report, box, interpretation.prediction));
+    actions.appendChild(edit);
+    if (state.ai.active && state.canAsk) {
+      const again = html('button', t('askAgain'), { className: 'plain' });
+      again.addEventListener('click', () => requestPreview(report, box));
+      actions.appendChild(again);
+    }
+    box.appendChild(actions);
+  }
+  function requestEmpty(report, box, state) {
+    box.appendChild(html('p', t('requestIntro'), { className: 'muted' }));
+    if (!state.canAsk) { box.appendChild(html('p', t('requestRunning'), { className: 'muted' })); return; }
+    const actions = html('div', null, { className: 'actions' });
+    if (state.ai.active) {
+      const ask = html('button', t('askAi'), { className: 'plain' });
+      ask.addEventListener('click', () => requestPreview(report, box));
+      actions.appendChild(ask);
+    } else actions.appendChild(html('span', state.ai.problem || '', { className: 'muted small' }));
+    const own = html('button', t('writeOwn'), { className: 'plain' });
+    own.addEventListener('click', () => requestEditor(report, box, null));
+    actions.appendChild(own);
+    box.appendChild(actions);
+  }
+  // The exact text first; what is sent is checked against its fingerprint.
+  async function requestPreview(report, box) {
+    const response = await fetch(api('/api/diff/request/preview', '&n=' + report.prompt.n), { cache: 'no-store' }).catch(() => null);
+    const preview = response ? await response.json().catch(() => ({})) : {};
+    box.textContent = '';
+    box.appendChild(html('h2', t('requestTitle')));
+    if (!response || !response.ok || !preview.active) {
+      box.appendChild(html('p', preview.problem || preview.error || t('unreadable'), { className: 'error' }));
+      return backButton(report, box);
+    }
+    box.appendChild(html('p', t('previewTitle', { model: preview.model || preview.provider, where: preview.local ? t('local') : t('remote', { provider: preview.provider }) })));
+    box.appendChild(html('pre', preview.system + '\n\n' + preview.text));
+    const actions = html('div', null, { className: 'actions' });
+    const send = html('button', t('send'), { className: 'plain' });
+    send.addEventListener('click', async () => {
+      send.disabled = true;
+      actions.appendChild(html('span', t('sending'), { className: 'muted' }));
+      const answer = await post('/api/diff/request', { n: report.prompt.n, hash: preview.hash }).catch(() => ({ ok: false, body: {} }));
+      if (!answer.ok) { box.appendChild(html('p', t('failed', { error: answer.body.error || '' }), { className: 'error' })); send.disabled = false; return; }
+      lastText = '';
+      refresh();
+    });
+    actions.appendChild(send);
+    box.appendChild(actions);
+    backButton(report, box, actions);
+  }
+  function backButton(report, box, actions = box.appendChild(html('div', null, { className: 'actions' }))) {
+    const cancel = html('button', t('cancel'), { className: 'plain' });
+    cancel.addEventListener('click', () => loadRequest(report, box));
+    actions.appendChild(cancel);
+  }
+  // The user's own version: one item per line.
+  function requestEditor(report, box, prediction) {
+    box.textContent = '';
+    box.appendChild(html('h2', t('requestTitle')));
+    box.appendChild(html('p', t('editHint'), { className: 'muted small' }));
+    const fields = {};
+    const field = (key, label, value) => {
+      box.appendChild(html('label', label));
+      const input = html('textarea', null, { rows: 3 });
+      input.value = value;
+      fields[key] = input;
+      box.appendChild(input);
+    };
+    const p = prediction ?? { files: { added: [], changed: [], removed: [] }, dependsOn: [], services: [] };
+    const blockName = id => id.replace(/^block:/, '');
+    field('added', t('editAdded'), p.files.added.join('\n'));
+    field('changed', t('editChanged'), p.files.changed.join('\n'));
+    field('removed', t('editRemoved'), p.files.removed.join('\n'));
+    field('dependsOn', t('editDepends'), p.dependsOn.map(pair => blockName(pair.from) + ' -> ' + blockName(pair.to)).join('\n'));
+    field('services', t('editServices'), p.services.join('\n'));
+    field('note', t('editNote'), p.note ?? '');
+    const actions = html('div', null, { className: 'actions' });
+    const save = html('button', t('save'), { className: 'plain' });
+    save.addEventListener('click', async () => {
+      const lines = key => fields[key].value.split('\n').map(line => line.trim()).filter(Boolean);
+      const answer = await post('/api/diff/request/edit', { n: report.prompt.n, prediction: { files: { added: lines('added'), changed: lines('changed'), removed: lines('removed') },
+        dependsOn: lines('dependsOn'), services: lines('services'), note: fields.note.value } }).catch(() => ({ ok: false, body: {} }));
+      if (!answer.ok) { box.appendChild(html('p', t('failed', { error: answer.body.error || '' }), { className: 'error' })); return; }
+      lastText = '';
+      refresh();
+    });
+    actions.appendChild(save);
+    box.appendChild(actions);
+    backButton(report, box, actions);
+  }
+  // The sentences of the report about an item of the request: the same file, service or blocks.
+  function sentencesAbout(item) {
+    if (!shown) return [];
+    const ids = item.kind === 'service' ? [] : item.kind === 'depends-on' ? [item.value.from, item.value.to] : ['file:' + item.value];
+    // By the whole name: «Stripe» is not in VITE_STRIPE_KEY.
+    const name = typeof item.value === 'string' ? new RegExp('(^|[^\\w/.-])' + item.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w/-])', 'i') : null;
+    return shown.sentences.filter(sentence => ids.some(id => sentence.ids.includes(id))
+      || (name && (name.test(sentence.text) || sentence.proof.some(proof => proof.file === item.value)))).map(sentence => sentence.index);
+  }
+
   function render(report) {
     shown = report;
     report.sentences.forEach((sentence, index) => { sentence.index = index; });
@@ -289,9 +513,18 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     if (b.alerts) verdict.appendChild(html('span', t('alerts', { count: b.alerts }), { className: 'chip alert' }));
     if (b.warnings) verdict.appendChild(html('span', t('warnings', { count: b.warnings }), { className: 'chip warning' }));
     if (b.possibly) verdict.appendChild(html('span', t('possiblyCount', { count: b.possibly }), { className: 'tag possibly' }));
+    if (b.outside) verdict.appendChild(html('span', t('outside', { count: b.outside }), { className: 'chip outside', title: t('outsideTitle') }));
     verdict.appendChild(html('span', t('filesLine', { added: report.files.added.length, changed: report.files.changed.length, removed: report.files.removed.length }), { className: 'muted' }));
     head.appendChild(verdict);
     main.appendChild(head);
+    // The Request layer (phase D4): what the prompt asked, and what was done besides.
+    const request = html('section', null, { id: 'request' });
+    main.appendChild(request);
+    loadRequest(report, request);
+    // The Behavior layer (phase D5): the same actions of the app, before and after.
+    const behavior = html('section', null, { id: 'behavior' });
+    main.appendChild(behavior);
+    loadBehavior(report, behavior, verdict);
     // The sentences (risk first) and the map.
     const grid = html('div', null, { className: 'grid' });
     const left = html('section', null, { id: 'sentences' });

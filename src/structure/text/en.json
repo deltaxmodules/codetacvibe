@@ -430,6 +430,7 @@
     "diffWaiting": "Prompt running (background work)…",
     "diffRunningTitle": "CodeTAC: the AI is working on a prompt; what it changed shows here when it ends",
     "diffBadgeTitle": "CodeTAC: prompt {n} changed {changes} things ({warnings} to look at). Click to see them.",
+    "diffOutsideTitle": "Changes outside the request: {count} (the prompt did not ask for them)",
     "diffNone": "CodeTAC: the hooks are installed; the next prompt given to the AI shows up here",
     "diffFrameTitle": "What the last prompt changed"
   },
@@ -724,6 +725,10 @@
       "explanations": {
         "name": "Explanations: a block, the plan, an alert",
         "carries": "Only facts read from the structure: names of blocks, files, routes, services, tables and variables, and where the findings are. Never code, never values."
+      },
+      "requests": {
+        "name": "Interpretations of your prompts (What changed?)",
+        "carries": "The text of a prompt you gave the coding assistant (secrets hidden), the paths of the project's files and the names of its blocks and services. Never code."
       }
     },
     "page": {
@@ -1070,6 +1075,16 @@
       "steps": "Server steps:\n{list}",
       "noSteps": "There were no project steps on the server.",
       "effects": "Observed effects: {effects}."
+    },
+    "request": {
+      "system": "A user gave a coding assistant the prompt below. Write what the prompt ASKS FOR, as changes to the structure of the project:\n- files: the files to add, change or remove;\n- dependsOn: blocks that would start depending on another block;\n- services: new external services.\nOnly what the prompt asks, in its words or as their clear, direct consequence; never what the assistant might also do on its own.\nUse the paths from the list for files that exist. A new file only when the prompt names it or clearly needs one, with the path the prompt gives (or the one the project's folders make obvious).\nUse only the blocks listed, by their id, and only the services listed, by their name.\nIf the prompt asks for nothing that changes the structure (a text, a fix inside a function), return empty lists.\nnote: one sentence, at most 25 words, saying what the prompt asks.",
+      "prompt": "The prompt:",
+      "files": "Files of the project before the prompt:",
+      "filesCut": "Files of the project before the prompt (the first {count} of {total}):",
+      "blocks": "Blocks (id: name):",
+      "services": "Known external services:",
+      "running": "The prompt is still running: its request is compared when it ends.",
+      "noText": "This prompt has no text to interpret."
     }
   },
   "steps": {
@@ -1708,7 +1723,21 @@
       },
       "onPanel": "The report with the map and the code, in the panel: codetac diff {n} --open (or the «What changed?» button in the app's bar).",
       "noPanel": "The panel did not start. Run codetac in the project once to see why, or try --panel-port <n>.",
-      "opening": "Opening the report in the panel: {url}"
+      "opening": "Opening the report in the panel: {url}",
+      "request": {
+        "ai": "Request, as the AI read the prompt ({model}; an interpretation, edit it in the panel):",
+        "yours": "Request, as you wrote it:",
+        "asked": "You asked, and it was done:",
+        "also": "The AI also did ({count} outside the request):",
+        "notDone": "Asked, not done:",
+        "none": "nothing"
+      },
+      "behavior": {
+        "title": "Behavior, observed (the same action of the app before and after the prompt):",
+        "none": "No action was run in the app both before and after this prompt.",
+        "same": "does the same as before",
+        "onlyAfter": "Run only after the prompt (no point of comparison): {list}"
+      }
     },
     "service": {
       "noProject": "No project: open it from the app's bar, or pick one in the panel's list of prompts."
@@ -1847,6 +1876,102 @@
     "noteValues": "Only values changed; they are not kept.",
     "noteMasked": "Keys written in this file are shown masked.",
     "explains": "explains {list}",
-    "otherChanges": "other changes"
+    "otherChanges": "other changes",
+    "outside": {
+      "one": "{count} outside the request",
+      "other": "{count} outside the request"
+    },
+    "outsideTitle": "Changes the prompt did not ask for, by the rules, from the request below",
+    "requestTitle": "Request",
+    "requestIntro": "What did the prompt ask for? The AI can read the prompt and write it as a list of changes; then the rules compare that list with what really changed, and show what was done outside the request. Or write the list yourself.",
+    "requestRunning": "The prompt is still running: the request can be read when it ends.",
+    "askAi": "Read the prompt with AI…",
+    "askAgain": "Read it again with AI…",
+    "writeOwn": "Write it yourself",
+    "previewTitle": "This is exactly what will be sent to {model} ({where}):",
+    "local": "on this computer",
+    "remote": "outside this computer: {provider}",
+    "send": "Send",
+    "cancel": "Cancel",
+    "sending": "Reading the prompt…",
+    "failed": "It did not work: {error}",
+    "aiInterpretation": "AI interpretation ({model}): check it, and edit it if it is wrong",
+    "yours": "Written by you",
+    "asked": "You asked, and it was done",
+    "askedNone": "Nothing of the request shows in the structure.",
+    "alsoDid": "The AI also did",
+    "alsoNone": "Nothing outside the request.",
+    "notDone": "Asked, not done",
+    "notDoneNone": "Everything asked was done.",
+    "byRules": "Compared by rules with the changes in the structure (files, blocks, services), not by the AI. A change inside a file that was asked for counts as asked.",
+    "editRequest": "Edit the request",
+    "editHint": "What the prompt asked for, one item per line. Files by their path; blocks as «interface -> logic»; services by their name.",
+    "editAdded": "Files to add",
+    "editChanged": "Files to change",
+    "editRemoved": "Files to remove",
+    "editDepends": "Blocks that start depending on another",
+    "editServices": "New external services",
+    "editNote": "What the prompt asks, in one sentence",
+    "save": "Save",
+    "behaviorTitle": "Behavior",
+    "behaviorRunning": "The prompt is still running: run the app's actions again when it ends to compare.",
+    "behaviorNone": "No action of the app was recorded before and after this prompt. To compare what an action does, run it in the app (the same click on the same page) before a prompt and again after it.",
+    "behaviorNoPair": "None of the actions run after the prompt was also run before it (see below).",
+    "observedCount": {
+      "one": "{count} observed",
+      "other": "{count} observed"
+    },
+    "observedTitle": "Changes seen when the app ran: the same action before and after the prompt",
+    "ranAt": "before: {before} · after: {after}",
+    "showPath": "Show its path on the map",
+    "sameBehavior": "It does the same as before: same requests, functions, outside calls and errors.",
+    "observed": "observed",
+    "path_added": "new on the path",
+    "path_removed": "no longer on the path",
+    "path_changed": "on the path, code changed",
+    "path_same": "on the path, unchanged",
+    "onlyAfter": "Run only after the prompt, so there is no point of comparison: {list}.",
+    "onlyBefore": "Not run again since the prompt (run them in the app to compare): {list}."
+  },
+  "behavior": {
+    "theDatabase": "the database",
+    "anonymous": "an unnamed function",
+    "dbRead": "reads {tables}",
+    "dbWrite": "writes to {tables} ({operation})",
+    "dbStructure": "changes the structure of the database ({operation} {tables})",
+    "dbOther": "runs {operation} on {tables}",
+    "http": "calls {host}",
+    "ai": "calls the AI of {provider}",
+    "email": "sends an email ({provider})",
+    "message": "sends a message ({provider})",
+    "payment": "makes a payment call to {provider} ({mode})",
+    "fileRead": "reads a file from {where}",
+    "fileWrite": "{operation} a file on {where}",
+    "auth": "checks the session with {provider}",
+    "otherKind": "{kind} {operation}",
+    "browserCall": "makes the browser call {host}",
+    "errorIn": "{function} ({file}) fails",
+    "errorAt": "{what} fails",
+    "nowFails": "«{action}» now has an error: {what}.",
+    "noLongerFails": "«{action}» no longer has this error: {what}.",
+    "status": "«{action}»: {request} now answers {after} (it answered {before}).",
+    "nowAlso": "«{action}» now also {what}.",
+    "noLonger": "«{action}» no longer {what}.",
+    "newRequests": {
+      "one": "«{action}» now also makes the request {list}.",
+      "other": "«{action}» now also makes {count} requests: {list}."
+    },
+    "goneRequests": {
+      "one": "«{action}» no longer makes the request {list}.",
+      "other": "«{action}» no longer makes {count} requests: {list}."
+    },
+    "newFunctions": {
+      "one": "«{action}» now runs a function it did not run before: {list}.",
+      "other": "«{action}» now runs {count} functions it did not run before: {list}."
+    },
+    "goneFunctions": {
+      "one": "«{action}» no longer runs {list}.",
+      "other": "«{action}» no longer runs {count} functions: {list}."
+    }
   }
 }

@@ -28,6 +28,8 @@ export const KINDS = [
   { id: 'questions', automatic: false, defaultOn: () => true },
   { id: 'suggestions', automatic: false, defaultOn: () => true },
   { id: 'explanations', automatic: false, defaultOn: () => true },
+  // The Diff (phase D4): the text of a prompt, read as a prediction; on request, after a preview.
+  { id: 'requests', automatic: false, defaultOn: () => true },
 ];
 const IDS = new Set(KINDS.map(kind => kind.id));
 

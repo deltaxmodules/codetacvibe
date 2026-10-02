@@ -14,6 +14,7 @@ import { answerQuestion, complete, createPurposes, describeConfig, loadConfig, q
 import { blocked, blockedText, clearLog, privacyState, readLog, writeSettings } from './privacy.mjs';
 import { createStructureService, isLoopback } from './structure/service.mjs';
 import { createDiffService, projectById } from './diff/service.mjs';
+import { recordingsOf } from './diff/behavior.mjs';
 import { TEXT, t, privacyPageWithText, planPageWithText, reportPageWithText } from './structure/text.mjs';
 import { maskKeys } from './structure/node/modules.mjs';
 
@@ -71,7 +72,8 @@ const structure = createStructureService({ rootOf: rootOfRun, editor: editorSche
     outgoing: run => { store.ingest(); return store.outgoing(run); } } });
 
 // The Diff (0.9.0, phase D3): the prompts of the project of a recording, or of a project picked in the panel.
-const diffService = createDiffService({ rootOf: rootOfRun });
+// Phase D5: the actions recorded for a project (any of its recordings), resolved like the dossiers.
+const diffService = createDiffService({ rootOf: rootOfRun, ai: { config: ai, complete }, recordings: recordingsOf(store, view) });
 
 // Detail requests live in the recording's folder, where the running
 // application reads them (runtime.mjs).
@@ -178,7 +180,7 @@ const server = http.createServer(async (request, response) => {
     }
     // The Diff: read-only, except marking a report as opened (from the panel's own page).
     if (url.pathname.startsWith('/api/diff/')) {
-      const post = request.method === 'POST' && url.pathname === '/api/diff/seen';
+      const post = request.method === 'POST' && ['/api/diff/seen', '/api/diff/request', '/api/diff/request/edit'].includes(url.pathname);
       if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
         || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
         || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {

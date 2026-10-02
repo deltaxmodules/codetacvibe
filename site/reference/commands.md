@@ -28,7 +28,7 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | Option | What it does |
 | --- | --- |
 | `--no-ai` / `--ai` | turns all AI requests off / back on |
-| `--on <kind>`, `--off <kind>`, `--default <kind>` | one kind: `purposes`, `questions`, `suggestions`, `explanations` |
+| `--on <kind>`, `--off <kind>`, `--default <kind>` | one kind: `purposes`, `questions`, `suggestions`, `explanations`, `requests` |
 | `--log [n]` | shows the last requests sent |
 | `--clear-log` | clears the log |
 

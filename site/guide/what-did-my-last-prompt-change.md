@@ -42,6 +42,28 @@ Made by rules (no AI), the most important first, in two groups:
 
 Each sentence says **read in the code** (it comes from the files, not from a guess) and has its tags: **leaves the machine**, **secrets**. The `#1`, `#2` link to the blocks of lines that prove it.
 
+### The request
+
+What did the prompt **ask for**, and what did the AI do **besides**? Press **Read the prompt with AI…**. You see exactly what would be sent (the text of the prompt, with secrets hidden, and the paths of the project's files; never code), and it goes only when you press **Send**. The AI writes the prompt as a list of changes: files to add, change or remove, blocks that start depending on another, new services. Then **the rules**, not the AI, compare that list with what really changed:
+
+- **You asked, and it was done**;
+- **The AI also did**: changes the prompt did not ask for. Their number shows as **outside the request**, in purple, at the top of the report, in the history and on the bar (`↗`);
+- **Asked, not done**.
+
+The list is marked as an **AI interpretation**: check it. If it is wrong, press **Edit the request** and correct it (one item per line); the comparison is made again. With no AI set up, or with AI off in [Privacy](/guide/privacy-and-ai), press **Write it yourself**. Press an item to light the sentences about it.
+
+### Behavior: what the app now does differently
+
+Run an action in your app (a click, a form) **before** the prompt and **the same action again after it**. The **Behavior** section compares the two runs. It looks at the requests to the server and how they answered, the functions of your project that ran, what the action did outside the code (the database, outside services, AI, email, payments, files) and its errors. For example:
+
+- «button “Add user”» now also sends an email (Resend);
+- «button “Add user”»: POST /api/users now answers 500 (it answered 201);
+- «button “Add user”» now runs a function it did not run before: sendWelcome (lib/mailer.js).
+
+These sentences are **observed**: they come from the two runs, not from reading the code. **Show its path on the map** colours the path of the action: new on the path, no longer on the path, on the path through code the prompt changed, or unchanged. Actions run only after the prompt are listed apart: there is no point of comparison for them.
+
+Nothing is run again for you: only the runs you made in the app count.
+
 ### Press a sentence
 
 The sentence lights up its blocks of lines in the code and its boxes on the **Map**.
@@ -89,5 +111,7 @@ Claude Code says it "added a payment button". The report shows it also added a n
 - **Two Claude Code sessions** working on the same project at once, or a subagent still working when the next prompt starts, mix their changes: the report warns that some of the changes may be from the other one.
 - Edits you make by hand while a prompt runs count as the prompt's.
 - The diff is of **whole lines**: changing only spaces counts as a change.
+- **Behavior** recognises «the same action» by its page and what was clicked: a button whose text changes with the data («Delete Ada») is not recognised from one run to the next. It compares one run before with one after, so a difference that comes from the data (another input, a failing service) shows as a change.
+- **Outside the request** compares the **structure** (files, blocks, services), not every line: a change inside a file that was asked for counts as asked. And it is only as good as the list: read the AI's interpretation before trusting the number.
 - The rules for risks are rules: a route **possibly** without a session check is a guess, and a dependency or test the rules do not know is not seen.
 - With the browser window hidden or covered by another window, the bar waits until you see it again to ask for news.

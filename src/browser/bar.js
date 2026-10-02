@@ -534,9 +534,10 @@
       'iframe{border:0;flex:1;width:100%}.msg{padding:16px;color:#27272a}' +
       '.debt{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.debt[hidden]{display:none}' +
       '.pill.diff[hidden]{display:none}.count{background:#52525b;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;line-height:16px}.count.new{background:#2563eb}' +
-      '.warn{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.warn[hidden],.count[hidden]{display:none}' +
+      '.warn{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.warn[hidden],.count[hidden],.outside[hidden]{display:none}' +
+      '.outside{background:#7c3aed;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}' +
       '.diff.running .dot{background:#3b82f6;animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.3}}</style>' +
-      '<div class="row"><button class="pill diff" part="diff" hidden><span class="dot"></span><span class="label"></span><span class="count" hidden></span><span class="warn" hidden></span></button>' +
+      '<div class="row"><button class="pill diff" part="diff" hidden><span class="dot"></span><span class="label"></span><span class="count" hidden></span><span class="warn" hidden></span><span class="outside" hidden></span></button>' +
       '<button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
       '<button class="pill main" part="pill" title="' + barText('pillTitle') + '"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
     shadow.querySelector('.pill.main').addEventListener('click', () => { if (shown && view === 'structure') { view = 'action'; shown.remove(); shown = null; } toggleSheet(); });
@@ -590,10 +591,15 @@
     const warn = shadow.querySelector('.pill.diff .warn');
     count.hidden = running || !badge;
     warn.hidden = running || !badge || !(badge.alerts + badge.warnings);
+    // Phase D4: once the prompt was interpreted, the changes outside the request.
+    const outside = shadow.querySelector('.pill.diff .outside');
+    outside.hidden = running || !badge || !badge.outside;
     if (badge && !running) {
       count.textContent = String(badge.changes);
       count.classList.toggle('new', !badge.opened);
       warn.textContent = '⚠ ' + (badge.alerts + badge.warnings);
+      outside.textContent = badge.outside ? '↗ ' + badge.outside : '';
+      outside.title = rawText('diffOutsideTitle').replace('{count}', badge.outside || 0);
     }
     pill.title = !latest ? rawText('diffNone') : running ? rawText('diffRunningTitle')
       : badge ? rawText('diffBadgeTitle').replace('{n}', latest.n).replace('{changes}', badge.changes).replace('{warnings}', badge.alerts + badge.warnings) : rawText('diffWhatTitle');

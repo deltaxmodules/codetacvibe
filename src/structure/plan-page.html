@@ -116,6 +116,12 @@ header a.plain { color:var(--accent); text-decoration:none; }
 .arrow.ch-removed { stroke:#d0566a !important; stroke-dasharray:6 4; opacity:1 !important; }
 .arrow.ch-changed { stroke:#d18a3a !important; opacity:1 !important; }
 .changes { padding:14px 16px 0; max-width:1200px; margin:0 auto; }
+/* The path of an action before and after a prompt (the Diff, phase D5), over the changes. */
+.box.path-off { opacity:.25; }
+.box.path-added rect.frame { stroke:#2e9d5b; stroke-width:4.5; }
+.box.path-removed rect.frame { stroke:#d0566a; stroke-width:4.5; stroke-dasharray:7 4; }
+.box.path-changed rect.frame { stroke:#e0a100; stroke-width:4.5; }
+.box.path-same rect.frame { stroke:var(--accent); stroke-width:3.5; }
 .changes h2 { font-size:14px; margin:0 0 4px; }
 .changes .bar { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin:6px 0; }
 .changes select, .changes input[type=text] { font:inherit; padding:2px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); }
@@ -502,6 +508,21 @@ header a.plain { color:var(--accent); text-decoration:none; }
     return [cx + dx * Math.min(scale, 1), cy + dy * Math.min(scale, 1)];
   }
 
+  // The report around the map (phase D5) shows the path of an action before and
+  // after the prompt: { marks: { id: added|removed|changed|same }, open: [ids] }, or none.
+  let pathMarks = null;
+  window.addEventListener('message', event => {
+    if (!mapOnly || event.source !== window.parent || event.origin !== location.origin || event.data?.codetac !== 'path') return;
+    const marks = event.data.marks && typeof event.data.marks === 'object' ? event.data.marks : null;
+    pathMarks = marks ? Object.fromEntries(Object.entries(marks).filter(([id, mark]) => typeof id === 'string' && ['added', 'removed', 'changed', 'same'].includes(mark))) : null;
+    for (const id of Array.isArray(event.data.open) ? event.data.open : []) if (typeof id === 'string') open.add(id);
+    save();
+    highlight = null;
+    selected = null;
+    lastDiff = '';
+    // The first box that changed on the path, in view.
+    refreshDiff().then(() => document.querySelector('g.box.path-added, g.box.path-removed, g.box.path-changed')?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }));
+  });
   // The report around the map (phase D3) asks to light the boxes of a sentence.
   window.addEventListener('message', event => {
     if (!mapOnly || event.source !== window.parent || event.origin !== location.origin || event.data?.codetac !== 'light') return;
@@ -533,10 +554,14 @@ header a.plain { color:var(--accent); text-decoration:none; }
     const notesOf = new Map();
     for (const note of plan.notes) if (note.box) notesOf.set(note.box, (notesOf.get(note.box) || 0) + 1);
     const boxLayer = el('g', {}, svg);
+    // A box holding a box of the path is on it too (not dimmed).
+    const onPath = new Set();
+    if (pathMarks) for (const box of plan.boxes) if (pathMarks[box.id]) for (let at = box; at; at = byId.get(at.parent)) onPath.add(at.id);
     for (const box of plan.boxes) {
       const change = changeOf(box);
+      const pathMark = pathMarks ? (pathMarks[box.id] ? ' path-' + pathMarks[box.id] : onPath.has(box.id) ? '' : ' path-off') : '';
       const g = el('g', { class: 'box' + (selected?.id === box.id ? ' sel' : '') + (highlight === box.id ? ' hit' : '') + ('lit' in box ? (box.lit ? ' lit' : ' dim') : '')
-        + (change ? ' ch-' + change : ''), tabindex: 0, 'data-id': box.id, ...(change && change !== 'none' ? { 'data-change': change } : {}) }, boxLayer);
+        + (change ? ' ch-' + change : '') + pathMark, tabindex: 0, 'data-id': box.id, ...(change && change !== 'none' ? { 'data-change': change } : {}) }, boxLayer);
       const layer = layerOf(box);
       const fill = box.kind === 'block' ? css('--l-' + layer) : css('--panel');
       el('rect', { class: 'frame', x: box.x, y: box.y, width: box.w, height: box.h, rx: box.kind === 'block' ? 10 : 6, fill, stroke: css('--b-' + layer) }, g);

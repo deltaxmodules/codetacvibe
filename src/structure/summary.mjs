@@ -94,7 +94,12 @@ export function changeSummary(diff, before, after) {
   // External services: new, gone, destination changed; data sent to known ones.
   const services = diff.services;
   const senders = id => diff.links.added.filter(edge => edge.kind === 'sends-data-to' && edge.to === id).map(edge => place(edge.from));
-  const serviceWithSenders = node => (senders(node.id).length ? t('diff.serviceFrom', { ...node, from: list(senders(node.id)) }) : t('diff.service', node));
+  // «SMTP (email)» already says its category: «SMTP (email, from …)», not «SMTP (email) (email, from …)».
+  const serviceWithSenders = node => {
+    const own = `(${node.category})`;
+    const named = node.name?.endsWith(own) ? { ...node, name: node.name.slice(0, -own.length).trim() } : node;
+    return senders(node.id).length ? t('diff.serviceFrom', { ...named, from: list(senders(node.id)) }) : t('diff.service', named);
+  };
   const newServiceIds = new Set(services.added.map(node => node.id));
   if (services.added.length) {
     add('new-service', 'warning', t('diff.newService', { count: services.added.length, list: list(services.added.map(serviceWithSenders)) }),

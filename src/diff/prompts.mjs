@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { createRedactor } from '../redact.mjs';
 import { readConfig } from '../structure/config.mjs';
 import { archiveMoment, collect, diffFolder, isEnvFile, withLock, writeWhole } from './archive.mjs';
+import { collectInterpretations } from './request.mjs';
 import { listFiles } from '../structure/node/inventory.mjs';
 import { maskKeys } from '../structure/node/modules.mjs';
 
@@ -169,6 +170,7 @@ function retain(root, log) {
   const keep = readConfig(root).diff?.keep ?? DEFAULT_KEEP;
   if (log.prompts.length <= keep + COLLECT_SLACK) return null;
   log.prompts = log.prompts.slice(-keep);
+  collectInterpretations(root, log.prompts.map(prompt => prompt.n));
   const moments = new Set(log.prompts.flatMap(prompt => [prompt.before, prompt.after]).filter(Boolean));
   try { moments.add(JSON.parse(readFileSync(join(diffFolder(root), 'latest.json'), 'utf8')).id); } catch {}
   return collect(root, [...moments]);

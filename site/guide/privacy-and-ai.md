@@ -42,10 +42,11 @@ Open it with the **Privacy** link at the top of the panel and of Structure, or w
 | **Questions about a step** | the code of the step (masked), the facts, the lines that ran and your question; recorded values only with a model on your computer | when you ask, after you see the request |
 | **Suggestions for Unknown files** | paths and export names, never code | `codetac structure --suggest`, after you see the request |
 | **Explanations** (a block, the plan, an alert) | only facts read from the structure — names of blocks, files, routes, services, tables and variables — never code or values | when you ask, after you see the request |
+| **Interpretations of your prompts** ([What did my last prompt change?](/guide/what-did-my-last-prompt-change#the-request)) | the text of a prompt you gave the coding assistant (secrets hidden), the paths of the project's files and the names of its blocks and services — never code | when you ask, after you see the request |
 
 **No AI** turns them all off at once. Your choice is saved in `~/.codetac/privacy.json` and counts straight away, in the panel and in the Terminal.
 
-![The Privacy screen: No AI, and the four kinds of request with what each carries, when it is sent, and its switch](/img/privacy.png)
+![The Privacy screen: No AI, and the kinds of request with what each carries, when it is sent, and its switch](/img/privacy.png)
 
 ## You see it before it is sent
 
