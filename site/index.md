@@ -29,9 +29,9 @@ features:
   - title: Are your secrets safe?
     details: Keys that reach the browser, .env files in git, keys written in the code — by name only, never the value.
     link: /guide/are-my-secrets-safe
-  - title: What did the AI change?
-    details: Save a snapshot before you ask the AI for a change. Afterwards, codeTAC tells you what changed in the structure, in plain sentences.
-    link: /guide/what-did-the-ai-change
+  - title: What did my last prompt change?
+    details: With Claude Code, a report after every prompt — the files, the risks (a new service, a dependency, a secret in the browser), a map and the lines of code. With any other AI tool, save a snapshot before and compare after.
+    link: /guide/what-did-my-last-prompt-change
   - title: Nothing leaves without you
     details: No account, no cloud. AI explanations are optional, and you see exactly what would be sent before it goes.
     link: /guide/privacy-and-ai

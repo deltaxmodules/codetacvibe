@@ -106,3 +106,8 @@ For an app codeTAC already knows how to start, the first dossier usually arrives
 
 - If your app does not start **without** codeTAC either (missing keys in `.env`, a database that is not running), codeTAC cannot fix that. It shows the app's own error, with the file and line. See [When something goes wrong](/guide/when-something-goes-wrong).
 - codeTAC is for your app **on your computer, while you develop it**. It does not watch apps in production.
+
+## Next
+
+- **Using Claude Code?** In your project's folder, run `codetac hooks install` once. From then on, after each prompt, the bar shows **What changed?**, a report of what that prompt did to your project: [What did my last prompt change?](/guide/what-did-my-last-prompt-change)
+- **What is your project made of?** Press **Structure** on the bar: [the floor plan](/guide/the-floor-plan).
