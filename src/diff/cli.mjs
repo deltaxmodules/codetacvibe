@@ -44,7 +44,8 @@ function listCommand(root, out) {
     const files = filesOf(root, prompt);
     const count = files ? files.changes.added.length + files.changes.removed.length + files.changes.changed.length : null;
     const text = prompt.text.length > 70 ? `${prompt.text.slice(0, 69)}…` : prompt.text;
-    out(`  ${String(prompt.n).padStart(3)}  ${when(prompt.startedAt)}  ${status(prompt)}  ${count === null ? '' : t('prompts.cli.files', { count })}  «${text.replace(/\s+/g, ' ')}»`);
+    const undone = prompt.undone ? ` ${t('prompts.cli.undone')}` : '';
+    out(`  ${String(prompt.n).padStart(3)}  ${when(prompt.startedAt)}  ${status(prompt)}${undone}  ${count === null ? '' : t('prompts.cli.files', { count })}  «${text.replace(/\s+/g, ' ')}»`);
   }
   if (prompts.length > LISTED) out(`  ${t('prompts.cli.older', { count: prompts.length - LISTED })}`);
   out(`  ${t('prompts.cli.seeOne')}`);

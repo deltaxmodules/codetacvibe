@@ -4,6 +4,8 @@
 
 It is the automatic version of [What did the AI change?](/guide/what-did-the-ai-change). There, you save a snapshot by hand before a change. Here, Claude Code's hooks tell codeTAC when each prompt starts and ends, and codeTAC keeps the files of both moments.
 
+<video controls muted playsinline preload="none" poster="/video/demo-prompt.jpg" src="/video/demo-prompt.mp4" style="width:100%;border-radius:8px" aria-label="A Claude Code prompt, the bar following it, the report, Run it again, Undo this prompt and the terminal"></video>
+
 ## Steps
 
 1. In your project's main folder, once:

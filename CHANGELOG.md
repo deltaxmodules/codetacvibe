@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.1
+
+- **A demo video**, from the install to the buttons (under 3 minutes, captions, no sound): on the manual's home page, with a short part on *Install and first dossier*, *What is my project made of?* and *What did my last prompt change?*. The readme shows a short GIF of «What changed?». It is made by a script from a sample app, so it is made again for each version.
+- `codetac diff --list` marks a prompt that was undone: «(undone)».
+
 ## 0.11.0
 
 **What did my last prompt change? Now you can run an action again to compare, and undo the prompt.**

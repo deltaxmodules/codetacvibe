@@ -39,6 +39,12 @@ features:
 
 ![A click on “Add user” in an app, then Structure: the floor plan of the project opens with the path of that click lit](/img/path-of-a-click.gif)
 
+## See it in under 3 minutes
+
+<video controls muted playsinline preload="none" poster="/video/codetac-demo.jpg" src="/video/codetac-demo.mp4" style="width:100%;border-radius:8px" aria-label="codeTAC from the install to the buttons: a dossier of a click, the floor plan, a prompt and its report, run an action again, undo the prompt"></video>
+
+From the install to the buttons: a click and its dossier, the floor plan, a Claude Code prompt and its report, **Run it again** and **Undo**. No sound; captions explain each step.
+
 ## Who is it for?
 
 You made an app with an AI tool, or someone made it for you. It works — mostly. But when you press **Save**, you are not sure what happens:

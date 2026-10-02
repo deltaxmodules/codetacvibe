@@ -2,6 +2,8 @@
 
 **What this page is for:** getting codeTAC running on your app and seeing your first **dossier** — the record of one action — in about five minutes.
 
+<video controls muted playsinline preload="none" poster="/video/demo-install.jpg" src="/video/demo-install.mp4" style="width:100%;border-radius:8px" aria-label="Installing codeTAC, starting an app with it, and the dossier of a click"></video>
+
 ## What you need
 
 1. **Node.js 24 or newer.** Open the Terminal and type `node -v`. It must show `v24` or a higher number. If it does not, install the LTS version from [nodejs.org](https://nodejs.org). You need Node even if your app is in Python: codeTAC itself is installed with npm.

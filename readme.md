@@ -6,6 +6,10 @@ A local tool for Node.js and Python (FastAPI, Flask) web apps, including those g
 
 ![Dossier of a click on the “Sign in” button: the server functions that ran, with their file and line, and the database reads](https://raw.githubusercontent.com/deltaxmodules/codetacvibe/main/.github/imagens/dossier.png)
 
+**Watch the 3-minute demo:** [from the install to the buttons](https://deltaxmodules.github.io/codetacvibe/#see-it-in-under-3-minutes) (a click and its dossier, the floor plan, a Claude Code prompt and its report, Run it again, Undo).
+
+![After a Claude Code prompt, the bar's «What changed?» button opens the report: the sentences, each with its lines of code and its box on the map](https://raw.githubusercontent.com/deltaxmodules/codetacvibe/main/site/public/img/demo-what-changed.gif)
+
 ## Why
 
 Your app was built by an AI, or by someone else, and you are not sure what happens when you press “Save”? Which functions run, which table changes, whether an email goes out, whether the payment is in test or live mode?

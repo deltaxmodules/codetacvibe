@@ -4,6 +4,8 @@
 
 A dossier shows **one action**. **Structure** shows **the whole project**. It is read from the code on your computer, **without running it**.
 
+<video controls muted playsinline preload="none" poster="/video/demo-plan.jpg" src="/video/demo-plan.mp4" style="width:100%;border-radius:8px" aria-label="The floor plan in the bar: the path of the last click, a block’s card, What leaves the machine, Secrets and variables"></video>
+
 ## Steps
 
 1. Start your app with `codetac` and do at least one action.

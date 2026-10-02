@@ -1665,6 +1665,7 @@
       "other": "{count} files are too large to be archived and are not compared: {list}."
     },
     "cli": {
+      "undone": "(undone)",
       "none": "No prompt has been recorded for this project yet.",
       "install": "To record each prompt given to Claude Code, install the hooks: codetac hooks install",
       "noneYet": "The hooks are installed: the next prompt given to Claude Code in this folder is recorded.",
