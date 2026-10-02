@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0
+
+**What did my last prompt change? Now you can run an action again to compare, and undo the prompt.**
+
+- **Run it again:** the report lists the actions you ran before the prompt and not since, each with what it touched the last time (writes to the database, emails, payments, outside services).
+  - An action that only reads (GET requests with no parameters) has a **Run it again** button in the report opened from your app's bar. The button says which requests it will send. They go from your app's page with your session, and the new run is compared, marked **run again**. Nothing runs until you press it, one action at a time, and only for the newest prompt.
+  - Any other action (a form that sends data, requests with parameters, a server on another address) is done by hand: the report says where and what to press. codeTAC still never records what you type or the values of the parameters.
+- **Undo this prompt:** at the bottom of the report, **See what would change** lists the files that will be put back as they were before the prompt, the files it added that will be removed, and the files codeTAC will not write. Nothing is written until you confirm. After an undo, **redo** puts the prompt's changes back. The history marks undone prompts.
+  - In the terminal: `codetac diff undo [n]` and `codetac diff redo [n]` (they show the files and ask; `--yes` skips the question).
+  - Refused, with nothing changed, while a prompt runs, when a newer prompt came after it, or when the files changed since the prompt ended. codeTAC never mixes changes.
+  - `.env` files, files with keys in them and files over 2 MB are never written: they are listed for you. `node_modules` and the `.venv` are not touched; you are told to install again when the dependencies changed.
+- `codetac diff` lists the actions not run since the prompt and how to run each again.
+
 ## 0.10.0
 
 **What did my last prompt change? Now also what the prompt asked for, and what your app does differently.**

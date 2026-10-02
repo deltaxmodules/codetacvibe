@@ -13,7 +13,10 @@
 //   POST /api/diff/request {n, hash} asks the AI to read the prompt (Privacy: «requests»)
 //   POST /api/diff/request/edit {n, prediction}  the user's own version of the request
 //   GET  /api/diff/behavior?n=       the Behavior layer (phase D5): the actions run before and after
-//                                    the prompt, what each does differently, its path on the plan
+//                                    the prompt, what each does differently, its path on the plan;
+//                                    for those not run since, how to run them again (phase D6)
+//   GET  /api/diff/undo?n=&action=   the preview of undoing (or redoing) a whole prompt (phase D6)
+//   POST /api/diff/undo {n, action, hash}  does it, with the fingerprint of the preview seen
 // The badge of a prompt: how many changes, alerts, warnings and "possibly",
 // how many of its sentences were not opened yet (comprehension debt) and,
 // once the prompt was interpreted, how many changes were outside the request.
@@ -28,6 +31,7 @@ import { describePrompt } from './moments.mjs';
 import { listPrompts, readPrompt } from './prompts.mjs';
 import { promptBehavior } from './behavior.mjs';
 import { promptReport } from './report.mjs';
+import { applySwitch, previewSwitch } from './undo.mjs';
 import { editedPrediction, interpretationInput, interpretPrompt, readInterpretation, requestChoices, requestLayer, saveInterpretation } from './request.mjs';
 
 const PROJECT_ID = /^[0-9a-f]{32}$/;
@@ -143,6 +147,8 @@ export function createDiffService({ rootOf = () => null, ai = null, recordings =
       const seen = readSeen(real)[prompt.n];
       const read = new Set(seen?.keys ?? []);
       return { status: 200, body: { project, ...report,
+        // The prompt as the log has it now (a kept report does not know it was undone since).
+        prompt: { ...describePrompt(prompt), text: prompt.text },
         sentences: report.sentences.map(sentence => ({ ...sentence, key: sentenceKey(sentence), read: read.has(sentenceKey(sentence)) })),
         previous: at > 0 ? all[at - 1] : null, next: at >= 0 && at < all.length - 1 ? all[at + 1] : null, badge: badgeOf(report, seen, await outsideOf(real, prompt)) } };
     }
@@ -167,6 +173,21 @@ export function createDiffService({ rootOf = () => null, ai = null, recordings =
       const behavior = await promptBehavior(real, prompt.n, recordings);
       if (behavior.error) return { status: 404, body: { error: behavior.error } };
       return { status: 200, body: { n: prompt.n, recordings: Boolean(recordings), ...behavior } };
+    }
+    if (pathname === '/api/diff/undo') {
+      const post = method === 'POST';
+      const action = (post ? body?.action : params.get('action')) === 'redo' ? 'redo' : 'undo';
+      const wanted = post ? body?.n : params.get('n');
+      const prompt = readPrompt(real, wanted === 'latest' || wanted == null ? 'latest' : Number(wanted));
+      if (!prompt) return { status: 404, body: { error: t('prompts.noPrompt', { n: wanted ?? 'latest' }) } };
+      if (!post) {
+        const plan = previewSwitch(real, prompt.n, action);
+        return { status: 200, body: { n: prompt.n, action, ...plan, skipped: plan.skipped?.map(item => ({ ...item, text: t(`undo.why.${item.why}`) })) } };
+      }
+      if (typeof body?.hash !== 'string') return { status: 409, body: { error: t('undo.previewChanged') } };
+      const done = applySwitch(real, prompt.n, action, body.hash);
+      if (done.refused) return { status: 409, body: { error: done.refused, reason: done.reason } };
+      return { status: 200, body: { ...done, skipped: done.skipped.map(item => ({ ...item, text: t(`undo.why.${item.why}`) })) } };
     }
     return { status: 404, body: { error: t('panel.api.notFound') } };
   }

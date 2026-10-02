@@ -351,8 +351,9 @@
     tracked.action.pending--;
     touch(tracked.action);
   }
+  let trackedFetch = null;
   if (typeof originalFetch === 'function') {
-    window.fetch = function fetch(input, init) {
+    window.fetch = trackedFetch = function fetch(input, init) {
       let tracked = null;
       try {
         const isRequest = typeof Request !== 'undefined' && input instanceof Request;
@@ -699,6 +700,44 @@
     shown.querySelector('[data-close]').addEventListener('click', () => { shown.remove(); shown = null; });
     wireTabs();
     panelMissing(panel);
+  }
+  // The Diff (phase D6): the report in the frame asks the bar to run an action
+  // again, after the person pressed its button. Only from the panel's frame;
+  // only GET and HEAD of this origin, with no query (the recordings keep no
+  // input), sent from this page with the person's session, as a new action
+  // with the original's page and element, marked as run again.
+  const REPLAYABLE = path => typeof path === 'string' && path.charAt(0) === '/' && path.charAt(1) !== '/' && path.length <= 2000
+    && !/[?#\\\s\u0000-\u001f\u007f]/.test(path) && path.indexOf('/__codetac/') !== 0;
+  addEventListener.call(window, 'message', event => {
+    const data = event.data;
+    if (!data || data.codetac !== 'rerun' || !shown || view !== 'diff') return;
+    const frame = shown.querySelector('iframe');
+    let panelOrigin = '';
+    try { panelOrigin = new URL(String(config.panel || 'http://127.0.0.1:4000')).origin; } catch {}
+    if (!frame || event.source !== frame.contentWindow || event.origin !== panelOrigin) return;
+    rerun(data).then(result => {
+      if (frame.contentWindow) frame.contentWindow.postMessage(Object.assign({ codetac: 'rerun-done', ticket: data.ticket }, result), panelOrigin);
+    });
+  });
+  async function rerun(data) {
+    const requests = Array.isArray(data.requests) ? data.requests.slice(0, 20) : [];
+    if (!trackedFetch || !requests.length || !REPLAYABLE(data.page)
+      || !requests.every(item => item && (item.method === 'GET' || item.method === 'HEAD') && REPLAYABLE(item.path))) return { refused: true };
+    const source = data.trigger && typeof data.trigger === 'object' ? data.trigger : {};
+    const trigger = { event: typeof source.event === 'string' ? source.event : 'click', replay: true,
+      replayOf: /^[A-Za-z0-9_-]{6,40}$/.test(String(data.actionId)) ? data.actionId : undefined };
+    if (source.element && typeof source.element === 'object') trigger.element = source.element;
+    const action = newAction(randomId(), 1, trigger);
+    action.page = data.page;
+    const statuses = [];
+    for (const item of requests) {
+      current = action;
+      try {
+        const response = await trackedFetch.call(window, item.path, { method: item.method, credentials: 'same-origin', cache: 'no-store' });
+        statuses.push(response.status);
+      } catch { statuses.push(null); }
+    }
+    return { actionId: action.id, statuses };
   }
   function toggleSheet() {
     if (shown) { shown.remove(); shown = null; return; }

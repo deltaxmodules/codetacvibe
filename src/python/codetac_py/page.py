@@ -231,6 +231,9 @@ def browser_action(event):
             'component': {'name': _text(component.get('name'), 80), 'owners': owners, 'frames': _frames(component.get('frames'))} if component else None,
             'handler': {'name': _text(handler.get('name'), 80), 'prop': _text(handler.get('prop'), 30),
                         'source': _text(handler.get('source'), 20)} if handler else None,
+            # Run again by CodeTAC from the report (Diff, phase D6), as the action replayOf.
+            'replay': True if trigger.get('replay') is True else None,
+            'replayOf': trigger['replayOf'] if _ACTION_ID.match(str(trigger.get('replayOf'))) else None,
         }
     requests = []
     for item in event.get('requests')[:200] if isinstance(event.get('requests'), list) else []:

@@ -178,9 +178,10 @@ const server = http.createServer(async (request, response) => {
       json(response, answer.status, answer.body);
       return;
     }
-    // The Diff: read-only, except marking a report as opened (from the panel's own page).
+    // The Diff: read-only, except marking a report as opened, the Request layer and undoing a
+    // prompt (POST from the panel's own page, with its header).
     if (url.pathname.startsWith('/api/diff/')) {
-      const post = request.method === 'POST' && ['/api/diff/seen', '/api/diff/request', '/api/diff/request/edit'].includes(url.pathname);
+      const post = request.method === 'POST' && ['/api/diff/seen', '/api/diff/request', '/api/diff/request/edit', '/api/diff/undo'].includes(url.pathname);
       if ((request.method !== 'GET' && !post) || (post && request.headers['x-codetac'] !== '1') || !isLoopback(request.socket.remoteAddress)
         || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
         || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {

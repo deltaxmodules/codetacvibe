@@ -62,7 +62,36 @@ Run an action in your app (a click, a form) **before** the prompt and **the same
 
 These sentences are **observed**: they come from the two runs, not from reading the code. **Show its path on the map** colours the path of the action: new on the path, no longer on the path, on the path through code the prompt changed, or unchanged. Actions run only after the prompt are listed apart: there is no point of comparison for them.
 
-Nothing is run again for you: only the runs you made in the app count.
+### Run an action again
+
+Under **Not run again since the prompt**, the report lists the actions you ran before the prompt and not since. For each one it says what the action touched the last time it ran (for example «writes to users (INSERT); sends an email (Resend)»).
+
+- When the action only **reads** (GET requests with no parameters), the report opened from your app's **What changed?** button has a **Run it again** button. It says which requests it will send. They go from your app's page, with your session, and the Behavior section then compares the new run (marked **run again**).
+- Any other action (a form that sends data, requests with parameters, a server on another address) is **done by hand**: the report says where and what to press.
+
+Nothing runs until you press the button, one action at a time. codeTAC never records what you typed or the values of the parameters, so it cannot send a form again for you. Run it again is offered only for the newest prompt: after a newer one, the new run would also show its changes.
+
+## Undo a prompt
+
+At the bottom of the report, **Undo this prompt** puts the project's files back as they were just before the prompt.
+
+1. Press **See what would change**. You see the files that will be put back, the files that will be removed (the ones the prompt added) and the ones codeTAC will not write.
+2. Press **Undo the prompt: change these files**. Nothing is written before that.
+
+Your app reloads the files as it does with any change. After an undo, the report says so, and **See what redo would change** puts the prompt's changes back. In the Terminal:
+
+```
+codetac diff undo       # undo the newest prompt (shows the files, then asks)
+codetac diff redo       # put its changes back
+```
+
+codeTAC refuses, and changes nothing, when:
+
+- a prompt is still running;
+- a newer prompt came after it: only the newest prompt can be undone;
+- the files changed since the prompt ended (by you or by another program). codeTAC never mixes changes.
+
+`.env` files are never written (codeTAC keeps only their names), nor files with keys in them (its copy has the keys masked), nor files over 2 MB: they are listed for you to change yourself. `node_modules` and the `.venv` are not touched: if the prompt installed a dependency, the report tells you to install again after undoing.
 
 ### Press a sentence
 
@@ -88,6 +117,7 @@ codetac diff 3          # prompt 3
 codetac diff --list     # all the prompts recorded
 codetac diff --code     # with the lines
 codetac diff --open     # the same report, in the panel
+codetac diff undo       # undo the newest prompt; codetac diff redo puts it back
 ```
 
 `codetac diff --open` starts the panel by itself when it is not running. That panel keeps running after the command.
@@ -114,4 +144,6 @@ Claude Code says it "added a payment button". The report shows it also added a n
 - **Behavior** recognises «the same action» by its page and what was clicked: a button whose text changes with the data («Delete Ada») is not recognised from one run to the next. It compares one run before with one after, so a difference that comes from the data (another input, a failing service) shows as a change.
 - **Outside the request** compares the **structure** (files, blocks, services), not every line: a change inside a file that was asked for counts as asked. And it is only as good as the list: read the AI's interpretation before trusting the number.
 - The rules for risks are rules: a route **possibly** without a session check is a guess, and a dependency or test the rules do not know is not seen.
+- **Run it again** repeats only reading requests (GET with no parameters), as a request from the page: it does not open the page nor run its JavaScript. Forms and requests with parameters are done by hand.
+- **Undo** works only for the newest prompt and only when the files did not change since. It does not undo a single change, nor what the prompt did outside the files (a database migration it applied, a package it installed).
 - With the browser window hidden or covered by another window, the bar waits until you see it again to ask for news.

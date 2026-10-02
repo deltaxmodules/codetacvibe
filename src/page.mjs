@@ -178,6 +178,8 @@ export function recordBrowserAction(runtime, event) {
         ? trigger.component.owners.slice(0, 6).map(owner => ({ name: text(owner?.name, 80), frames: frames(owner?.frames) })).filter(owner => owner.name) : undefined,
         frames: frames(trigger.component.frames) } : undefined,
       handler: trigger.handler ? { name: text(trigger.handler.name, 80), prop: text(trigger.handler.prop, 30), source: text(trigger.handler.source, 20) } : undefined,
+      // Run again by CodeTAC from the report (Diff, phase D6), as the action replayOf.
+      replay: trigger.replay === true || undefined, replayOf: ACTION_ID.test(String(trigger.replayOf)) ? trigger.replayOf : undefined,
     } : undefined,
     requests: Array.isArray(event.requests) ? event.requests.slice(0, 200).map(item => ({
       n: number(item?.n), kind: text(item?.kind, 20), method: text(item?.method, 10), ...pathOf(item?.url),

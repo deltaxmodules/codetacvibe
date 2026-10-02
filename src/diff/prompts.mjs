@@ -41,7 +41,7 @@ export function readLog(root) {
   } catch {}
   return { version: PROMPTS_VERSION, prompts: [] };
 }
-const writeLog = (root, log) => writeWhole(logPath(root), `${JSON.stringify(log)}\n`);
+export const writeLog = (root, log) => writeWhole(logPath(root), `${JSON.stringify(log)}\n`);
 
 // The prompts, oldest first.
 export const listPrompts = root => readLog(root).prompts;

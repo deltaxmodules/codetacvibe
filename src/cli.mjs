@@ -51,6 +51,7 @@ function parseArgs(argv) {
     else if (!options.sub && !options.folder && arg === 'privacy') options.sub = 'privacy';
     else if (!options.sub && !options.folder && arg === 'hooks') options.sub = 'hooks';
     else if (!options.sub && !options.folder && arg === 'diff') options.sub = 'diff';
+    else if (options.sub === 'diff' && !options.undo && options.prompt === undefined && !options.folder && (arg === 'undo' || arg === 'redo')) options.undo = arg;
     else if (options.sub === 'diff' && arg === '--list') options.list = true;
     else if (options.sub === 'diff' && arg === '--code') options.code = true;
     else if (options.sub === 'diff' && arg === '--open') options.open = true;
@@ -548,6 +549,13 @@ async function main() {
       const url = `http://127.0.0.1:${panel}${address.path}`;
       say(t('prompts.cli.opening', { url }));
       openBrowser(url);
+      return;
+    }
+    if (options.undo) {
+      // Phase D6: undo or redo a whole prompt (asks first, or --yes).
+      const { switchCommand } = await import('./diff/cli.mjs');
+      const confirm = interactive ? async question => /^y(es)?$/i.test(String(await ask(question) ?? '').trim()) : null;
+      process.exitCode = await switchCommand(root, options.undo, { n: options.prompt ?? 'latest', yes: options.yes, confirm });
       return;
     }
     process.exitCode = await diffCommand(root, { n: options.prompt ?? 'latest', list: options.list ?? false, code: options.code ?? false });

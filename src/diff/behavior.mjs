@@ -10,7 +10,8 @@ import { t } from '../structure/text.mjs';
 import { fileChanges, readMoment } from './archive.mjs';
 import { aroundPrompt, compareActions, pathMarks, summarizeAction } from './actions.mjs';
 import { readMomentGraph } from './moments.mjs';
-import { readPrompt } from './prompts.mjs';
+import { listPrompts, readPrompt } from './prompts.mjs';
+import { redoPlan } from './rerun.mjs';
 
 const MAX_COMPARED = 20;
 
@@ -32,13 +33,14 @@ export function recordingsOf(store, view) {
     actions: root => {
       store.ingest();
       return store.listRuns().filter(entry => sameFolder(store.root(entry.run), root))
-        .flatMap(entry => store.listActions({ run: entry.run, limit: 500 })).map(item => ({ actionId: item.actionId, at: item.at, label: item.label, page: item.page }));
+        .flatMap(entry => store.listActions({ run: entry.run, limit: 500 }))
+        .map(item => ({ actionId: item.actionId, at: item.at, label: item.label, page: item.page, ...(item.replay ? { replay: true } : {}) }));
     },
     dossier: id => view.resolvedAction(id),
   };
 }
 
-const brief = action => ({ actionId: action.actionId, label: action.label, page: action.page, at: action.at });
+const brief = action => ({ actionId: action.actionId, label: action.label, page: action.page, at: action.at, ...(action.replay ? { replay: true } : {}) });
 
 // The ids of the boxes to open so the marked nodes show on the map: a function's file, a file's block.
 function boxesToOpen(graph, ids) {
@@ -54,14 +56,22 @@ function boxesToOpen(graph, ids) {
   return [...open];
 }
 
-// Returns { running } while the prompt runs, or { compared, onlyAfter, onlyBefore, sentences }, or { error }.
+// Returns { running } while the prompt runs, or { compared, onlyAfter, onlyBefore, sentences, latest }, or { error }.
+// Each action of onlyBefore says how it can run again (rerun.mjs: by the bar, or
+// by hand), only for the newest prompt: a run now, after a newer prompt, would
+// also show that prompt's changes.
 export async function promptBehavior(root, n, recordings) {
   const prompt = readPrompt(root, n);
   if (!prompt) return { error: t('prompts.noPrompt', { n }) };
   if (!prompt.after || !prompt.endedAt) return { running: true, compared: [], onlyAfter: [], onlyBefore: [], sentences: [] };
   const actions = recordings ? await recordings.actions(root) : [];
   const { pairs, onlyAfter, onlyBefore } = aroundPrompt(actions, prompt);
-  const result = { compared: [], onlyAfter: onlyAfter.map(brief), onlyBefore: onlyBefore.map(brief), sentences: [] };
+  const latest = listPrompts(root).at(-1)?.n === prompt.n;
+  const result = { compared: [], onlyAfter: onlyAfter.map(brief), onlyBefore: [], sentences: [], latest };
+  for (const action of onlyBefore.sort((a, b) => b.at - a.at).slice(0, MAX_COMPARED)) {
+    const dossier = latest ? await recordings.dossier(action.actionId) : null;
+    result.onlyBefore.push(dossier ? { ...brief(action), redo: redoPlan(dossier) } : brief(action));
+  }
   if (!pairs.length) return result;
   const graphBefore = await readMomentGraph(root, prompt.before);
   const graphAfter = await readMomentGraph(root, prompt.after);

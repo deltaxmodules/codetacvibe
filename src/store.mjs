@@ -197,7 +197,7 @@ export function openStore(folder, { keep = 500, keepRuns = 20 } = {}) {
       const data = JSON.parse(first.get(row.action_id).data);
       const server = counts.get(row.action_id);
       return { actionId: row.action_id, run: row.run, at: row.at, segments: row.segments, label: actionLabel(data.trigger),
-        page: data.page?.path, browserRequests: data.requests?.length ?? 0, serverRequests: server.requests, pending: server.requests > (server.ended ?? 0) };
+        page: data.page?.path, ...(data.trigger?.replay ? { replay: true } : {}), browserRequests: data.requests?.length ?? 0, serverRequests: server.requests, pending: server.requests > (server.ended ?? 0) };
     });
   }
 

@@ -19,6 +19,8 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | `codetac hooks install` / `uninstall` | the Claude Code hooks that record each prompt and the files before and after it (asks first; written in `.claude/settings.local.json`) |
 | `codetac diff [n]` | what prompt `n` changed (the newest by default): files, structure, risks; `--code` adds the lines, `--open` opens the report in the panel |
 | `codetac diff --list` | the prompts recorded, newest first |
+| `codetac diff undo [n]` | puts the files back as they were before prompt `n` (only the newest prompt, only if the files did not change since); shows the files and asks first (`--yes` to skip) |
+| `codetac diff redo [n]` | puts back what an undone prompt changed |
 | `codetac privacy` | what codeTAC may send to an AI, with a switch for each kind |
 | `codetac help` | all the options |
 | `codetac --version` | the installed version |

@@ -1257,7 +1257,7 @@
     }
   },
   "run": {
-    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
+    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac diff undo [n] [folder]             puts the files back as they were before prompt n (the newest by default); shows\n                                             what changes and asks first; codetac diff redo [n] puts them back as the prompt left them\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
     "unknownOption": "Unknown option: {arg}",
     "panelDidNotStart": "The panel did not start: {output}",
     "noFreePort": "No free port found for the panel.",
@@ -1736,11 +1736,59 @@
         "title": "Behavior, observed (the same action of the app before and after the prompt):",
         "none": "No action was run in the app both before and after this prompt.",
         "same": "does the same as before",
-        "onlyAfter": "Run only after the prompt (no point of comparison): {list}"
+        "onlyAfter": "Run only after the prompt (no point of comparison): {list}",
+        "again": "Not run again since the prompt:",
+        "againBar": "run it again from the report, opened with the «What changed?» button of the app's bar",
+        "againHand": "do it again yourself in the app (on {page}); CodeTAC does not run it",
+        "againTouched": "last time it: {list}"
       }
     },
     "service": {
       "noProject": "No project: open it from the app's bar, or pick one in the panel's list of prompts."
+    }
+  },
+  "undo": {
+    "running": "The prompt is still running: wait for it to end.",
+    "otherRunning": "A prompt is running in this project: wait for it to end.",
+    "later": "Prompt {n} cannot be undone: prompts {later} came after it. Undo the newest first.",
+    "already": "Prompt {n} is already undone. To put its changes back: codetac diff redo {n}.",
+    "notUndone": "Prompt {n} was not undone, so there is nothing to redo.",
+    "gone": "CodeTAC no longer keeps the files of prompt {n} (only the newest prompts are kept, diff.keep).",
+    "changedSince": "The files changed since prompt {n} ended. CodeTAC does not mix changes: undo them first (for example with git), or ask the coding assistant.",
+    "changedSinceUndo": "The files changed since prompt {n} was undone. CodeTAC does not mix changes.",
+    "previewChanged": "The files changed since the preview: look at it again.",
+    "why": {
+      "env": ".env file: CodeTAC keeps only its names",
+      "masked": "it has keys, masked in CodeTAC's copy",
+      "large": "over 2 MB, not copied",
+      "path": "outside the project",
+      "link": "a link, not a file",
+      "gone": "CodeTAC's copy is gone"
+    },
+    "cli": {
+      "titleUndo": "Undo prompt {n} «{text}»:",
+      "titleRedo": "Redo prompt {n} «{text}» (put back what it changed):",
+      "write": {
+        "one": "Put back ({count} file): {list}",
+        "other": "Put back ({count} files): {list}"
+      },
+      "remove": {
+        "one": "Remove ({count} file): {list}",
+        "other": "Remove ({count} files): {list}"
+      },
+      "skipped": {
+        "one": "Not written by CodeTAC ({count} file, change it yourself if needed):",
+        "other": "Not written by CodeTAC ({count} files, change them yourself if needed):"
+      },
+      "dependencies": "The dependencies changed: install them again after (npm install, pip install…). CodeTAC does not touch node_modules or the .venv.",
+      "nothing": "Nothing to change: the prompt changed no file CodeTAC can write.",
+      "confirmUndo": "Undo prompt {n}? Only the files above change. (y/N) ",
+      "confirmRedo": "Redo prompt {n}? Only the files above change. (y/N) ",
+      "needsYes": "Run it in a terminal to answer, or add --yes.",
+      "cancelled": "Nothing was changed.",
+      "undone": "✓ Prompt {n} undone: {written} put back, {removed} removed. To put its changes back: codetac diff redo {n}",
+      "redone": "✓ Prompt {n} redone: {written} put back, {removed} removed.",
+      "notExact": "Some files were not written (above): the folder is not exactly as it was."
     }
   },
   "hooks": {
@@ -1931,7 +1979,56 @@
     "path_changed": "on the path, code changed",
     "path_same": "on the path, unchanged",
     "onlyAfter": "Run only after the prompt, so there is no point of comparison: {list}.",
-    "onlyBefore": "Not run again since the prompt (run them in the app to compare): {list}."
+    "againTitle": "Not run again since the prompt",
+    "againIntro": "These actions ran before the prompt and not since. Run each again to compare what it does now. CodeTAC runs nothing on its own.",
+    "againNotLatest": "These actions ran before the prompt and not since. A newer prompt was given after this one, so running them now would also show its changes: compare them in the newest prompt's report.",
+    "againLastRun": "on {page}, last run before the prompt: {at}",
+    "againTouched": "Last time it: {list}.",
+    "againSends": {
+      "one": "Running it again sends {list} from your app's page, with your session. Nothing is sent until you press the button.",
+      "other": "Running it again sends {count} requests ({list}) from your app's page, with your session. Nothing is sent until you press the button."
+    },
+    "againButton": "Run it again",
+    "againRunning": "Running…",
+    "againDone": "Done (answered {statuses}). Waiting for the new run…",
+    "againFailed": "The app's bar did not run it. Open this report from the app's «What changed?» button and try again.",
+    "againFromBar": "To run it again, open this report from the «What changed?» button of your app's bar (the requests must go from your app's page, with your session).",
+    "againByHand": "CodeTAC does not run it again: {why} Do it yourself: open {page} and use {label} again.",
+    "againQuery": "its requests have parameters, and their values are never recorded.",
+    "againMethod": "it sends data or changes something (POST, PUT, PATCH or DELETE).",
+    "againOtherOrigin": "it calls a server on another address.",
+    "againNothing": "it made no request to the server.",
+    "againPath": "its requests cannot be sent again as they were recorded.",
+    "undoTitle": "Undo this prompt",
+    "redoTitle": "This prompt was undone",
+    "undoneTag": "undone",
+    "undoneNote": "Undone {at}: the files are as they were before the prompt.",
+    "undoIntro": "Puts the project's files back as they were just before this prompt. You see what changes first, and nothing is written until you confirm. Only the newest prompt can be undone, and only if the files did not change since it ended.",
+    "redoIntro": "Puts back what the prompt changed, as it left the files.",
+    "undoPreview": "See what would change",
+    "redoPreview": "See what redo would change",
+    "undoWrite": {
+      "one": "Put back ({count} file):",
+      "other": "Put back ({count} files):"
+    },
+    "undoRemove": {
+      "one": "Remove ({count} file):",
+      "other": "Remove ({count} files):"
+    },
+    "undoSkipped": {
+      "one": "Not written by CodeTAC ({count} file, change it yourself if needed):",
+      "other": "Not written by CodeTAC ({count} files, change them yourself if needed):"
+    },
+    "undoDependencies": "The dependencies changed: install them again after (npm install, pip install…). CodeTAC does not touch node_modules or the .venv.",
+    "undoNothing": "Nothing to change: the prompt changed no file CodeTAC can write.",
+    "undoConfirm": "Undo the prompt: change these files",
+    "redoConfirm": "Redo the prompt: change these files",
+    "undoDone": "Undone: {written} put back, {removed} removed. Your app reloads them as it does with any change.",
+    "redoDone": "Redone: {written} put back, {removed} removed.",
+    "undoNotExact": "Some files were not written (above): the folder is not exactly as it was.",
+    "undoNoAnswer": "The panel did not answer. Try again.",
+    "ranAgain": "run again",
+    "ranAgainTitle": "This run after the prompt was sent by CodeTAC, from the report, with the same requests as before"
   },
   "behavior": {
     "theDatabase": "the database",

@@ -77,7 +77,8 @@ async function readFresh(real, id) {
 // What a prompt is, for a point of comparison (without its text's full length).
 export function describePrompt(prompt) {
   return { n: prompt.n, startedAt: prompt.startedAt, endedAt: prompt.endedAt ?? null, status: prompt.status, end: prompt.end ?? null,
-    text: prompt.text.length > 120 ? `${prompt.text.slice(0, 119)}…` : prompt.text, ...(prompt.overlap ? { overlap: true } : {}) };
+    text: prompt.text.length > 120 ? `${prompt.text.slice(0, 119)}…` : prompt.text, ...(prompt.overlap ? { overlap: true } : {}),
+    ...(prompt.undone ? { undone: prompt.undone.at } : {}) };
 }
 
 // A point "prompt-<n>" (the project just before prompt n) or

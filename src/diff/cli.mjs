@@ -103,6 +103,51 @@ function printBehavior(behavior, out) {
     for (const sentence of sentences) out(`    ${MARK[sentence.severity]} ${sentence.text}`);
   });
   if (behavior.onlyAfter.length) out(`  ${t('prompts.cli.behavior.onlyAfter', { list: behavior.onlyAfter.map(item => `«${item.label}»`).join(', ') })}`);
+  // Phase D6: what was not run since the prompt, and how to run it again.
+  if (!behavior.onlyBefore.length) return;
+  out(`  ${t('prompts.cli.behavior.again')}`);
+  for (const item of behavior.onlyBefore) {
+    const how = !item.redo ? '' : item.redo.how === 'rerun' ? t('prompts.cli.behavior.againBar') : t('prompts.cli.behavior.againHand', { page: item.redo.page });
+    out(`    «${item.label}»${how ? ` — ${how}` : ''}`);
+    if (item.redo?.touched.length) out(`      ${t('prompts.cli.behavior.againTouched', { list: item.redo.touched.join('; ') })}`);
+  }
+}
+
+// `codetac diff undo|redo [n] [folder]` (phase D6, step 3): the preview, a
+// question (or --yes), then the files put back. Refused while a prompt runs,
+// when a newer prompt exists, or when the files changed since.
+const LIST_SHOWN = 12;
+const shortList = paths => (paths.length <= LIST_SHOWN ? paths.join(', ') : t('diff.more', { list: paths.slice(0, LIST_SHOWN).join(', '), more: paths.length - LIST_SHOWN }));
+export async function switchCommand(root, action, { n = 'latest', yes = false, confirm = null, out = text => process.stdout.write(`${text}\n`) } = {}) {
+  root = realpathSync(root);
+  const { applySwitch, previewSwitch } = await import('./undo.mjs');
+  const prompt = readPrompt(root, n);
+  if (!prompt) { if (n === 'latest') noPrompts(root, out); else out(`✗ ${t('prompts.noPrompt', { n })}`); return n === 'latest' ? 0 : 2; }
+  const plan = previewSwitch(root, prompt.n, action);
+  if (plan.refused) {
+    out(`✗ ${plan.refused}`);
+    if (plan.changed?.length) out(`  ${shortList(plan.changed)}`);
+    return 1;
+  }
+  const text = prompt.text.length > 70 ? `${prompt.text.slice(0, 69)}…` : prompt.text;
+  out(t(action === 'undo' ? 'undo.cli.titleUndo' : 'undo.cli.titleRedo', { n: prompt.n, text: text.replace(/\s+/g, ' ') }));
+  if (plan.write.length) out(`  ${t('undo.cli.write', { count: plan.write.length, list: shortList(plan.write) })}`);
+  if (plan.remove.length) out(`  ${t('undo.cli.remove', { count: plan.remove.length, list: shortList(plan.remove) })}`);
+  if (plan.skipped.length) {
+    out(`  ${t('undo.cli.skipped', { count: plan.skipped.length })}`);
+    for (const item of plan.skipped) out(`    ${item.path} — ${t(`undo.why.${item.why}`)}`);
+  }
+  if (plan.dependencies) out(`  ${t('undo.cli.dependencies')}`);
+  if (!plan.write.length && !plan.remove.length) { out(`  ${t('undo.cli.nothing')}`); return 0; }
+  if (!yes) {
+    if (!confirm) { out(`  ${t('undo.cli.needsYes')}`); return 2; }
+    if (!(await confirm(t(action === 'undo' ? 'undo.cli.confirmUndo' : 'undo.cli.confirmRedo', { n: prompt.n })))) { out(t('undo.cli.cancelled')); return 1; }
+  }
+  const done = applySwitch(root, prompt.n, action, plan.hash);
+  if (done.refused) { out(`✗ ${done.refused}`); return 1; }
+  out(t(action === 'undo' ? 'undo.cli.undone' : 'undo.cli.redone', { n: done.n, written: done.written, removed: done.removed }));
+  if (!done.exact) out(`  ${t('undo.cli.notExact')}`);
+  return 0;
 }
 
 export async function diffCommand(root, { n = 'latest', list = false, code = false, out = text => process.stdout.write(`${text}\n`) } = {}) {

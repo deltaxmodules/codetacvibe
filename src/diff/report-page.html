@@ -65,6 +65,13 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
 #behavior .legend { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; margin:6px 0 0; }
 #behavior .legend span::before { content:''; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; border:2px solid var(--line); }
 #behavior .legend .added::before { border-color:#2e9d5b; } #behavior .legend .removed::before { border-color:#d0566a; border-style:dashed; }
+#undo { margin-top:18px; }
+#undo ul.files { margin:4px 0 8px; padding-left:18px; }
+button.danger { border-color:var(--alert); color:var(--alert); }
+#behavior ul.again { list-style:none; padding:0; margin:6px 0; }
+#behavior ul.again li { padding:6px 0; border-top:1px solid var(--line); }
+#behavior ul.again p { margin:4px 0; }
+#behavior ul.again .touched { color:var(--warning); }
 #behavior .legend .changed::before { border-color:#e0a100; } #behavior .legend .same::before { border-color:var(--accent); }
 .tag.observed { border-color:#0f766e; color:#0f766e; }
 #request .lists { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin:8px 0; }
@@ -176,6 +183,7 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
       open.addEventListener('click', () => { wanted = String(prompt.n); view = 'report'; lastText = ''; go({ view: null, n: wanted }); refresh(); });
       li.append(open, html('span', when(prompt.startedAt), { className: 'muted small' }), html('span', '«' + prompt.text + '»', { className: 'text' }));
       if (prompt.status !== 'done') li.appendChild(html('span', statusText(prompt.status), { className: 'tag' }));
+      if (prompt.undone) li.appendChild(html('span', t('undoneTag'), { className: 'tag', title: t('undoneNote', { at: when(prompt.undone) }) }));
       if (prompt.badge) {
         li.appendChild(html('span', t('changes', { count: prompt.badge.changes }), { className: 'chip' }));
         if (prompt.badge.alerts + prompt.badge.warnings) li.appendChild(html('span', t('toLook', { count: prompt.badge.alerts + prompt.badge.warnings }), { className: 'chip warning' }));
@@ -307,12 +315,14 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     box.appendChild(html('h2', t('behaviorTitle')));
     if (state.running) { box.appendChild(html('p', t('behaviorRunning'), { className: 'muted' })); return; }
     if (!state.compared.length) box.appendChild(html('p', state.onlyAfter.length || state.onlyBefore.length ? t('behaviorNoPair') : t('behaviorNone'), { className: 'muted' }));
+    verdict.querySelector('.chip.observed')?.remove();
     if (state.sentences.length) verdict.insertBefore(html('span', t('observedCount', { count: state.sentences.length }), { className: 'chip observed', title: t('observedTitle') }), verdict.lastChild);
     state.compared.forEach((item, index) => {
       item.index = index;
       const h3 = html('h3');
       h3.dataset.index = index;
       h3.append(html('span', '«' + item.label + '»'), html('span', t('ranAt', { before: when(new Date(item.before.at).toISOString()), after: when(new Date(item.after.at).toISOString()) }), { className: 'muted small' }));
+      if (item.after.replay) h3.appendChild(html('span', t('ranAgain'), { className: 'tag observed', title: t('ranAgainTitle') }));
       if (item.path) {
         const path = html('button', t('showPath'), { className: 'plain small' });
         path.addEventListener('click', () => showPath(behaviorPath === item ? null : item));
@@ -343,7 +353,131 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     }
     const names = items => items.map(item => '«' + item.label + '»').join(', ');
     if (state.onlyAfter.length) box.appendChild(html('p', t('onlyAfter', { list: names(state.onlyAfter) }), { className: 'muted small' }));
-    if (state.onlyBefore.length) box.appendChild(html('p', t('onlyBefore', { list: names(state.onlyBefore) }), { className: 'muted small' }));
+    if (state.onlyBefore.length) againSection(report, box, verdict, state);
+  }
+
+  // --- Undo a prompt (phase D6) ----------------------------------------------------
+  // The files go back to the moment before the prompt (or, after an undo, to the
+  // moment after it). Nothing is written until the preview is confirmed; the
+  // panel refuses if the files changed since the preview.
+  function undoSection(report, box) {
+    box.textContent = '';
+    if (report.running) return;
+    const action = report.prompt.undone ? 'redo' : 'undo';
+    box.appendChild(html('h2', t(action === 'undo' ? 'undoTitle' : 'redoTitle')));
+    box.appendChild(html('p', t(action === 'undo' ? 'undoIntro' : 'redoIntro'), { className: 'muted small' }));
+    const look = html('button', t(action === 'undo' ? 'undoPreview' : 'redoPreview'), { className: 'small' });
+    const result = html('div');
+    look.addEventListener('click', async () => {
+      look.disabled = true;
+      const response = await fetch(api('/api/diff/undo', '&n=' + report.prompt.n + '&action=' + action), { cache: 'no-store' }).catch(() => null);
+      const plan = response && response.ok ? await response.json().catch(() => null) : null;
+      look.disabled = false;
+      result.textContent = '';
+      if (!plan) { result.appendChild(html('p', t('undoNoAnswer'), { className: 'note' })); return; }
+      if (plan.refused) {
+        result.appendChild(html('p', plan.refused, { className: 'note' }));
+        if (plan.changed?.length) result.appendChild(html('p', plan.changed.join(', '), { className: 'muted small' }));
+        return;
+      }
+      const lists = [[t('undoWrite', { count: plan.write.length }), plan.write], [t('undoRemove', { count: plan.remove.length }), plan.remove]];
+      for (const [title, paths] of lists) {
+        if (!paths.length) continue;
+        result.appendChild(html('p', title, { className: 'small' }));
+        const ul = html('ul', null, { className: 'files small' });
+        for (const path of paths) ul.appendChild(html('li', path));
+        result.appendChild(ul);
+      }
+      if (plan.skipped.length) {
+        result.appendChild(html('p', t('undoSkipped', { count: plan.skipped.length }), { className: 'small' }));
+        const ul = html('ul', null, { className: 'files small' });
+        for (const item of plan.skipped) ul.appendChild(html('li', item.path + ' — ' + item.text));
+        result.appendChild(ul);
+      }
+      if (plan.dependencies) result.appendChild(html('p', t('undoDependencies'), { className: 'note' }));
+      if (!plan.write.length && !plan.remove.length) { result.appendChild(html('p', t('undoNothing'), { className: 'muted' })); return; }
+      const yes = html('button', t(action === 'undo' ? 'undoConfirm' : 'redoConfirm'), { className: 'small danger' });
+      yes.addEventListener('click', async () => {
+        yes.disabled = true;
+        const answer = await post('/api/diff/undo', { n: report.prompt.n, action, hash: plan.hash }).catch(() => null);
+        const done = answer?.ok ? answer.body : null;
+        if (!done) {
+          result.appendChild(html('p', answer?.body?.error ?? t('undoNoAnswer'), { className: 'note' }));
+          return;
+        }
+        result.textContent = '';
+        result.appendChild(html('p', t(action === 'undo' ? 'undoDone' : 'redoDone', { written: done.written, removed: done.removed }), { className: 'note' }));
+        if (!done.exact) result.appendChild(html('p', t('undoNotExact'), { className: 'muted small' }));
+        report.prompt.undone = action === 'undo' ? new Date().toISOString() : null;
+        setTimeout(() => { if (shown === report) undoSection(report, box); }, 2500);
+      });
+      result.appendChild(yes);
+    });
+    box.append(look, result);
+  }
+
+  // --- Run again (phase D6) --------------------------------------------------------
+  // The actions run before the prompt and not since. CodeTAC runs one again only
+  // when the button is pressed, and only GET/HEAD with no query, through the
+  // app's bar (the person's session); the others are done again by hand.
+  const embedded = params.get('embed') === '1' && window.parent !== window;
+  const REASON = { query: t('againQuery'), method: t('againMethod'), 'other-origin': t('againOtherOrigin'), nothing: t('againNothing'), path: t('againPath') };
+  let tickets = 0;
+  function againSection(report, box, verdict, state) {
+    box.appendChild(html('h3', t('againTitle')));
+    box.appendChild(html('p', state.latest ? t('againIntro') : t('againNotLatest'), { className: 'muted small' }));
+    const list = html('ul', null, { className: 'again' });
+    for (const action of state.onlyBefore) {
+      const li = html('li');
+      li.appendChild(html('b', '«' + action.label + '»'));
+      li.appendChild(html('span', ' ' + t('againLastRun', { page: action.page ?? '/', at: when(new Date(action.at).toISOString()) }), { className: 'muted small' }));
+      const redo = action.redo;
+      if (redo?.touched?.length) li.appendChild(html('p', t('againTouched', { list: redo.touched.join('; ') }), { className: 'touched small' }));
+      if (redo?.how === 'rerun') {
+        const sends = redo.requests.map(item => item.method + ' ' + item.path).join(', ');
+        li.appendChild(html('p', t('againSends', { count: redo.requests.length, list: sends }), { className: 'muted small' }));
+        if (embedded) {
+          const button = html('button', t('againButton'), { className: 'small' });
+          const note = html('span', '', { className: 'muted small' });
+          button.addEventListener('click', () => {
+            button.disabled = true;
+            note.textContent = ' ' + t('againRunning');
+            runAgain(action, redo).then(answer => {
+              if (!answer || answer.refused) { button.disabled = false; note.textContent = ' ' + t('againFailed'); return; }
+              note.textContent = ' ' + t('againDone', { statuses: answer.statuses.map(status => status ?? '—').join(', ') });
+              waitForRun(report, box, verdict, action);
+            });
+          });
+          li.append(button, note);
+        } else li.appendChild(html('p', t('againFromBar'), { className: 'muted small' }));
+      } else if (redo) {
+        li.appendChild(html('p', t('againByHand', { why: REASON[redo.reason] ?? '', page: redo.page, label: action.label }), { className: 'muted small' }));
+      }
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+  }
+  // Asks the bar (the parent page) to send the requests; it answers with their statuses.
+  function runAgain(action, redo) {
+    const ticket = ++tickets;
+    return new Promise(resolve => {
+      const done = answer => { removeEventListener('message', onMessage); clearTimeout(timer); resolve(answer); };
+      const onMessage = event => { if (event.source === window.parent && event.data?.codetac === 'rerun-done' && event.data.ticket === ticket) done(event.data); };
+      const timer = setTimeout(() => done(null), 30000);
+      addEventListener('message', onMessage);
+      window.parent.postMessage({ codetac: 'rerun', ticket, actionId: action.actionId, page: redo.page, trigger: redo.trigger, requests: redo.requests }, '*');
+    });
+  }
+  // The new run reaches the panel when the bar closes the action (it waits for
+  // the page to be quiet): the Behavior layer is asked again until it shows it.
+  async function waitForRun(report, box, verdict, action) {
+    for (let attempt = 0; attempt < 15 && shown === report; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch(api('/api/diff/behavior', '&n=' + report.prompt.n), { cache: 'no-store' }).catch(() => null);
+      const state = response && response.ok ? await response.json().catch(() => null) : null;
+      if (state && !state.onlyBefore.some(item => item.actionId === action.actionId)) break;
+    }
+    if (shown === report) loadBehavior(report, box, verdict);
   }
 
   // --- Request (phase D4) ---------------------------------------------------------
@@ -507,6 +641,7 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     if (report.running) head.appendChild(html('p', t('runningNote'), { className: 'note' }));
     if (report.prompt.status === 'interrupted') head.appendChild(html('p', t('interruptedNote'), { className: 'note' }));
     if (report.prompt.overlap) head.appendChild(html('p', t('overlapNote'), { className: 'note' }));
+    if (report.prompt.undone) head.appendChild(html('p', t('undoneNote', { at: when(report.prompt.undone) }), { className: 'note' }));
     const verdict = html('div', null, { className: 'verdict', id: 'verdict' });
     const b = report.badge;
     verdict.appendChild(html('span', t('changes', { count: b.changes }), { className: 'chip' }));
@@ -547,6 +682,10 @@ ul.history li .text { flex:1; overflow-wrap:anywhere; }
     grid.append(left, map);
     main.appendChild(grid);
     main.appendChild(codeSection(report));
+    // Undo the whole prompt (phase D6): a preview, then a confirmation.
+    const undo = html('section', null, { id: 'undo' });
+    main.appendChild(undo);
+    undoSection(report, undo);
     if (lit) light(report.sentences.find(sentence => sentence.key === lit.key) ?? null);
   }
 
