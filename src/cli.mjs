@@ -51,6 +51,11 @@ function parseArgs(argv) {
     else if (!options.sub && !options.folder && arg === 'privacy') options.sub = 'privacy';
     else if (!options.sub && !options.folder && arg === 'hooks') options.sub = 'hooks';
     else if (!options.sub && !options.folder && arg === 'diff') options.sub = 'diff';
+    else if (!options.sub && !options.folder && arg === 'live') options.sub = 'live';
+    else if (options.sub === 'live' && !options.live && arg === 'replay') options.live = arg;
+    else if (options.sub === 'live' && arg === '--json') options.json = true;
+    else if (options.sub === 'live' && options.live && options.session === undefined && !options.folder
+      && !(() => { try { return statSync(resolve(arg)).isDirectory(); } catch { return false; } })()) options.session = arg;
     else if (options.sub === 'diff' && !options.undo && options.prompt === undefined && !options.folder && (arg === 'undo' || arg === 'redo')) options.undo = arg;
     else if (options.sub === 'diff' && arg === '--list') options.list = true;
     else if (options.sub === 'diff' && arg === '--code') options.code = true;
@@ -559,6 +564,22 @@ async function main() {
       return;
     }
     process.exitCode = await diffCommand(root, { n: options.prompt ?? 'latest', list: options.list ?? false, code: options.code ?? false });
+    return;
+  }
+  if (options.sub === 'live') {
+    const { liveCommand, liveAddress } = await import('./live/cli.mjs');
+    if (!options.live) {
+      // Phase L3: the live window, in a panel of this version (one running, or one started apart that stays).
+      const address = liveAddress(root);
+      if (address.warning) say(`! ${address.warning}`);
+      const panel = await panelForReport(options.panelPort ?? Number(process.env.CODETAC_PANEL_PORT || 4000));
+      if (!panel) { say(`✗ ${t('live.cli.noPanel')}`); process.exitCode = 1; return; }
+      const url = `http://127.0.0.1:${panel}${address.path}`;
+      say(t('live.cli.opening', { url }));
+      if (!options.noOpen) openBrowser(url);
+      return;
+    }
+    process.exitCode = liveCommand(root, { action: options.live, session: options.session ?? null, json: options.json ?? false });
     return;
   }
   if (options.sub === 'hooks') {

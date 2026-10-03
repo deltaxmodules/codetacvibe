@@ -14,7 +14,7 @@ It is the automatic version of [What did the AI change?](/guide/what-did-the-ai-
    codetac hooks install
    ```
 
-   It shows what it will write and asks first. It adds three hooks to `.claude/settings.local.json` and writes nothing else in the project.
+   It shows what it will write and asks first. It adds eight hooks to `.claude/settings.local.json` and writes nothing else in the project: three record each prompt, five note each step for [the live window](/guide/what-is-the-ai-doing-right-now).
 2. Start your app with codeTAC as usual (`codetac`).
 3. Open Claude Code **in the same folder** and give it a prompt.
 4. While the prompt runs, the bar in your app shows **Prompt running…**. When it ends, it shows **What changed?** with the number of changes and, in orange, the number to look at.

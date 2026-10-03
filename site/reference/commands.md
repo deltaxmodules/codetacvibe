@@ -16,11 +16,13 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | `codetac structure --snapshot [label] --predict` | first asks what you expect the next change to do, and saves it with the snapshot |
 | `codetac structure --snapshots` | lists the saved snapshots, newest first |
 | `codetac structure --diff [from] [to]` | what changed since the newest snapshot, or between two points: a snapshot id, a commit (`HEAD~3`, a branch, a tag) or now |
-| `codetac hooks install` / `uninstall` | the Claude Code hooks that record each prompt and the files before and after it (asks first; written in `.claude/settings.local.json`) |
+| `codetac hooks install` / `uninstall` | the Claude Code hooks that record each prompt and the files before and after it, and the steps for the live window (asks first; written in `.claude/settings.local.json`) |
 | `codetac diff [n]` | what prompt `n` changed (the newest by default): files, structure, risks; `--code` adds the lines, `--open` opens the report in the panel |
 | `codetac diff --list` | the prompts recorded, newest first |
 | `codetac diff undo [n]` | puts the files back as they were before prompt `n` (only the newest prompt, only if the files did not change since); shows the files and asks first (`--yes` to skip) |
 | `codetac diff redo [n]` | puts back what an undone prompt changed |
+| `codetac live [folder]` | opens [the live window](/guide/what-is-the-ai-doing-right-now): what Claude Code is building, step by step (`--no-open`: only prints the address) |
+| `codetac live replay [session] [folder]` | the steps and the sentences of a recorded Claude Code session (the newest by default); `--json` for the raw data |
 | `codetac privacy` | what codeTAC may send to an AI, with a switch for each kind |
 | `codetac help` | all the options |
 | `codetac --version` | the installed version |

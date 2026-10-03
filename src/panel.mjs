@@ -13,9 +13,10 @@ import { LABELS } from './sentences.mjs';
 import { answerQuestion, complete, createPurposes, describeConfig, loadConfig, questionRequest } from './ai.mjs';
 import { blocked, blockedText, clearLog, privacyState, readLog, writeSettings } from './privacy.mjs';
 import { createStructureService, isLoopback } from './structure/service.mjs';
-import { createDiffService, projectById } from './diff/service.mjs';
+import { createDiffService, listProjects, projectById } from './diff/service.mjs';
 import { recordingsOf } from './diff/behavior.mjs';
-import { TEXT, t, privacyPageWithText, planPageWithText, reportPageWithText } from './structure/text.mjs';
+import { TEXT, t, livePageWithText, privacyPageWithText, planPageWithText, reportPageWithText } from './structure/text.mjs';
+import { createLiveService } from './live/service.mjs';
 import { maskKeys } from './structure/node/modules.mjs';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -64,6 +65,8 @@ const editorScheme = EDITORS[editor] ?? null;
 // The project's structure (StructureTAC): the folder of each recording.
 const privacyPage = privacyPageWithText(readFileSync(new URL('./privacy-page.html', import.meta.url), 'utf8'));
 const reportPage = reportPageWithText(readFileSync(new URL('./diff/report-page.html', import.meta.url), 'utf8'));
+const livePage = livePageWithText(readFileSync(new URL('./live/window-page.html', import.meta.url), 'utf8'));
+const live = createLiveService({ projectById, listProjects });
 const structurePage = planPageWithText(readFileSync(new URL('./structure/plan-page.html', import.meta.url), 'utf8'));
 // A project without a recording (the Diff with no app running, phase D3) is named run=project:<id of its Diff folder>.
 const rootOfRun = run => { if (String(run).startsWith('project:')) return projectById(String(run).slice(8)); store.ingest(); return store.root(run); };
@@ -130,6 +133,28 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
         'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
       response.end(reportPage);
+      return;
+    }
+    // The live window (phase L3): its page and its state, sent again as it changes.
+    if (url.pathname === '/live') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+        'content-security-policy': "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://*.localhost:*" });
+      response.end(livePage);
+      return;
+    }
+    if (url.pathname.startsWith('/api/live/')) {
+      if (request.method !== 'GET' || !isLoopback(request.socket.remoteAddress)
+        || (request.headers.origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(request.headers.origin))
+        || (request.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) {
+        json(response, 403, { error: t('panel.api.refused') });
+        return;
+      }
+      const id = url.searchParams.get('project');
+      if (url.pathname === '/api/live/projects') { json(response, 200, live.projects()); return; }
+      if (url.pathname === '/api/live/state') { const state = live.state(id, url.searchParams.get('n') ?? 'latest'); json(response, state ? 200 : 404, state ?? { error: t('panel.api.notFound') }); return; }
+      if (url.pathname === '/api/live/prompts') { const list = live.prompts(id); json(response, list ? 200 : 404, list ?? { error: t('panel.api.notFound') }); return; }
+      if (url.pathname === '/api/live/stream' && live.stream(id, request, response)) return;
+      json(response, 404, { error: t('panel.api.notFound') });
       return;
     }
     if (url.pathname === '/privacy') {
@@ -397,7 +422,7 @@ pre.code span.idle { opacity:.45; }
 </head>
 <body>
 <header><h1>CodeTAC</h1><div class="tabs"><button data-tab="actions" class="on">${html(t('panel.page.actions'))}</button><button data-tab="requests">${html(t('panel.page.requestsWithoutAction'))}</button></div>
-<label class="runs">${html(t('panel.page.recording'))} <select id="run"></select></label> <a class="privacy" href="/privacy" title="${html(t('panel.page.privacyTitle'))}">${html(t('panel.page.privacy'))}</a></header>
+<label class="runs">${html(t('panel.page.recording'))} <select id="run"></select></label> <a class="privacy" href="/live" title="${html(t('panel.page.liveTitle'))}">${html(t('panel.page.live'))}</a> <a class="privacy" href="/privacy" title="${html(t('panel.page.privacyTitle'))}">${html(t('panel.page.privacy'))}</a></header>
 <main>
   <nav id="list"><p class="empty" style="padding:14px">${html(t('panel.page.loading'))}</p></nav>
   <article id="detail"><p class="empty">${html(t('panel.page.choose'))}</p></article>

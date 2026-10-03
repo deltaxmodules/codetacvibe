@@ -14,6 +14,14 @@
 // Each command names the node and the CodeTAC that installed it and the
 // project's folder, and ends with a "#codetac-diff" comment by which it is
 // recognised (the shell ignores it).
+//
+// Two kinds of hooks (phase L1 of the live mode):
+//   - the prompt's start and end (UserPromptSubmit, Stop, SessionEnd): node,
+//     `codetac hook <event>`;
+//   - each tool use (PreToolUse, PostToolUse, PostToolUseFailure,
+//     Notification, PermissionRequest; capture.sh prints nothing, so it never decides a permission): `sh capture.sh <waiting folder>`, which only keeps the
+//     event (docs/live/ensaio-captura.md: no measurable delay). Without sh
+//     (Windows), `codetac hook Capture` does the same in node.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +30,7 @@ import { install as codetacFolder } from '../home.mjs';
 import { t } from '../structure/text.mjs';
 import { archiveMoment, diffFolder, writeWhole } from './archive.mjs';
 import { HOOK_EVENTS } from './hook.mjs';
+import { CAPTURE_SCRIPT, LIVE_EVENTS, spoolFolder } from '../live/events.mjs';
 
 export const SETTINGS = '.claude/settings.local.json';
 const MARK = '#codetac-diff';
@@ -48,6 +57,20 @@ export function stableNode(execPath = process.execPath, path = process.env.PATH 
 export function hookCommand(root, event, { node = stableNode(), cli = join(codetacFolder, 'src', 'cli.mjs') } = {}) {
   return `${quote(node)} ${quote(cli)} hook ${event} --project ${quote(root)} ${MARK}`;
 }
+
+export function captureCommand(root, { node, cli, script = CAPTURE_SCRIPT, platform = process.platform } = {}) {
+  if (platform === 'win32') return hookCommand(root, 'Capture', { node, cli });
+  return `sh ${quote(script)} ${quote(spoolFolder(root))} ${MARK}`;
+}
+
+// Every hook CodeTAC installs: event → command.
+export function hookCommands(root, options = {}) {
+  return Object.fromEntries([
+    ...HOOK_EVENTS.map(event => [event, hookCommand(root, event, options)]),
+    ...LIVE_EVENTS.map(event => [event, captureCommand(root, options)]),
+  ]);
+}
+const ALL_EVENTS = [...HOOK_EVENTS, ...LIVE_EVENTS];
 
 // The settings file as it is: { bytes (null when there is none), settings } or { error }.
 function readSettings(root) {
@@ -101,27 +124,28 @@ export function hooksStatus(root) {
   const read = readSettings(root);
   if (read.error) return { error: read.error };
   const commands = ourCommands(read.settings);
-  const expected = Object.fromEntries(HOOK_EVENTS.map(event => [event, hookCommand(root, event)]));
-  const installed = HOOK_EVENTS.filter(event => commands[event]);
-  return { installed, current: installed.length === HOOK_EVENTS.length && HOOK_EVENTS.every(event => commands[event] === expected[event]), commands, expected };
+  const expected = hookCommands(root);
+  const installed = ALL_EVENTS.filter(event => commands[event]);
+  return { installed, current: installed.length === ALL_EVENTS.length && ALL_EVENTS.every(event => commands[event] === expected[event]), commands, expected };
 }
 
 export async function installHooks(root, { yes = false, confirm = null, out = text => process.stdout.write(`${text}\n`), node, cli } = {}) {
   root = realpathSync(root);
   const read = readSettings(root);
   if (read.error) { out(`✗ ${read.error}`); out(`  ${t('hooks.fixFirst')}`); return 2; }
-  const commands = Object.fromEntries(HOOK_EVENTS.map(event => [event, hookCommand(root, event, { node, cli })]));
+  const commands = hookCommands(root, { node, cli });
   const found = ourCommands(read.settings);
-  if (HOOK_EVENTS.every(event => found[event] === commands[event])) { out(t('hooks.already', { file: SETTINGS })); return 0; }
+  if (ALL_EVENTS.every(event => found[event] === commands[event])) { out(t('hooks.already', { file: SETTINGS })); return 0; }
   const next = withoutOurs(read.settings);
   next.hooks ??= {};
-  for (const event of HOOK_EVENTS) (next.hooks[event] ??= []).push({ hooks: [{ type: 'command', command: commands[event], timeout: TIMEOUT }] });
+  for (const event of ALL_EVENTS) (next.hooks[event] ??= []).push({ hooks: [{ type: 'command', command: commands[event], timeout: TIMEOUT }] });
   const others = Object.values(withoutOurs(read.settings).hooks ?? {}).reduce((sum, groups) => sum + groups.length, 0);
-  out(t(read.bytes ? 'hooks.willChange' : 'hooks.willCreate', { file: SETTINGS }));
-  for (const event of HOOK_EVENTS) out(`  ${event}: ${commands[event]}`);
+  out(t(read.bytes ? 'hooks.willChange' : 'hooks.willCreate', { file: SETTINGS, count: ALL_EVENTS.length }));
+  for (const event of ALL_EVENTS) out(`  ${event}: ${commands[event]}`);
   if (others) out(`  ${t('hooks.keepsOthers', { count: others })}`);
   if (/\/_npx\//.test(cli ?? codetacFolder)) out(`  ! ${t('hooks.npx')}`);
   out(`  ${t('hooks.what')}`);
+  out(`  ${t('hooks.whatLive')}`);
   if (!yes) {
     if (!confirm) { out(`  ${t('hooks.needsYes')}`); return 2; }
     if (!(await confirm(t('hooks.confirm', { file: SETTINGS })))) { out(t('hooks.cancelled')); return 1; }

@@ -853,7 +853,10 @@
     "snapshotsKeep": "{file}: \"snapshots.keep\" must be a whole number above 0; the default (20) is used.",
     "diffShape": "{file}: \"diff\" must be { \"keep\": n }; it is ignored.",
     "diffUnknownKey": "{file}: \"diff.{key}\" is not a setting (keep); it is ignored.",
-    "diffKeep": "{file}: \"diff.keep\" must be a whole number above 0; the default (50) is used."
+    "diffKeep": "{file}: \"diff.keep\" must be a whole number above 0; the default (50) is used.",
+    "liveShape": "In {file}, \"live\" must be an object like { \"minInterval\": 1500 }.",
+    "liveUnknownKey": "In {file}, \"live.{key}\" is not known (only \"minInterval\").",
+    "liveMinInterval": "In {file}, \"live.minInterval\" must be a whole number of milliseconds between 200 and 60000; 1500 is used."
   },
   "cli": {
     "suggest": {
@@ -1257,7 +1260,7 @@
     }
   },
   "run": {
-    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac diff undo [n] [folder]             puts the files back as they were before prompt n (the newest by default); shows\n                                             what changes and asks first; codetac diff redo [n] puts them back as the prompt left them\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
+    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac live [folder] [--no-open]          the live window: what Claude Code is building, step by step, while it works\n  codetac live replay [session] [folder] [--json]\n                                             the plain-English steps of a recorded Claude Code session (live mode)\n  codetac diff undo [n] [folder]             puts the files back as they were before prompt n (the newest by default); shows\n                                             what changes and asks first; codetac diff redo [n] puts them back as the prompt left them\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
     "unknownOption": "Unknown option: {arg}",
     "panelDidNotStart": "The panel did not start: {output}",
     "noFreePort": "No free port found for the panel.",
@@ -1649,7 +1652,9 @@
       "withValues": "with the recorded values.",
       "withoutValues": "without the recorded values: they are not sent to models outside this computer (only the lines run and the redacted code).",
       "unverified": "Unverified answer ({reason}). Check it in the code.",
-      "notEnough": "The recorded facts are not enough to answer with certainty:"
+      "notEnough": "The recorded facts are not enough to answer with certainty:",
+      "live": "Live window",
+      "liveTitle": "What the coding assistant is building, while it works"
     }
   },
   "prompts": {
@@ -1799,14 +1804,15 @@
     "badEvent": "\"hooks.{event}\" in {file} must be a list.",
     "fixFirst": "Fix the file first; CodeTAC does not change a file it cannot read.",
     "already": "The CodeTAC hooks are already installed in {file}.",
-    "willCreate": "CodeTAC will create {file} with three Claude Code hooks:",
-    "willChange": "CodeTAC will add three Claude Code hooks to {file}:",
+    "willCreate": "CodeTAC will create {file} with {count} Claude Code hooks:",
+    "willChange": "CodeTAC will add {count} Claude Code hooks to {file}:",
     "keepsOthers": {
       "one": "Your {count} hook already there stays as it is.",
       "other": "Your {count} hooks already there stay as they are."
     },
     "npx": "CodeTAC is running from npx's temporary folder, which may be cleaned: install it with npm install -g codetac and run this again.",
     "what": "They archive the project's files (outside the project) when a prompt starts and when it ends, so codetac diff can show what each prompt changed. They print nothing and never block a prompt.",
+    "whatLive": "The other five note each step the assistant takes (the tool, the file or command, whether it worked; never the file contents nor what a command printed), outside the project, for the live window. They only write a small file, so the assistant is not slowed down.",
     "needsYes": "Run it in a terminal to answer, or add --yes.",
     "confirm": "Write {file}? [y/N]",
     "cancelled": "Nothing was changed.",
@@ -2070,6 +2076,188 @@
     "goneFunctions": {
       "one": "«{action}» no longer runs {list}.",
       "other": "«{action}» no longer runs {count} functions: {list}."
+    }
+  },
+  "live": {
+    "say": {
+      "look": "Looking through the project",
+      "readDocs": "Reading documentation",
+      "search": "Looking up information online",
+      "helper": "Handing part of the work to a helper",
+      "plan": "Planning the work",
+      "planTask": "Planning: {subject}",
+      "taskStart": "{subject}",
+      "taskDone": "Done: {subject}",
+      "config": "Preparing the configuration",
+      "dependencies": "Updating the list of libraries the project uses",
+      "databaseStructure": "Changing the database structure",
+      "databaseCode": "Preparing the code that talks to the database",
+      "database": "Looking at the database",
+      "seed": "Filling the database with sample data",
+      "writeDocs": "Writing documentation",
+      "styles": "Changing the look of the pages",
+      "layout": "Changing the layout shared by the pages",
+      "data": "Changing how the app reads and saves data",
+      "test": {
+        "create": "Writing tests for {name}",
+        "change": "Updating the tests for {name}"
+      },
+      "tests": {
+        "create": "Writing tests",
+        "change": "Updating the tests"
+      },
+      "route": {
+        "create": "Creating the server connection for {name}",
+        "change": "Changing the server connection for {name}"
+      },
+      "routeAny": {
+        "create": "Creating a server connection",
+        "change": "Changing a server connection"
+      },
+      "page": {
+        "create": "Creating the {name} page",
+        "change": "Changing the {name} page"
+      },
+      "component": {
+        "create": "Creating the {name} part of the interface",
+        "change": "Changing the {name} part of the interface"
+      },
+      "componentAny": {
+        "create": "Creating a part of the interface",
+        "change": "Changing a part of the interface"
+      },
+      "code": {
+        "create": "Writing {name}",
+        "change": "Changing {name}"
+      },
+      "codeAny": {
+        "create": "Creating some of the app's code",
+        "change": "Changing some of the app's code"
+      },
+      "file": {
+        "create": "Creating {name}",
+        "change": "Changing {name}"
+      },
+      "checkWorks": "Checking that it works",
+      "build": "Checking that the app builds",
+      "lint": "Checking the code for mistakes",
+      "start": "Starting the app",
+      "script": "Running the project's {name} task",
+      "installAll": "Installing the project's libraries",
+      "installKnown": "Adding {article} {purpose} library",
+      "installTypes": "Adding type definitions for a library",
+      "installUnknown": "Installing a dependency: {name}",
+      "uninstall": "Removing a library: {name}",
+      "gitCommit": "Saving a version of the work",
+      "gitPush": "Sending the work to the online repository",
+      "gitLook": "Checking what has changed",
+      "git": "Working with the version history",
+      "github": "Working with GitHub",
+      "docker": "Working with containers",
+      "tryServer": "Trying the app's server",
+      "fetch": "Fetching something from the internet",
+      "files": "Organising the project's files",
+      "check": "Trying out a piece of code",
+      "run": "Running {name}",
+      "processes": "Managing running programs",
+      "mcp": "Using {name}",
+      "waiting": "The assistant is waiting for you in the terminal",
+      "idle": "The assistant is waiting for your next message",
+      "testFailed": "A test failed — the assistant is fixing it",
+      "commandFailed": "A command did not work — the assistant is checking",
+      "stepFailed": "A step did not work — the assistant retries",
+      "runCommands": "Running a series of commands",
+      "remote": "Working on a remote server",
+      "wait": "Waiting a moment",
+      "waitTask": "Waiting for a task to finish",
+      "editFiles": "Editing files with a script",
+      "otherAi": "Asking another AI assistant",
+      "installTool": "Installing a tool on the computer",
+      "network": "Checking a network connection",
+      "system": "Working with the computer's settings",
+      "publish": "Preparing the package for publishing",
+      "question": "The assistant is asking you a question in the terminal",
+      "browser": "Checking the app in the browser",
+      "topic": {
+        "route": "{name} server connection",
+        "page": "{name} page",
+        "structure": "structure",
+        "data": "saving and reading data",
+        "styles": "look",
+        "library": "{purpose} library"
+      },
+      "writeMany": {
+        "one": "Writing {count} file",
+        "other": "Writing {count} files at once"
+      }
+    },
+    "cli": {
+      "usage": "Usage: codetac live [folder] (opens the live window) · codetac live replay [session] [folder] [--json]",
+      "none": "No live events recorded in this project yet. Install the hooks (codetac hooks install) and give Claude Code a prompt in this folder.",
+      "unknownSession": "No events for session {id} ({count} sessions recorded here).",
+      "heading": "Session {id} · {count} events",
+      "noRule": "(no rule for {tool})",
+      "coverage": "{translated} of {actions} actions have a sentence ({percent}%); {generic} by a general rule.",
+      "unknownHeading": "No rule ({count}):",
+      "others": {
+        "one": "{count} other session recorded: codetac live replay <session>",
+        "other": "{count} other sessions recorded: codetac live replay <session>"
+      },
+      "opening": "Live window: {url}",
+      "noPanel": "CodeTAC's panel did not start.",
+      "noHooks": "The hooks are not installed in this project, so nothing will show yet: codetac hooks install",
+      "stepsTasks": {
+        "one": "{count} step (the assistant's task list):",
+        "other": "{count} steps (the assistant's task list):"
+      },
+      "stepsAreas": {
+        "one": "{count} step (by area of the project):",
+        "other": "{count} steps (by area of the project):"
+      },
+      "actions": {
+        "one": "({count} action)",
+        "other": "({count} actions)"
+      }
+    },
+    "page": {
+      "title": "CodeTAC — live",
+      "heading": "What the assistant is building",
+      "open": "Open the live window",
+      "noPip": "This browser cannot keep a small window on top of the others (Chrome and Edge can): make this window small and keep it beside the terminal.",
+      "noProjects": "No project records prompts yet. In the project's folder: codetac hooks install, then give Claude Code a prompt.",
+      "waitingPrompt": "Waiting for a prompt",
+      "building": "Building:",
+      "finished": "Done:",
+      "interrupted": "Stopped:",
+      "now": "Now",
+      "done": "Done",
+      "detail": "{text} ({place})",
+      "waitingYou": "The assistant is waiting for you in the terminal",
+      "lost": "Lost contact with CodeTAC's panel; trying again…",
+      "next": "Next",
+      "seeChanges": "See what changed",
+      "seePlan": "See on the plan",
+      "onPlan": "on the plan",
+      "showDetails": "Show the actions of this step",
+      "file_written": "wrote {path}",
+      "file_created": "created {path}",
+      "file_changed": "changed {path}",
+      "file_removed": "removed {path}",
+      "history": "Earlier prompts",
+      "promptItem": "{n}. {title}",
+      "backLive": "← Back to the live view"
+    },
+    "area": {
+      "interface": "Interface",
+      "server": "Server",
+      "database": "Database",
+      "configuration": "Configuration",
+      "tests": "Tests",
+      "analysis": "Understanding the project",
+      "setup": "Getting things ready"
+    },
+    "step": {
+      "label": "{area}: {topics}"
     }
   }
 }

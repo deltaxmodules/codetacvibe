@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.0
+
+**What is the AI doing right now? A live window, while Claude Code works.**
+
+- **The live window:** `codetac live` (or **Live window** at the top of the panel) shows what Claude Code is building while a prompt runs. It uses plain words made by rules, with no AI: «Creating the login page», «Adding an authentication library».
+  - **Building:** and the prompt; **Now**: the step in progress, with the newest action and its file below it; **Next** and **Done**.
+  - The steps are the assistant's task list when it makes one. Otherwise there is one step per area of the project (Interface, Server, Database, Configuration, Tests), named after what was done there.
+  - A yellow band when the assistant waits for you in the terminal (a permission, a question). A discreet line when a test or a command fails, until a later step works.
+  - **Open the live window** keeps it small and on top of the other windows (Chrome and Edge).
+  - When the prompt ends: **Done:**, **See what changed** (the prompt's report) and **See on the plan**. Press a step to see its actions, with ✓/✗ and the files they wrote, created, changed or removed; **on the plan** opens the floor plan on the step's file. **Earlier prompts** shows the steps of the project's other prompts.
+- `codetac live replay [session]` prints the steps of a recorded session in the terminal (`--json` for the raw data).
+- **Run `codetac hooks install` again** if you installed the hooks before 0.12.0. There are now eight: three record each prompt, as before, and five note each step the assistant takes. They only write a small file, so the assistant is not slowed down.
+- What is kept, in `~/.codetac/live/`, never in the project, and never sent: the tool, the file or the command, and whether it worked. Never the content of files, what a command printed, nor the assistant's reasoning; the code a command writes (`cat > file <<EOF`) is taken out, and secrets are hidden.
+- New setting `live.minInterval`: how often, at most, the newest-action line changes (default 1.5 s).
+- The floor plan opens on a file named in its address (`&file=`).
+
 ## 0.11.1
 
 - **A demo video**, from the install to the buttons (under 3 minutes, captions, no sound): on the manual's home page, with a short part on *Install and first dossier*, *What is my project made of?* and *What did my last prompt change?*. The readme shows a short GIF of «What changed?». It is made by a script from a sample app, so it is made again for each version.

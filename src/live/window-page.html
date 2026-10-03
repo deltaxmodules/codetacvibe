@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeTAC — live</title>
+<style id="live-style">
+:root { color-scheme: dark; --bg:#17181b; --card:#202227; --line:#2e3138; --text:#e9eaee; --muted:#9a9ea8; --accent:#7aa2ff; --ok:#6fcf97; --warn-bg:#f2c94c; --warn-text:#2a2200; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 520px; margin: 0 auto; padding: 16px; }
+.top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+.top h1 { font-size:14px; margin:0; color:var(--muted); font-weight:600; }
+button { background:var(--accent); color:#0b1020; border:0; border-radius:6px; padding:7px 12px; font-weight:600; cursor:pointer; font-size:13px; }
+.note { color:var(--muted); font-size:12px; margin:6px 0 0; }
+#live { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+.label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:10px 0 2px; }
+.label:first-child { margin-top:0; }
+#title { font-weight:650; font-size:15px; }
+#now { display:flex; align-items:center; gap:8px; font-size:15px; }
+#detail { color:var(--muted); font-size:12px; margin-top:2px; min-height:1em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.spin { width:10px; height:10px; border-radius:50%; background:var(--accent); flex:none; animation:pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:.25; transform:scale(.8);} 50% { opacity:1; transform:scale(1);} }
+@media (prefers-reduced-motion: reduce) { .spin { animation:none; } }
+#band { display:none; background:var(--warn-bg); color:var(--warn-text); border-radius:6px; padding:8px 10px; font-weight:650; margin-bottom:10px; }
+#problem { display:none; color:var(--muted); font-size:13px; margin-top:6px; }
+ul { list-style:none; margin:0; padding:0; }
+#done li, #next li { padding:2px 0; }
+#next li { color:var(--muted); }
+#next li::before { content:"○ "; }
+#done > li::before { content:"✓ "; color:var(--ok); }
+#done .times { color:var(--muted); font-size:12px; }
+#idle { color:var(--muted); }
+#projects a { color:var(--accent); display:block; padding:4px 0; }
+.step { background:none; color:inherit; border:0; padding:0; font:inherit; font-weight:inherit; text-align:left; cursor:pointer; }
+.step:hover { text-decoration:underline; }
+a.plan, #links a, #history a, .back { color:var(--accent); font-size:12px; margin-left:6px; text-decoration:none; background:none; border:0; cursor:pointer; padding:0; font-weight:400; }
+.details { margin:4px 0 6px 14px; color:var(--muted); font-size:12px; }
+.details li::before { content:none; }
+.details .ok { color:var(--ok); } .details .bad { color:#e0a26b; }
+.details .file { margin-left:14px; }
+/* hidden always wins over a display set here (the links showed while a prompt ran). */
+[hidden] { display:none !important; }
+#links { margin-top:10px; display:flex; gap:12px; }
+#links a { margin-left:0; font-size:13px; }
+#history { margin-top:12px; color:var(--muted); font-size:12px; }
+#history summary { cursor:pointer; }
+#history li { padding:2px 0; }
+body.pip main { padding:10px; max-width:none; }
+body.pip .top, body.pip .note { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><h1 data-t="heading"></h1><button id="pip" hidden data-t="open"></button></div>
+  <p class="note" id="pipNote" hidden data-t="noPip"></p>
+  <ul id="projects" hidden></ul>
+  <section id="live" hidden aria-live="polite">
+    <div id="band" role="alert"></div>
+    <div id="idle" hidden data-t="waitingPrompt"></div>
+    <div id="building">
+      <div class="label" id="titleLabel"></div>
+      <div id="title"></div>
+      <div id="nowBox">
+        <div class="label" data-t="now"></div>
+        <div id="now"><span class="spin" id="spin"></span><button class="step" id="nowText"></button></div>
+        <ul class="details" id="nowDetails" hidden></ul>
+        <div id="detail"></div>
+      </div>
+      <div id="problem"></div>
+      <div id="nextBox">
+        <div class="label" data-t="next"></div>
+        <ul id="next"></ul>
+      </div>
+      <div id="doneBox">
+        <div class="label" data-t="done"></div>
+        <ul id="done"></ul>
+      </div>
+      <div id="links" hidden><a id="seeChanges" target="_blank" data-t="seeChanges"></a><a id="seePlan" target="_blank" data-t="seePlan"></a></div>
+    </div>
+    <div id="historyView" hidden><button class="back" id="backLive" data-t="backLive"></button></div>
+    <details id="history" hidden><summary data-t="history"></summary><ul id="historyList"></ul></details>
+  </section>
+  <p class="note" id="lost" hidden data-t="lost"></p>
+</main>
+<script>
+const TEXT = /*CODETAC_TEXT*/null;
+const t = (key, vars = {}) => String(TEXT.live.page[key] ?? key).replace(/\{(\w+)\}/g, (hole, name) => (name in vars ? String(vars[name]) : hole));
+for (const node of document.querySelectorAll('[data-t]')) node.textContent = t(node.dataset.t);
+document.title = t('title');
+// Kept from the start: once the live part moves into the window on top, the page's document no longer finds it.
+const nodes = new Map([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
+const $ = id => nodes.get(id);
+const project = new URLSearchParams(location.search).get('project');
+
+// No project named: the projects the hooks record, to pick one.
+async function chooseProject() {
+  const list = await (await fetch('/api/live/projects')).json();
+  const box = $('projects');
+  box.hidden = false;
+  if (!list.length) { box.textContent = t('noProjects'); return; }
+  for (const item of list) {
+    const link = document.createElement('a');
+    link.href = '/live?project=' + encodeURIComponent(item.id);
+    link.textContent = item.name;
+    const li = document.createElement('li');
+    li.append(link);
+    box.append(li);
+  }
+}
+
+// The smaller line changes at most every minInterval ms; a new step (the main line), the band, the problem line
+// and the end of the prompt show at once.
+let shown = null;
+let pending = null;
+let lastPaint = 0;
+let timer = null;
+function receive(state) {
+  pending = state;
+  const urgent = !shown || state.status !== shown.status || (state.notice?.kind) !== (shown.notice?.kind) || state.prompt?.n !== shown.prompt?.n || state.title !== shown.title
+    || (state.now?.step && state.now.text !== shown.now?.text) || state.done.length !== shown.done.length;
+  const wait = (state.minInterval ?? 1500) - (Date.now() - lastPaint);
+  if (urgent || wait <= 0) { clearTimeout(timer); timer = null; paint(); return; }
+  if (!timer) timer = setTimeout(() => { timer = null; paint(); }, wait);
+}
+
+// The technical details of a step (V7): its actions, the files they created, changed or removed, and ✓ / ✗.
+// Closed by default; a step opened stays open while the window updates.
+const opened = new Set();
+const FILE_TEXT = { written: 'file_written', created: 'file_created', changed: 'file_changed', removed: 'file_removed' };
+function detailsOf(step) {
+  const list = document.createElement('ul');
+  list.className = 'details';
+  for (const item of step.actions ?? []) {
+    const li = document.createElement('li');
+    const mark = document.createElement('span');
+    mark.className = item.ok === false ? 'bad' : item.ok ? 'ok' : '';
+    mark.textContent = item.ok === false ? '✗ ' : item.ok ? '✓ ' : '· ';
+    li.append(mark, item.place && item.tool !== 'Write' && item.tool !== 'Edit' ? t('detail', { text: item.text, place: item.place }) : item.text);
+    for (const file of item.files ?? []) {
+      const line = document.createElement('div');
+      line.className = 'file';
+      line.textContent = t(FILE_TEXT[file.change] ?? 'file_changed', { path: file.path });
+      li.append(line);
+    }
+    list.append(li);
+  }
+  return list;
+}
+function stepItem(step) {
+  const li = document.createElement('li');
+  const button = document.createElement('button');
+  button.className = 'step';
+  button.textContent = step.text;
+  button.title = t('showDetails');
+  button.addEventListener('click', () => { opened.has(step.key) ? opened.delete(step.key) : opened.add(step.key); paint(true); });
+  li.append(button);
+  if (step.plan) { const link = document.createElement('a'); link.className = 'plan'; link.href = step.plan; link.target = '_blank'; link.textContent = t('onPlan'); li.append(link); }
+  if (opened.has(step.key)) li.append(detailsOf(step));
+  return li;
+}
+
+function paint() {
+  const state = pending;
+  if (!state) return;
+  shown = state;
+  lastPaint = Date.now();
+  $('live').hidden = false;
+  const idle = state.status === 'idle';
+  $('idle').hidden = !idle;
+  $('building').hidden = idle;
+  const finished = state.status === 'done' || state.status === 'interrupted';
+  $('titleLabel').textContent = t(finished ? (state.status === 'done' ? 'finished' : 'interrupted') : 'building');
+  $('title').textContent = state.title;
+  $('nowBox').hidden = finished || !state.now;
+  $('nowText').textContent = state.now?.text ?? '';
+  $('spin').hidden = state.status !== 'working' && state.status !== 'problem';
+  $('detail').textContent = state.detail ? (state.detail.place ? t('detail', { text: state.detail.text, place: state.detail.place }) : state.detail.text) : '';
+  const band = $('band');
+  band.style.display = state.notice?.kind === 'waiting' ? 'block' : 'none';
+  band.textContent = state.notice?.kind === 'waiting' ? t('waitingYou') : '';
+  const problem = $('problem');
+  problem.style.display = state.notice?.kind === 'problem' ? 'block' : 'none';
+  problem.textContent = state.notice?.kind === 'problem' ? state.notice.text : '';
+  $('done').replaceChildren(...state.done.map(stepItem));
+  // The step in progress opens the same way, under "Now".
+  const current = (state.steps ?? []).find(item => item.status === 'current');
+  const nowDetails = $('nowDetails');
+  nowDetails.hidden = !(current && opened.has(current.key));
+  nowDetails.replaceChildren(...(current && opened.has(current.key) ? detailsOf(current).children : []));
+  $('nowText').onclick = current ? () => { opened.has(current.key) ? opened.delete(current.key) : opened.add(current.key); paint(); } : null;
+  const links = $('links');
+  links.hidden = !state.links;
+  if (state.links) { $('seeChanges').href = state.links.diff; $('seePlan').href = state.links.plan; }
+  $('doneBox').hidden = !state.done.length;
+  // Once the prompt ends, the title already says "Done:".
+  $('doneBox').querySelector('.label').hidden = finished;
+  $('next').replaceChildren(...(state.next ?? []).map(item => { const li = document.createElement('li'); li.textContent = item.text; return li; }));
+  $('nextBox').hidden = !(state.next ?? []).length;
+}
+
+// Earlier prompts (L4b): the steps of one of them, until "Back to the live view".
+let viewing = null;
+async function loadHistory() {
+  const list = await (await fetch('/api/live/prompts?project=' + encodeURIComponent(project))).json().catch(() => []);
+  const box = $('historyList');
+  box.replaceChildren(...list.slice(1).map(item => {
+    const li = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = t('promptItem', { n: item.n, title: item.title });
+    link.addEventListener('click', async event => {
+      event.preventDefault();
+      viewing = item.n;
+      $('historyView').hidden = false;
+      pending = await (await fetch('/api/live/state?project=' + encodeURIComponent(project) + '&n=' + item.n)).json();
+      paint();
+    });
+    li.append(link);
+    return li;
+  }));
+  $('history').hidden = list.length < 2;
+}
+$('backLive').addEventListener('click', () => { viewing = null; $('historyView').hidden = true; pending = live; paint(); });
+
+let live = null;
+let historyFor = null;
+function follow() {
+  const source = new EventSource('/api/live/stream?project=' + encodeURIComponent(project));
+  source.onmessage = event => {
+    $('lost').hidden = true;
+    live = JSON.parse(event.data);
+    if (live.prompt?.n !== historyFor) { historyFor = live.prompt?.n; loadHistory(); }
+    if (viewing === null) receive(live);
+  };
+  source.onerror = () => { $('lost').hidden = false; };
+}
+
+// The window on top (Document Picture-in-Picture, Chrome and Edge): opened by a click, as the browser requires.
+// The live part moves into it and comes back when it is closed.
+function setUpPip() {
+  if (!('documentPictureInPicture' in window)) { $('pipNote').hidden = false; return; }
+  const button = $('pip');
+  button.hidden = false;
+  button.addEventListener('click', async () => {
+    const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 460 });
+    pip.document.title = t('title');
+    pip.document.head.append($('live-style').cloneNode(true));
+    pip.document.body.className = 'pip';
+    const live = $('live');
+    const holder = document.createElement('main');
+    holder.append(live);
+    pip.document.body.append(holder);
+    pip.addEventListener('pagehide', () => { $('lost').before(live); });
+  });
+}
+
+if (!project) chooseProject();
+else { setUpPip(); follow(); }
+</script>
+</body>
+</html>

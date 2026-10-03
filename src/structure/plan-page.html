@@ -199,6 +199,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
   }
   const LAYER_NAMES = TEXT.layers;
   const storeKey = 'codetac.structure.open.' + run;
+  let fileParam = params.get('file');
   let open = new Set();
   try { open = new Set(JSON.parse(localStorage.getItem(storeKey) || '[]')); } catch {}
   let plan = null;
@@ -292,6 +293,7 @@ header a.plain { color:var(--accent); text-decoration:none; }
     for (const id of [...open]) if (!ids.has(id)) { open.delete(id); }
     save();
     draw();
+    if (fileParam) { const path = fileParam; fileParam = null; revealFile(path); }
     // A step opened from a dossier shows its details at once.
     if (selected && !$('side').classList.contains('on')) details();
   }
@@ -1680,20 +1682,29 @@ header a.plain { color:var(--accent); text-decoration:none; }
       for (const result of body.results) {
         const button = html('button', result.name);
         button.appendChild(html('small', result.kind + (result.path ? ' · ' + result.path : result.file ? ' · ' + result.file + ':' + result.line : '')));
-        button.addEventListener('click', () => {
-          for (const id of result.open) open.add(id);
-          save();
-          highlight = result.id;
-          selected = { type: 'box', id: result.id };
-          results.hidden = true;
-          lastText = '';
-          refresh().then(details);
-        });
+        button.addEventListener('click', () => { results.hidden = true; reveal(result); });
         results.appendChild(button);
       }
     }, 200);
   });
   document.addEventListener('click', event => { if (!event.target.closest('.search')) $('results').hidden = true; });
+  // A box found by the search, or named in the address: its blocks open, it is lit and its card shown.
+  function reveal(result) {
+    for (const id of result.open) open.add(id);
+    save();
+    highlight = result.id;
+    selected = { type: 'box', id: result.id };
+    lastText = '';
+    refresh().then(details);
+  }
+  // The live window's steps link here with &file=<path> (live mode, L4b): looked up once the plan is first drawn,
+  // since the panel may still be reading the project when the page opens.
+  async function revealFile(path) {
+    const response = await fetch('/api/structure/search?run=' + encodeURIComponent(run) + '&q=' + encodeURIComponent(path), { cache: 'no-store' });
+    const body = await response.json().catch(() => ({ results: [] }));
+    const found = (body.results ?? []).find(result => result.path === path) ?? (body.results ?? []).find(result => result.path && result.path.endsWith(path));
+    if (found) reveal(found);
+  }
   $('coverage').addEventListener('click', () => { coverage = !coverage; $('coverage').textContent = coverage ? t('hideNeverRan') : t('neverRan'); lastText = ''; refresh(); });
   function showButtons() {
     for (const [name, key] of [['leaks', 'leaksButton'], ['secrets', 'secretsButton'], ['data', 'dataButton'], ['health', 'healthButton'], ['diff', 'diffButton'], ['quiz', 'quizButton']]) {

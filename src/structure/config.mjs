@@ -25,8 +25,8 @@ export function pathPattern(pattern) {
   return path => regex.test(path);
 }
 
-const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells', 'snapshots', 'diff']);
-const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, snapshots: {}, diff: {}, problems: [] });
+const KNOWN_KEYS = new Set(['version', 'ignore', 'layers', 'reclassify', 'services', 'env', 'smells', 'snapshots', 'diff', 'live']);
+const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env: { platform: [] }, smells: {}, snapshots: {}, diff: {}, live: {}, problems: [] });
 
 // The project's configuration:
 //   ignore: [pattern]           files left out of the plan (on top of .gitignore)
@@ -37,6 +37,7 @@ const EMPTY = () => ({ ignore: [], layers: [], reclassify: {}, services: [], env
 //   smells: { limit: n, off: [kinds] }  thresholds of the structural smells (phase 8, smells.mjs), and smells turned off
 //   snapshots: { keep: n }      how many snapshots of the structure are kept (phase 9, snapshots.mjs; default 20)
 //   diff: { keep: n }           how many prompts the Diff keeps, with their files (phase D1, src/diff/prompts.mjs; default 50)
+//   live: { minInterval: ms }   the live window's smaller line changes at most this often (phase L3, src/live/state.mjs; default 1500)
 // A broken file or entry is reported in problems, never fatal: the plan is
 // still drawn, with what is valid.
 export function readConfig(root) {
@@ -118,6 +119,19 @@ export function readConfig(root) {
       if (keep !== undefined) {
         if (Number.isInteger(keep) && keep > 0) config[section].keep = keep;
         else problems.push(t(`config.${section}Keep`, { file: CONFIG_FILE }));
+      }
+    }
+  }
+  // The live window (phase L3): how often its smaller line may change, in milliseconds.
+  if (raw.live !== undefined) {
+    const value = raw.live;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) problems.push(t('config.liveShape', { file: CONFIG_FILE }));
+    else {
+      for (const key of Object.keys(value)) if (key !== 'minInterval') problems.push(t('config.liveUnknownKey', { file: CONFIG_FILE, key }));
+      const interval = value.minInterval;
+      if (interval !== undefined) {
+        if (Number.isInteger(interval) && interval >= 200 && interval <= 60000) config.live.minInterval = interval;
+        else problems.push(t('config.liveMinInterval', { file: CONFIG_FILE }));
       }
     }
   }

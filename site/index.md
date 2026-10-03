@@ -32,6 +32,9 @@ features:
   - title: What did my last prompt change?
     details: With Claude Code, a report after every prompt — the files, the risks (a new service, a dependency, a secret in the browser), a map and the lines of code. With any other AI tool, save a snapshot before and compare after.
     link: /guide/what-did-my-last-prompt-change
+  - title: What is the AI doing right now?
+    details: While Claude Code works, a small window beside the terminal says what it is building, step by step and in plain words. At the end, straight to what the prompt changed.
+    link: /guide/what-is-the-ai-doing-right-now
   - title: Nothing leaves without you
     details: No account, no cloud. AI explanations are optional, and you see exactly what would be sent before it goes.
     link: /guide/privacy-and-ai

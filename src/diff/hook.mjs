@@ -9,6 +9,9 @@
 //   - it is quick: UserPromptSubmit holds the prompt back while it runs
 //     (docs/diff/ensaio-hooks.md), so it only archives files, with the cache.
 // The panel is not called: it reads the log itself when asked (phase D3).
+// Live mode (phase L1): Stop and SessionEnd also move the events that
+// capture.sh kept for each tool use into the session's log (ingest), and
+// `codetac hook Capture` keeps an event where there is no sh (Windows).
 // When a prompt ends, a process of its own, not waited for, reads the plans of
 // its two moments, so the bar's badge and the report are ready at once
 // (phase D3; 4.5 s for 10 000 files, out of the prompt's way).
@@ -18,6 +21,7 @@ import { join } from 'node:path';
 import { dataDirectory } from '../home.mjs';
 import { diffFolder } from './archive.mjs';
 import { endSession, startPrompt, stopPrompt } from './prompts.mjs';
+import { ingest, spoolEvent } from '../live/events.mjs';
 import { t } from '../structure/text.mjs';
 
 export const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
@@ -64,20 +68,32 @@ export function runHook(event, { project = null, stdin = null, env = process.env
     try { input = text.trim() ? JSON.parse(text) : {}; } catch { throw new Error(t('prompts.hookNotJson', { count: text.length })); }
     root ??= projectOf(null, input, env);
     if (!root) throw new Error(t('prompts.hookNoProject'));
+    if (event === 'Capture') return spoolEvent(root, text);
     const id = typeof input.prompt_id === 'string' ? input.prompt_id : null;
     const session = typeof input.session_id === 'string' ? input.session_id : null;
     if (event === 'UserPromptSubmit') return startPrompt(root, { id, session, text: typeof input.prompt === 'string' ? input.prompt : '', now, env });
     if (event === 'Stop') {
       const result = stopPrompt(root, { id, session, background: input.background_tasks ?? [], now });
+      gather(root, env, event);
       if (result.prompt?.status === 'done' && warm) prepare(root, result.prompt.n);
       return result;
     }
-    if (event === 'SessionEnd') return endSession(root, { session, now });
+    if (event === 'SessionEnd') {
+      const result = endSession(root, { session, now });
+      gather(root, env, event);
+      return result;
+    }
     throw new Error(t('prompts.hookUnknownEvent', { event: String(event).slice(0, 40) }));
   } catch (error) {
     logError(root, event, error);
     return { error: String(error?.message ?? error) };
   }
+}
+
+// The live mode's events, out of the waiting folder; a failure is logged and
+// leaves them there for the next time.
+function gather(root, env, event) {
+  try { ingest(root, { env }); } catch (error) { logError(root, `${event} (live)`, error); }
 }
 
 function prepare(root, n) {

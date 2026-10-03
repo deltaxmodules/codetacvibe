@@ -26,6 +26,8 @@ On any step, you can open that function's code and ask a question about it.
 
 Next to the dossier, **Structure** shows the floor plan of the whole project, with the path of each action lit on it ([section 5](#5-the-projects-structure)).
 
+With Claude Code, codeTAC also shows **what each prompt changed**, and, while a prompt runs, **what the assistant is building**, step by step, in a small window beside the terminal.
+
 Everything runs on your computer. Your app's code is not changed.
 
 ## Which apps it works with
@@ -235,7 +237,7 @@ With Claude Code, codeTAC can record **each prompt**, with no snapshot by hand. 
 codetac hooks install
 ```
 
-It shows what it writes and asks first: three hooks in `.claude/settings.local.json`, nothing else in the project (`codetac hooks uninstall` puts the file back as it was). From then on, while a prompt runs, the bar in your app shows **Prompt running…**; when it ends, **What changed?** with the number of changes and, in orange, the number to look at. Press it to open the report of that prompt:
+It shows what it writes and asks first: eight hooks in `.claude/settings.local.json` (three record each prompt, five note each step for the [live window](#what-is-the-ai-doing-right-now-claude-code)), nothing else in the project (`codetac hooks uninstall` puts the file back as it was). From then on, while a prompt runs, the bar in your app shows **Prompt running…**; when it ends, **What changed?** with the number of changes and, in orange, the number to look at. Press it to open the report of that prompt:
 
 - the text of the prompt, and the files added, changed and removed;
 - sentences made by rules, the most important first. **Look at these**: a secret that now reaches the browser, a new outside service, a new, removed or changed dependency (`package.json`, `requirements.txt`, `pyproject.toml`), a test file deleted or a file with fewer tests, a new route *possibly* without a session check. **Flow and data**: blocks, routes, tables, variables and files;
@@ -251,6 +253,22 @@ Without the app: `codetac diff` (the newest prompt in the terminal), `codetac di
 The prompts are kept in `~/.codetac/diff/`, never in the project, and nothing is sent: the text of the prompt with secrets hidden (`.env` values, known keys, emails, phones), and a copy of the project's files before and after it, with only the **names** of `.env` variables and keys written in the code masked; files over 2 MB are listed without a copy. The 50 newest prompts are kept (`diff.keep` in `codetac.structure.json`).
 
 Limits: only Claude Code says when a prompt starts and ends (with other tools, use **Changes** with a snapshot); two sessions on the same project at once, or a subagent still working when the next prompt starts, mix their changes (the report says so); edits by hand during a prompt count as the prompt's; the diff is of whole lines; the risks are found by rules.
+
+### What is the AI doing right now? (Claude Code)
+
+With the same hooks, `codetac live` opens the **live window**. While Claude Code works on a prompt, it shows what it is building, in plain words made by rules (no AI):
+
+- **Building:** and the prompt; **Now**: the step in progress, with the newest action and its file below («Changing mailer.js (lib/mailer.js)»); **Next** and **Done**;
+- the steps are the assistant's task list when it makes one; otherwise one step per area of the project (Interface, Server, Database, Configuration, Tests), named after what was done there;
+- a yellow band when the assistant waits for you in the terminal, a discreet line when a test or a command fails;
+- **Open the live window** keeps it small and on top of the other windows (Chrome and Edge);
+- at the end: **Done:**, **See what changed** (the prompt's report), **See on the plan**, each step's actions with ✓/✗ and its files (press the step), **on the plan** for each step, and **Earlier prompts**.
+
+![The live window while a prompt runs: the step in progress, the next steps and the step done](https://raw.githubusercontent.com/deltaxmodules/codetacvibe/main/site/public/img/live-window.png)
+
+Also from the panel (**Live window**, at the top). `codetac live replay` prints a recorded session's steps in the terminal. What is kept, in `~/.codetac/live/`, never in the project, and never sent: the tool, the file or command and whether it worked; never the content of files, what a command printed, nor the assistant's reasoning. **Hooks installed before 0.12.0: run `codetac hooks install` again.**
+
+Limits: Claude Code only; many files written by one shell command show up at once; files written by a script are not seen as steps (they are in the prompt's report).
 
 ## 6. AI explanations (optional)
 
@@ -345,9 +363,11 @@ It saves the diagnosis to a file, with no code or data from the app. Send it wit
 | `codetac structure --snapshot [label] --predict` | Asks first what you expect the next change to do (files, blocks that start depending on another, new services) and saves it with the snapshot; `--diff` then says what you got right, what you missed and what did not happen |
 | `codetac structure --snapshots` | Lists the saved snapshots, newest first |
 | `codetac structure --diff [from] [to]` | What changed in the structure since the newest snapshot, or between two points — a snapshot id, a commit (`HEAD~3`, a branch, a tag, a hash) or the folder now (`codetac structure --diff v1.2 HEAD`). A commit is read from a temporary copy made with `git archive` and removed at the end: no checkout, your folder and `.git` are not touched. sentences made by rules, the most important first (`!!` alert, `!` warning, `·` information), each with the file and line; `[leaks]` / `[secrets]` mark what touches data leaving the machine or secrets |
-| `codetac hooks install` / `uninstall` | The Claude Code hooks that record each prompt and the files before and after it (asks first; written in `.claude/settings.local.json`) |
+| `codetac hooks install` / `uninstall` | The Claude Code hooks that record each prompt and the files before and after it, and the steps for the live window (asks first; written in `.claude/settings.local.json`) |
 | `codetac diff [n]` | What prompt `n` changed (the newest by default): files, structure, risks. `--code`: the lines; `--open`: the report in the panel, with no app running; `--list`: the prompts recorded |
 | `codetac diff undo [n]` / `codetac diff redo [n]` | Puts the files back as they were before prompt `n` (the newest only), after showing what changes and asking; `redo` puts its changes back. `--yes` skips the question |
+| `codetac live [folder]` | Opens the live window: what Claude Code is building, step by step (`--no-open`: only prints the address) |
+| `codetac live replay [session] [folder]` | The steps and sentences of a recorded Claude Code session (the newest by default); `--json` for the raw data |
 | `codetac privacy` | What CodeTAC may send to an AI model: each kind of request with its switch, and **No AI**. `--no-ai` / `--ai`, `--on <kind>`, `--off <kind>`, `--default <kind>` (kinds: `purposes`, `questions`, `suggestions`, `explanations`, `requests`); `--log [n]` shows the last requests sent, `--clear-log` clears them |
 | `codetac help` | All the options |
 | `codetac --version` | The installed version |

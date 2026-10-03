@@ -72,7 +72,14 @@ function projectEnv(root) {
 // The keys of known shapes (Stripe, AWS, GitHub…, as the plan masks them in
 // code excerpts), then the values of the environment and of the project's .env.
 export function redactPrompt(root, text, env = process.env) {
-  return createRedactor({ ...env, ...projectEnv(root) }, TEXT_LIMIT)(maskKeys(String(text ?? '')));
+  return projectRedactor(root, env, TEXT_LIMIT)(text);
+}
+
+// The same redaction for any text of the project (the live mode's events),
+// built once and used for many texts.
+export function projectRedactor(root, env = process.env, limit = TEXT_LIMIT) {
+  const redact = createRedactor({ ...env, ...projectEnv(root) }, limit);
+  return text => redact(maskKeys(String(text ?? '')));
 }
 
 const openIn = (log, session) => log.prompts.filter(prompt => OPEN.has(prompt.status) && (session === undefined || prompt.session === session));
