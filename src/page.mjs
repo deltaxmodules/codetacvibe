@@ -64,6 +64,19 @@ export function handleOwnRoute(request, response, runtime, options) {
     });
     return true;
   }
+  // The bar's CodeTAC pill: this server records the actions; does the panel answer (where the dossier opens)?
+  if (path === `${PREFIX}status` && request.method === 'GET') {
+    if (!sameOrigin(request) || request.headers['sec-fetch-site'] === 'cross-site') {
+      response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end('CodeTAC: origin refused.');
+      return true;
+    }
+    panelJson(options, '/api/ping', 1500).then(answer => {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({ recording: true, panel: Boolean(answer?.ok) }));
+    });
+    return true;
+  }
   // The Diff (phase D3): the state of the newest prompt, for the bar's «What changed?» button.
   if (path === `${PREFIX}diff` && request.method === 'GET') {
     if (!sameOrigin(request) || request.headers['sec-fetch-site'] === 'cross-site') {

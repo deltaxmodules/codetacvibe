@@ -92,6 +92,16 @@ Click a button, follow a link, submit a form.
 
 ![The codeTAC bar in the bottom right corner of an app, after a click on “Add user”: “Recorded: button “Add user””, next to the Structure pill](/img/bar.png)
 
+The dot on the **CodeTAC** button says whether your actions are being recorded:
+
+| Dot | Meaning |
+| --- | --- |
+| green | codeTAC is recording: use your app |
+| green, pulsing (**Recording…**) | an action is being recorded right now |
+| green (**Recorded: …**) | the last action was recorded; it stays when the page reloads |
+| amber | the actions are recorded, but the panel does not answer, so the dossier cannot open: start `codetac` again |
+| red (**Not recording**) | the app's server did not take the last action: is `codetac` still running in the terminal? |
+
 ## Step 6 — Open the dossier
 
 Click the bar, or open the link from the Terminal. You now see what your click did. [How to read it](/guide/what-happens-when-i-click).

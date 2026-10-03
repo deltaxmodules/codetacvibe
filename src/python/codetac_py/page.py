@@ -352,6 +352,13 @@ def own_route(method, path, origin, host, read_body, fetch_site=None):
             return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
         body = json.dumps({'total': review_total()}, separators=(',', ':')).encode('utf-8')
         return 200, [('Content-Type', 'application/json; charset=utf-8'), ('Cache-Control', 'no-store')], body
+    # The bar's CodeTAC pill (src/page.mjs): this server records the actions; does the panel answer?
+    if path == PREFIX + 'status' and method == 'GET':
+        if not _same_origin(origin, host) or fetch_site == 'cross-site':
+            return 403, [('Content-Type', 'text/plain; charset=utf-8')], 'CodeTAC: origin refused.'.encode('utf-8')
+        answer = panel_json('/api/ping', 1.5)
+        body = json.dumps({'recording': True, 'panel': bool(isinstance(answer, dict) and answer.get('ok'))}, separators=(',', ':')).encode('utf-8')
+        return 200, [('Content-Type', 'application/json; charset=utf-8'), ('Cache-Control', 'no-store')], body
     # The Diff (phase D3): the state of the newest prompt, for the bar's «What changed?» button.
     if path == PREFIX + 'diff' and method == 'GET':
         if not _same_origin(origin, host) or fetch_site == 'cross-site':
@@ -532,7 +539,7 @@ async def asgi_own_route(scope, receive, send):
     size = await read_all() if scope.get('method') == 'POST' else 0
     arguments = (scope.get('method', 'GET'), scope.get('path', ''), headers.get('origin'), headers.get('host'),
                  lambda limit: None if size is None or size > limit else b''.join(received), headers.get('sec-fetch-site'))
-    if scope.get('path') in (PREFIX + 'review', PREFIX + 'diff'):
+    if scope.get('path') in (PREFIX + 'review', PREFIX + 'diff', PREFIX + 'status'):
         # Asking the panel waits on the network: not on the event loop.
         import asyncio
         status, answer, body = await asyncio.get_running_loop().run_in_executor(None, lambda: own_route(*arguments))

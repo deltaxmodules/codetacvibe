@@ -1,6 +1,6 @@
 {
   "name": "codetac",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "codeTAC — see what your Node or Python app's code does, one action at a time: from the browser click to the server functions, database and external services.",
   "keywords": [
     "debug",

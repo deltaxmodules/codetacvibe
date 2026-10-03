@@ -13,6 +13,7 @@
   const rawText = key => String((config.text || {})[key] ?? key);
   const barText = key => rawText(key).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const ENDPOINT = '/__codetac/events';
+  const LAST_KEY = 'codetac.lastAction';
   const HEADER = 'x-codetac-action';
   const COOKIE = 'codetac_action';
   const QUIET_MS = 600;
@@ -23,6 +24,7 @@
   let current = null;       // newest open action: new requests and screen changes go to it
   const open = new Set();
   const recorded = [];      // actions sent from this page, for the bar
+  let health = 'unknown';   // the CodeTAC pill: ok, nopanel (recorded, panel silent) or off (not recorded)
 
   // ---------------------------------------------------------------------------
   // Stacks (only positions in scripts, resolved later by the panel)
@@ -174,6 +176,7 @@
     open.add(action);
     current = action;
     schedule(action);
+    if (trigger) paintMain();
     return action;
   }
   function touch(action) { action.last = now(); schedule(action); }
@@ -220,15 +223,19 @@
     const body = JSON.stringify(payload(action, closedBy));
     try {
       if (leaving && navigator.sendBeacon) navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'text/plain' }));
-      else originalFetch.call(window, ENDPOINT, { method: 'POST', body, keepalive: body.length < 60000, headers: { 'content-type': 'text/plain' } }).catch(() => {});
+      else originalFetch.call(window, ENDPOINT, { method: 'POST', body, keepalive: body.length < 60000, headers: { 'content-type': 'text/plain' } })
+        .then(response => { const next = response.ok ? (health === 'off' || health === 'unknown' ? 'ok' : health) : 'off'; if (next !== health) { health = next; paintMain(); } },
+          () => { health = 'off'; paintMain(); });
     } catch {}
     // A continuation on a new page counts too: in server-rendered apps (a form
     // that loads the next page) it is how the bar shows what brought you here.
     if (action.trigger || action.requests.length || action.segment > 1) {
-      recorded.push({ id: action.id, label: labelOf(action), requests: action.requests.length, closedBy });
+      const item = { id: action.id, label: labelOf(action), requests: action.requests.length, closedBy };
+      recorded.push(item);
       if (recorded.length > 30) recorded.shift();
+      try { sessionStorage.setItem(LAST_KEY, JSON.stringify({ item, at: Date.now() })); } catch {}
       updateBar(true);
-    }
+    } else paintMain();
   }
   function labelOf(action) {
     const element = action.trigger && action.trigger.element;
@@ -526,7 +533,7 @@
       ':host{all:initial}*{box-sizing:border-box;font:12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif}' +
       '.pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(24,24,27,.82);color:#f4f4f5;border:0;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.25);max-width:280px}' +
       '.pill:hover{background:rgba(24,24,27,.95)}.dot{width:8px;height:8px;border-radius:50%;background:#71717a;flex:none}.dot.on{background:#22c55e}' +
-      '.flash .dot{animation:f 1s ease-out}@keyframes f{0%{transform:scale(1.8);background:#4ade80}100%{transform:scale(1)}}' +
+      '.flash .dot{animation:f 1s ease-out}@keyframes f{0%{transform:scale(1.8)}100%{transform:scale(1)}}' +
       '.label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row{display:flex;gap:6px;justify-content:flex-end}' +
       '.sheet{position:fixed;right:12px;bottom:48px;width:min(760px,calc(100vw - 24px));height:min(640px,calc(100vh - 72px));background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden}' +
       '.top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#18181b;color:#f4f4f5}.top b{margin-right:auto}' +
@@ -537,7 +544,8 @@
       '.pill.diff[hidden]{display:none}.count{background:#52525b;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;line-height:16px}.count.new{background:#2563eb}' +
       '.warn{background:#d18a3a;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}.warn[hidden],.count[hidden],.outside[hidden]{display:none}' +
       '.outside{background:#7c3aed;color:#fff;border-radius:9px;padding:0 5px;font-size:11px;font-weight:600;line-height:16px}' +
-      '.diff.running .dot{background:#3b82f6;animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.3}}</style>' +
+      '.diff.running .dot{background:#3b82f6;animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.3}}' +
+      '.main .dot.rec{background:#22c55e;animation:p .8s ease-in-out infinite}.main .dot.off{background:#ef4444}.main .dot.nopanel{background:#f59e0b}</style>' +
       '<div class="row"><button class="pill diff" part="diff" hidden><span class="dot"></span><span class="label"></span><span class="count" hidden></span><span class="warn" hidden></span><span class="outside" hidden></span></button>' +
       '<button class="pill structure" part="structure" title="' + barText('structureTitle') + '">' + barText('structure') + '<span class="debt" hidden></span></button>' +
       '<button class="pill main" part="pill" title="' + barText('pillTitle') + '"><span class="dot"></span><span class="label">CodeTAC</span></button></div>';
@@ -551,7 +559,15 @@
       showDiff();
     });
     document.documentElement.appendChild(host);
+    // The last action recorded in this tab, so a page that reloads still says what was recorded.
+    try {
+      const kept = JSON.parse(sessionStorage.getItem(LAST_KEY) || 'null');
+      if (kept && !recorded.length && Date.now() - kept.at < 30 * 60 * 1000) recorded.push(kept.item);
+    } catch {}
     updateBar(false);
+    pollStatus(true);
+    setInterval(pollStatus, 10000);
+    document.addEventListener('visibilitychange', pollStatus);
     pollDebt();
     setInterval(pollDebt, 15000);
     document.addEventListener('visibilitychange', pollDebt);
@@ -624,12 +640,36 @@
     badge.textContent = total ? String(total) : '';
     pill.title = total ? (total === 1 ? barText('reviewDebtOne') : barText('reviewDebt').replace('{count}', total)) : barText('structureTitle');
   }
+  // The CodeTAC pill says whether the actions are being recorded: green when the app's server takes them,
+  // pulsing while an action is being recorded, red when the last one was not taken, amber when they are
+  // recorded but the panel (where the dossier opens) does not answer. Its own dot and label: the «What
+  // changed?» pill comes first in the row.
+  function paintMain() {
+    if (!shadow) return;
+    const last = recorded[recorded.length - 1];
+    const recording = [...open].some(action => action.trigger);
+    const dot = shadow.querySelector('.pill.main .dot');
+    const state = health === 'off' ? 'off' : recording ? 'rec' : health === 'nopanel' ? 'nopanel' : health === 'ok' || last ? 'on' : '';
+    for (const name of ['on', 'rec', 'off', 'nopanel']) dot.classList.toggle(name, state === name);
+    shadow.querySelector('.pill.main .label').textContent = health === 'off' ? rawText('pillOff') : recording ? rawText('pillRecording')
+      : last ? rawText('pillRecorded').replace('{label}', last.label) : 'CodeTAC';
+    shadow.querySelector('.pill.main').title = health === 'off' ? rawText('pillOffTitle') : health === 'nopanel' ? rawText('pillNoPanelTitle')
+      : last ? rawText('pillTitle') : rawText('pillReadyTitle');
+  }
+  // Asked of the app's own server: it records the actions; it says whether the panel answers.
+  async function pollStatus(first) {
+    if (!shadow || (document.hidden && first !== true)) return;
+    let next = 'off';
+    try {
+      const response = await originalFetch.call(window, '/__codetac/status', { cache: 'no-store', credentials: 'same-origin' });
+      if (response.ok) next = (await response.json()).panel ? 'ok' : 'nopanel';
+    } catch {}
+    if (next !== health) { health = next; paintMain(); }
+  }
   function updateBar(flash) {
     if (!shadow) return;
     const pill = shadow.querySelector('.pill.main');
-    const last = recorded[recorded.length - 1];
-    shadow.querySelector('.dot').classList.toggle('on', Boolean(last));
-    shadow.querySelector('.label').textContent = last ? 'Recorded: ' + last.label : 'CodeTAC';
+    paintMain();
     if (flash) { pill.classList.remove('flash'); void pill.offsetWidth; pill.classList.add('flash'); }
     if (shown && flash && view === 'action') showAction(recorded.length - 1);
     // With the plan open, a new action lights up its path.

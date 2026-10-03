@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.1
+
+- **The CodeTAC button on your app's page now says whether it is recording.** Its dot was meant to turn green after each action, but since 0.9.0 it only blinked and went back to grey, as if nothing had been recorded. Now:
+  - **green** as soon as the page opens: codeTAC is recording;
+  - **pulsing** while an action is being recorded (**Recording…**);
+  - **Recorded: …** after it. This stays when the action reloads the page or opens another one;
+  - **amber** when the actions are recorded but the panel does not answer, so the dossier cannot open;
+  - **red**, **Not recording**, when the app's server did not take the last action.
+
 ## 0.12.0
 
 **What is the AI doing right now? A live window, while Claude Code works.**

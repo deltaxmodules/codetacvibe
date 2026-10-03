@@ -120,7 +120,7 @@ If you get a permissions error (`EACCES`), use `npx codetac` instead of `codetac
    - For a FastAPI API, it opens the interactive documentation (`/docs`): each “Try it out” gets a dossier.
    - For a Node API without pages, the browser does not open: make requests as usual, and each one gets a dossier in the panel (the link shows up in the Terminal).
 5. **Use the app:** click a button, a link, submit a form.
-   - A small bar with “Recorded: …” shows up in the bottom right corner of the page.
+   - A small bar with “Recorded: …” shows up in the bottom right corner of the page. Its dot is green while codeTAC records, pulses while an action is being recorded, turns amber when the panel does not answer and red when an action was not recorded.
    - The Terminal shows “✓ First dossier …” with a link.
 6. Click the bar, or open the link, to see the dossier.
 7. To stop, go back to the Terminal and press **Ctrl+C**.
