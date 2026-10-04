@@ -27,7 +27,11 @@ export function languageOf(path) {
     '.vue': 'vue', '.svelte': 'svelte', '.py': 'python', '.prisma': 'prisma', '.graphql': 'graphql', '.sh': 'shell' }[extname(path).toLowerCase()] ?? 'other';
 }
 
-const skipped = path => path.split('/').some(skippedName);
+// Claude Code's local settings (where `codetac hooks install` writes) are the
+// tool's, not the project's: left out like the Diff's archive leaves them out,
+// whether or not git ignores them (K1.6: a clean Linux machine counted them).
+const TOOL_FILE = /(?:^|\/)\.claude\/settings\.local\.json$/;
+const skipped = path => path.split('/').some(skippedName) || TOOL_FILE.test(path);
 
 const isVirtualEnvironment = folder => { try { return lstatSync(join(folder, 'pyvenv.cfg')).isFile(); } catch { return false; } };
 

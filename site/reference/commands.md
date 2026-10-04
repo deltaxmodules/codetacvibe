@@ -7,6 +7,7 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | Command | What it does |
 | --- | --- |
 | `codetac [folder]` | starts your app with codeTAC (default: the current folder) |
+| `codetac check [folder]` | [is the app safe to ship?](/guide/is-my-app-safe-to-ship) Reads the code (nothing is started) and marks what blocks shipping (🔴), what to look at (🟡) and what is fine (✅), with the file and line. Ends with 1 when there is a 🔴. Works from Node 20 |
 | `codetac diagnose [folder]` | explains what works and what does not |
 | `codetac report [folder]` | saves the diagnosis to a file, to attach to an issue |
 | `codetac structure [folder]` | lists the project's files by block, its tables and a summary of the structure's health |
@@ -26,6 +27,13 @@ Everything you can type in the Terminal. `codetac help` shows the same list.
 | `codetac privacy` | what codeTAC may send to an AI, with a switch for each kind |
 | `codetac help` | all the options |
 | `codetac --version` | the installed version |
+
+### `codetac check` options
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the report for machines ([JSON Schema](https://deltaxmodules.github.io/codetacvibe/schema/check-report.v1.json)) |
+| `--fail-on red\|yellow` | `red` (default): ends with 1 on a 🔴; `yellow`: also on a 🟡 |
 
 ### `codetac privacy` options
 

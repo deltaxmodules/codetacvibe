@@ -10,6 +10,9 @@ hero:
   tagline: For people who build web apps with AI (Lovable, Bolt, v0, Cursor, Replit, Claude Code…) and want to know what the code really does. Free, and everything runs on your computer.
   actions:
     - theme: brand
+      text: Is my app safe to ship?
+      link: /guide/is-my-app-safe-to-ship
+    - theme: alt
       text: Get started in 5 minutes
       link: /guide/get-started
     - theme: alt
@@ -17,6 +20,9 @@ hero:
       link: /guide/what-happens-when-i-click
 
 features:
+  - title: Is my app safe to ship?
+    details: One command, under a minute, nothing to set up. A table anyone can read, a secret key in the browser, a .env file in git, a live key in your local setup — each with the file and line. Values are never shown.
+    link: /guide/is-my-app-safe-to-ship
   - title: Click, and see what ran
     details: Press a button in your app. codeTAC shows a dossier of that action — the server functions that ran, the database, emails, payments and AI calls — each with its file and line.
     link: /guide/what-happens-when-i-click
@@ -57,6 +63,7 @@ You made an app with an AI tool, or someone made it for you. It works — mostly
 - Does an email go out?
 - Is the payment in test mode or live mode?
 - Does my secret key end up in the browser?
+- Is my app safe to put on the internet?
 
 codeTAC answers these questions by **watching your app while you use it** and by **reading your project's code**. You do not need to know how to program to read the answers: every step comes with a plain sentence, and every fact comes with the file and line that prove it.
 

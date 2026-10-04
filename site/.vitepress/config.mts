@@ -28,6 +28,7 @@ export default defineConfig({
         text: 'Start here',
         items: [
           { text: 'What is codeTAC?', link: '/' },
+          { text: 'Is my app safe to ship?', link: '/guide/is-my-app-safe-to-ship' },
           { text: 'Install and first dossier', link: '/guide/get-started' },
         ],
       },

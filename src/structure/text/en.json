@@ -743,7 +743,7 @@
       "intro": "Everything CodeTAC can send to an AI model, what each request carries, and a switch for each. The rest of CodeTAC works the same with every switch off.",
       "modelActive": "AI model: {model} ({provider})",
       "modelNone": "No AI model configured: nothing is sent to any AI.",
-      "modelNoneWhy": "See “AI explanations” in the README to configure one.",
+      "modelNoneWhy": "See “Privacy and AI” in the manual to configure one.",
       "modelLocal": "On this computer: nothing leaves it.",
       "modelRemote": "Outside this computer: what is switched on below is sent over the internet.",
       "noAi": "No AI",
@@ -864,10 +864,89 @@
     "liveUnknownKey": "In {file}, \"live.{key}\" is not known (only \"minInterval\").",
     "liveMinInterval": "In {file}, \"live.minInterval\" must be a whole number of milliseconds between 200 and 60000; 1500 is used."
   },
+  "check": {
+    "title": "codeTAC check — {name}{types}",
+    "read": {
+      "one": "{count} file read in {seconds} s. Nothing was started; values in .env files are only classified (live or test, local or remote), never shown.",
+      "other": "{count} files read in {seconds} s. Nothing was started; values in .env files are only classified (live or test, local or remote), never shown."
+    },
+    "red": "🔴 Do not ship like this ({count})",
+    "yellow": "🟡 Look at this ({count})",
+    "green": "✅ Checked and fine ({count})",
+    "at": "at",
+    "verdict": {
+      "red": {
+        "one": "Not ready to ship: {count} 🔴 to fix first.",
+        "other": "Not ready to ship: {count} 🔴 to fix first."
+      },
+      "yellow": {
+        "one": "Nothing blocks shipping; {count} 🟡 to look at.",
+        "other": "Nothing blocks shipping; {count} 🟡 to look at."
+      },
+      "clean": "Nothing found to fix in what codeTAC checks.",
+      "empty": "No Node or Python project found in this folder: nothing was checked."
+    },
+    "why": {
+      "public-secret": "Anyone who opens the app can read it in the code their browser downloads.",
+      "secret-in-browser": "There its value is empty; adding the public prefix to fix it would expose the secret.",
+      "env-tracked": "Anyone with a copy of the repository has these values, also in its old commits.",
+      "env-not-ignored": "The next 'git add' would put its values in the repository.",
+      "env-no-git": "Nothing says which files must stay private when the project is shared.",
+      "literal-key": "Anyone who sees the code can use it; keys belong in variables set outside the code.",
+      "no-rls-browser": "Every visitor has the public key: with it, anyone can read or change every row of this table.",
+      "rls-unknown-browser": "If it is off, anyone with the public key can read or change every row. Check it where the database is managed (in Supabase: Authentication → Policies).",
+      "service-from-browser": "Its key has to be in the browser too, where anyone can read it and use it on your account. Call it from your server.",
+      "public-secret-unread": "Remove the prefix (and keep the secret on the server) before anything reads it.",
+      "live-key": "Payments made while you test on this computer are real: real cards, real money. Use the test key (sk_test_…, pk_test_…) for development.",
+      "remote-supabase": "What you test on this computer reads and changes that project's data. If your users use it too, develop on a separate project or the local Supabase (supabase start).",
+      "remote-database": "What you test on this computer reads and changes that data. If it is the production database, a mistake reaches your users: develop on a local or test database.",
+      "production-mode": "On this computer the app then hides its errors and can use production settings. For development, leave it unset or set it to development.",
+      "literal-key-test": "A test key moves no real money, but anyone who sees the code can use your test account. Move it to a variable.",
+      "literal-key-google": "Google keys are sometimes public by design (Firebase, Maps): check that this one is restricted to your app in the Google Cloud console."
+    },
+    "environment": {
+      "live-key": "{variable} in {file} is a live Stripe key.",
+      "remote-supabase": "{variable} in {file} points to a Supabase project in the cloud, not a local one.",
+      "remote-database": "{variable} in {file} points to a database on another computer, not this one.",
+      "production-mode": "{variable} in {file} sets the app to run as production."
+    },
+    "publicUnread": "{name} has a secret's name and the framework's public prefix. No code reads it yet; once some does, the build puts its value in the code sent to the browser.",
+    "info": {
+      "one": "ℹ Good to know ({count})",
+      "other": "ℹ Good to know ({count})"
+    },
+    "rlsUnknown": "Table {table} is used from the browser ({files}), and no SQL file of the project says whether its row level security is on.",
+    "serviceFromBrowser": "{service} is called from code that runs in the browser ({files}).",
+    "inBrowser": "It is in code sent to the browser.",
+    "leaves": {
+      "one": "📤 Where data goes ({count} outside service)",
+      "other": "📤 Where data goes ({count} outside services)"
+    },
+    "leavesServer": "{name} ({category}), from the server",
+    "leavesBrowser": "{name} ({category}), from the browser",
+    "leavesVariable": "(address in {variable})",
+    "footnote": "Names, files and lines only: no secret value is shown. What codeTAC can't see: https://deltaxmodules.github.io/codetacvibe/guide/what-codetac-cant-see",
+    "passed": {
+      "secrets": {
+        "one": "{count} secret variable: it does not reach the browser.",
+        "other": "{count} secret variables: none reaches the browser."
+      },
+      "envGit": {
+        "one": "{count} .env file: ignored by git.",
+        "other": "{count} .env files: all ignored by git."
+      },
+      "services": "No AI, email or message service is called from the browser.",
+      "literalKeys": "No key written in the code (Stripe, OpenAI, Anthropic, AWS, GitHub, Slack, Google, SendGrid, Supabase service_role, private keys).",
+      "rls": {
+        "one": "{count} table used from the browser: row level security on.",
+        "other": "{count} tables used from the browser: row level security on."
+      }
+    }
+  },
   "cli": {
     "suggest": {
       "nothingUnknown": "Nothing is Unknown: there is nothing to ask the AI.",
-      "noModel": "No AI model is configured{problem}. Suggestions need one: see \"AI explanations\" in the README",
+      "noModel": "No AI model is configured{problem}. Suggestions need one: see \"Privacy and AI\" in the manual",
       "noModelHow": "(CODETAC_AI_PROVIDER, CODETAC_AI_MODEL, CODETAC_AI_KEY, or a local Ollama). The plan works the same without it.",
       "local": ", a model on this machine: nothing leaves it",
       "exactly": "This is exactly what would be sent to {provider}{model}{where}. Only paths and export signatures, no code:",
@@ -1060,7 +1139,7 @@
       "noValues": "There are no recorded values for this step (detail was not requested).",
       "code": "Code ({function}, from line {line}):",
       "question": "Question: {question}",
-      "noModel": "Questions need an AI model (see “AI explanations” in the README).",
+      "noModel": "Questions need an AI model (see “Privacy and AI” in the manual).",
       "notFound": "This step was not found in the dossier.",
       "changed": "The request changed since you saw it. Look at it again before sending."
     },
@@ -1266,7 +1345,8 @@
     }
   },
   "run": {
-    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac live [folder] [--no-open]          the live window: what Claude Code is building, step by step, while it works\n  codetac live replay [session] [folder] [--json]\n                                             the plain-English steps of a recorded Claude Code session (live mode)\n  codetac diff undo [n] [folder]             puts the files back as they were before prompt n (the newest by default); shows\n                                             what changes and asks first; codetac diff redo [n] puts them back as the prompt left them\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
+    "help": "Usage:\n  codetac [folder] [options] [-- command]   starts the app in the folder (default: the current one) with CodeTAC: Node or Python (FastAPI, Flask)\n  codetac check [folder] [--json] [--fail-on red|yellow]\n                                             is the app safe to ship? reads the code (nothing is started) and marks what\n                                             blocks shipping, what to look at and what is fine, with the file and line;\n                                             exits with 1 when there is a 🔴 (or a 🟡, with --fail-on yellow); --json: for machines\n  codetac diagnose [folder]                  explains what is and what is not working\n  codetac report [folder]                    saves the diagnosis to a file to attach to an issue\n  codetac structure [folder]                 what the project is made of: its files by block\n  codetac structure [folder] --reclassify <file> <block|auto>\n                                             places a file in a block yourself (saved in codetac.structure.json)\n  codetac structure [folder] --suggest       asks the AI about the Unknown files (shows what is sent first)\n  codetac structure [folder] --snapshot [label]\n                                             saves the structure as it is now, to compare with later (kept outside the project);\n                                             with --predict, first asks what you expect the next change to do, and --diff\n                                             then says what you got right\n  codetac structure [folder] --snapshots     lists the saved snapshots\n  codetac structure [folder] --diff [from] [to]\n                                             what changed in the structure: since the newest snapshot, or between two\n                                             points (a snapshot id, a commit such as HEAD~3 or a tag, or now)\n  codetac hooks [install|uninstall] [folder]\n                                             the Claude Code hooks that record each prompt and the files before and after it\n                                             (asks first; written in .claude/settings.local.json, nothing else in the project)\n  codetac diff [n] [folder] [--code|--open]  what prompt n (the newest by default) changed: files, structure, risks; --code: the lines;\n                                             --open: the report in the panel (map, code side by side), with no app running\n  codetac diff --list [folder]               the prompts recorded by the hooks\n  codetac live [folder] [--no-open]          the live window: what Claude Code is building, step by step, while it works\n  codetac live replay [session] [folder] [--json]\n                                             the plain-English steps of a recorded Claude Code session (live mode)\n  codetac diff undo [n] [folder]             puts the files back as they were before prompt n (the newest by default); shows\n                                             what changes and asks first; codetac diff redo [n] puts them back as the prompt left them\n  codetac privacy [--no-ai|--ai] [--on|--off|--default <kind>] [--log [n]] [--clear-log]\n                                             what CodeTAC may send to an AI model, a switch for each kind, and the log of what was sent\n  codetac help                               this help\n  codetac --version                          installed version\n\nOptions:\n  --script <name>      package.json script to use (default: dev, start…)\n  --part <folder>      in a project with several parts, which one to start (can repeat)\n  --port <n>           the app's port, if it is not found automatically\n  --panel-port <n>     the panel's port (default 4000)\n  --minimal            do not follow the project's functions (requests and boundaries only)\n  --yes                answer \"yes\" to the questions (install dependencies, create the .venv…)\n  --no-open            do not open the browser\n  -- <command>         the start command, when it is not found (e.g. -- node server.js)",
+    "failOn": "--fail-on takes red or yellow, not \"{value}\".",
     "unknownOption": "Unknown option: {arg}",
     "panelDidNotStart": "The panel did not start: {output}",
     "noFreePort": "No free port found for the panel.",
@@ -1303,7 +1383,8 @@
     "reportSaved": "Report saved to {file}",
     "reportContents": "It contains no code or values from the app: only what is above. Send it with a description of the problem at",
     "predictNeedsSnapshot": "--predict goes with --snapshot: codetac structure --snapshot [label] --predict",
-    "oldNode": "This Node is {version}; CodeTAC was made for Node 24 or newer. Trying anyway.",
+    "nodeTooOld": "This Node is {version}. codetac check works on it; the other commands need Node 22.15 or newer (24 is best). Install the LTS version from https://nodejs.org.",
+    "oldNode": "This Node is {version}; starting your app with CodeTAC is made for Node 24 or newer (codetac check works from Node 20). Trying anyway.",
     "partNotFound": "Part not found: {parts}. Parts: {all}.",
     "none": "none",
     "noPackageForScript": "There is no package.json in this folder to choose a script from.",
@@ -1423,9 +1504,9 @@
     "title": "CodeTAC diagnosis · {root}",
     "computer": "This computer",
     "nodeOk": "Node {version}: can follow the project's functions.",
-    "nodeOld": "Node {version}: works, but CodeTAC was checked on Node 24 or newer.",
+    "nodeOld": "Node {version}: works, but some captures (AI tokens, the fields sent by fetch or http) need Node 24 or newer.",
     "installNode": "Install Node 24 or newer.",
-    "nodeMinimal": "Node {version}: cannot follow the functions; minimal mode only (requests and boundaries).",
+    "nodeMinimal": "Node {version}: too old to start the app with CodeTAC (it needs Node 22.15 or newer); codetac check works on this Node.",
     "project": "The project",
     "noPackage": "No package.json or server file (server.js, index.js…) in this folder.",
     "noPackageFix": "Run the command in the app's folder, or give the start command: codetac . -- node server.js",

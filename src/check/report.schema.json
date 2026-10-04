@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deltaxmodules.github.io/codetacvibe/schema/check-report.v1.json",
+  "title": "codeTAC check report",
+  "description": "What `codetac check --json` prints. Names, files and lines only: never the value of a secret or of a .env variable. A new field may be added without changing schemaVersion; a field removed or changed in meaning changes it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tool", "project", "verdict", "counts", "findings", "info", "passed", "leaves", "notes", "problems", "seconds"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": { "name": { "const": "codetac" }, "version": { "type": "string" } }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "types", "files"],
+      "properties": {
+        "name": { "type": "string" },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "files": { "description": "Files read.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "verdict": {
+      "description": "red: at least one 🔴 (do not ship like this); yellow: only 🟡 (look at it); clean: nothing found in what is checked; empty: no Node or Python project in the folder.",
+      "enum": ["red", "yellow", "clean", "empty"]
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["red", "yellow", "passed"],
+      "properties": {
+        "red": { "type": "integer", "minimum": 0 },
+        "yellow": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "findings": {
+      "description": "🔴 first, then 🟡.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "kind", "text", "why", "places"],
+        "properties": {
+          "level": { "enum": ["red", "yellow"] },
+          "kind": {
+            "enum": ["public-secret", "secret-in-browser", "env-tracked", "env-not-ignored", "env-no-git", "literal-key", "no-rls-browser",
+              "rls-unknown-browser", "service-from-browser", "live-key", "remote-supabase", "remote-database", "production-mode"]
+          },
+          "key": { "description": "For literal-key: the kind of key (stripe-live, stripe-test, openai, google…).", "type": "string" },
+          "text": { "description": "What was found, in a sentence.", "type": "string" },
+          "why": { "description": "Why it matters, in a sentence.", "type": "string" },
+          "places": { "$ref": "#/$defs/places" }
+        }
+      }
+    },
+    "info": {
+      "description": "Facts worth knowing that block nothing and do not change the verdict (remote-supabase). Added in 0.13.0 with schemaVersion 1.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "kind", "text", "why", "places"],
+        "properties": {
+          "level": { "const": "info" },
+          "kind": { "enum": ["remote-supabase"] },
+          "text": { "type": "string" },
+          "why": { "type": "string" },
+          "places": { "$ref": "#/$defs/places" }
+        }
+      }
+    },
+    "passed": {
+      "description": "✅ Checks that had something to look at and found nothing wrong.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "text"],
+        "properties": { "kind": { "enum": ["secrets", "env-git", "literal-keys", "rls", "services"] }, "text": { "type": "string" } }
+      }
+    },
+    "leaves": {
+      "description": "The outside services the code sends data to.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "category", "browser", "variable", "places"],
+        "properties": {
+          "name": { "type": "string" },
+          "category": { "type": "string" },
+          "browser": { "description": "Called from code that runs in the browser.", "type": "boolean" },
+          "variable": { "description": "The variable that holds the address, when it is not the service's name.", "type": ["string", "null"] },
+          "places": { "$ref": "#/$defs/places" }
+        }
+      }
+    },
+    "notes": { "description": "What the reading could not see.", "type": "array", "items": { "type": "string" } },
+    "problems": { "description": "Failures of the reading itself (a bug of codeTAC).", "type": "array", "items": { "type": "string" } },
+    "seconds": { "type": "number", "minimum": 0 }
+  },
+  "$defs": {
+    "places": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line"],
+        "properties": { "file": { "description": "Relative to the project folder.", "type": "string" }, "line": { "type": "integer", "minimum": 1 } }
+      }
+    }
+  }
+}

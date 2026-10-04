@@ -15,7 +15,7 @@ Each one covers some of the other's blind spots. Here is what neither sees well.
 - Sites with only HTML and JavaScript, without a Node or Python server.
 - Parts that run on Bun, Deno, Cloudflare Workers or in Next.js middleware. codeTAC warns you when it recognises them.
 - Apps in production or that only exist in the cloud: codeTAC is for your computer, while you develop.
-- Windows has not been tested yet.
+- On Windows, `codetac check` and the floor plan are tested, but starting your app with codeTAC does not work yet.
 
 ## When watching the app run
 
