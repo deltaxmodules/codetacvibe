@@ -48,12 +48,17 @@ function parseArgs(argv) {
     else if (!options.sub && !options.folder && arg === 'diagnose') options.sub = 'diagnose';
     else if (!options.sub && !options.folder && arg === 'report') options.sub = 'report';
     else if (!options.sub && !options.folder && arg === 'structure') options.sub = 'structure';
+    else if (!options.sub && !options.folder && arg === 'check') options.sub = 'check';
     else if (!options.sub && !options.folder && arg === 'privacy') options.sub = 'privacy';
     else if (!options.sub && !options.folder && arg === 'hooks') options.sub = 'hooks';
     else if (!options.sub && !options.folder && arg === 'diff') options.sub = 'diff';
     else if (!options.sub && !options.folder && arg === 'live') options.sub = 'live';
     else if (options.sub === 'live' && !options.live && arg === 'replay') options.live = arg;
-    else if (options.sub === 'live' && arg === '--json') options.json = true;
+    else if ((options.sub === 'live' || options.sub === 'check') && arg === '--json') options.json = true;
+    else if (options.sub === 'check' && arg === '--fail-on') {
+      options.failOn = value();
+      if (!['red', 'yellow'].includes(options.failOn)) { say(t('run.failOn', { value: options.failOn ?? '' })); process.exit(2); }
+    }
     else if (options.sub === 'live' && options.live && options.session === undefined && !options.folder
       && !(() => { try { return statSync(resolve(arg)).isDirectory(); } catch { return false; } })()) options.session = arg;
     else if (options.sub === 'diff' && !options.undo && options.prompt === undefined && !options.folder && (arg === 'undo' || arg === 'redo')) options.undo = arg;
@@ -505,6 +510,13 @@ async function main() {
   }
   const options = parseArgs(process.argv.slice(2));
   if (options.sub === 'help') { say(HELP); return; }
+  // Block K (K1.5): `codetac check` runs from Node 20; the rest needs
+  // registerHooks and node:sqlite (Node 22.15), and is made for Node 24.
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  if ((nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 15)) && !['check', 'version', 'diagnose', 'report'].includes(options.sub)) {
+    say(t('run.nodeTooOld', { version: process.version }));
+    process.exit(1);
+  }
   if (options.sub === 'version') { say(JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version); return; }
   const folder = resolve(options.folder ?? process.cwd());
   if (!existsSync(folder)) { say(t('run.noFolder', { folder })); process.exit(2); }
@@ -532,6 +544,13 @@ async function main() {
     const { loadConfig } = await import('./ai.mjs');
     process.exitCode = privacyCommand({ noAi: options.noAi, on: options.on, off: options.off, reset: options.default, log: options.log ?? null, clearLog: options.clearLog },
       { config: await loadConfig({ directory: recordings }) });
+    return;
+  }
+  if (options.sub === 'check') {
+    // Block K: is the app safe to ship? A static reading; nothing is started.
+    const { checkCommand } = await import('./check/check.mjs');
+    process.exitCode = await checkCommand(root, { json: options.json ?? false, failOn: options.failOn ?? 'red',
+      version: JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')).version });
     return;
   }
   if (options.sub === 'structure') {

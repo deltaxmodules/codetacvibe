@@ -32,7 +32,7 @@ Tags such as **database**, **HTTP**, **email** mark the moments when your app ta
 | --- | --- |
 | Database | Postgres, MySQL, SQLite, MongoDB, Redis, Supabase — with the table and the operation |
 | AI | OpenAI, Anthropic, Google, Mistral, Groq, OpenRouter, local models… |
-| Email and messages | Resend, SendGrid, Postmark, Mailgun, nodemailer, Twilio… |
+| Email and messages | Resend, SendGrid, Postmark, Mailgun, Brevo, nodemailer, Twilio… |
 | Payments | Stripe, showing **test** or **live** mode |
 | Sign-in | NextAuth, Supabase Auth, Clerk |
 | Files | the computer's disk, S3, Supabase Storage |

@@ -9,8 +9,9 @@ import { t } from '../text.mjs';
 const MAX_PROOFS = 12;
 // Names that hold secrets, and keys made to be public (they never alert).
 const SECRET_NAME = /SECRET|KEY|TOKEN|PASSWORD|PASSWD|SERVICE_ROLE|PRIVATE|CREDENTIAL/i;
-// The environment may follow (STRIPE_PUBLISHABLE_KEY_LIVE).
-const PUBLIC_BY_DESIGN = /(^|_)(ANON|PUBLISHABLE|PUBLIC)_KEY(_(LIVE|TEST|PROD|PRODUCTION|DEV|DEVELOPMENT|STAGING|LOCAL))?$/i;
+// The environment may follow (STRIPE_PUBLISHABLE_KEY_LIVE). A Firebase web
+// API key only names the project: Firebase puts it in the browser (K1.7).
+const PUBLIC_BY_DESIGN = /(^|_)(ANON|PUBLISHABLE|PUBLIC)_KEY(_(LIVE|TEST|PROD|PRODUCTION|DEV|DEVELOPMENT|STAGING|LOCAL))?$|(^|_)FIREBASE_(WEB_)?API_KEY$/i;
 
 // The browser prefixes of the frameworks of the project (step 2 adds the
 // project's own settings, such as Vite's envPrefix).

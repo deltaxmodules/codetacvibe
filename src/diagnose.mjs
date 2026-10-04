@@ -1,6 +1,6 @@
 // `codetac diagnose` (Fase 5): o que está e o que não está a funcionar,
 // em linguagem simples, a partir do projeto, do painel e da última gravação.
-import { registerHooks } from 'node:module';
+import nodeModule from 'node:module';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
@@ -63,8 +63,8 @@ export async function diagnose(root, { panelPort = 4000, out = text => process.s
   out(`${t('diagnose.title', { root })}\n`);
   out(t('diagnose.computer'));
   const [major] = process.versions.node.split('.').map(Number);
-  if (major >= 24 && typeof registerHooks === 'function') ok(t('diagnose.nodeOk', { version: process.version }));
-  else if (typeof registerHooks === 'function') note(t('diagnose.nodeOld', { version: process.version }), t('diagnose.installNode'));
+  if (major >= 24 && typeof nodeModule.registerHooks === 'function') ok(t('diagnose.nodeOk', { version: process.version }));
+  else if (typeof nodeModule.registerHooks === 'function') note(t('diagnose.nodeOld', { version: process.version }), t('diagnose.installNode'));
   else bad(t('diagnose.nodeMinimal', { version: process.version }), t('diagnose.installNode'));
 
   out(`\n${t('diagnose.project')}`);

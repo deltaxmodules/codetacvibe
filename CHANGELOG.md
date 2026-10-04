@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.0
+
+**Is my app safe to ship? `codetac check`.**
+
+- **`npx codetac check`** reads your project, without starting it, and answers in seconds:
+  - 🔴 **Do not ship like this:** a secret with a public prefix (`NEXT_PUBLIC_`, `VITE_`…) that the code reads; a `.env` file followed by git; a key written in the code (a live Stripe key, OpenAI, AWS…); a table with row level security off, used from the browser.
+  - 🟡 **Look at this:** a table used from the browser whose row level security no SQL file shows; an AI, email or message service called from the browser; a public secret no code reads yet; a `.env` git does not ignore; a test or Google key in the code; a local setup that points to real things (a live Stripe key, a database on another computer, `NODE_ENV=production`).
+  - **ℹ Good to know** (a Supabase project in the cloud), **📤 Where data goes** (each outside service, from the browser or the server) and **✅ Checked and fine** (only when there was something to check).
+  - Each finding says why and where (file and line). Values are never shown: the development `.env` files are read only to classify each value (live or test, local or remote).
+- **For CI:** ends with 1 on a 🔴 (or a 🟡, with `--fail-on yellow`); `--json` prints the report in a published [JSON Schema](https://deltaxmodules.github.io/codetacvibe/schema/check-report.v1.json).
+- **`check` runs from Node 20.** The other commands need Node 22.15 or newer and are made for Node 24. Below 22.15 they now say so clearly, instead of failing with a cut-off error. `codetac diagnose` works on Node 20 too.
+- **Windows:** `check` and the floor plan are tested on Windows; starting your app with codeTAC does not work there yet.
+- The floor plan no longer counts Claude Code's `.claude/settings.local.json` (where `codetac hooks install` writes), even when git does not ignore it. Before, a prompt's report could show it as a change.
+- A Firebase web API key is no longer taken for a secret: Firebase puts it in the browser by design.
+- New manual page: [Is my app safe to ship?](https://deltaxmodules.github.io/codetacvibe/guide/is-my-app-safe-to-ship). The readme is now short; everything else is in the manual.
+
 ## 0.12.1
 
 - **The CodeTAC button on your app's page now says whether it is recording.** Its dot was meant to turn green after each action, but since 0.9.0 it only blinked and went back to grey, as if nothing had been recorded. Now:
@@ -171,4 +187,18 @@
 
 Also from 0.3.3 (already published): MongoDB, Prisma (native engine), AI tokens over `http`/axios, postgres.js and Redis boundaries.
 
-What the static reading does not see is listed in the README, section 5.
+What the static reading does not see is listed in the manual: [What codeTAC can't see](https://deltaxmodules.github.io/codetacvibe/guide/what-codetac-cant-see).
+
+## 0.3.0 — upgrading from 0.2
+
+Version 0.3.0 is in English and renames the commands and options:
+
+| 0.2 | 0.3 and later |
+| --- | --- |
+| `codetac diagnostico` · `relatorio` · `ajuda` | `codetac diagnose` · `report` · `help` |
+| `--parte` · `--porta` · `--painel` | `--part` · `--port` · `--panel-port` |
+| `--minimo` · `--sim` · `--nao-abrir` | `--minimal` · `--yes` · `--no-open` |
+| `~/.codetac/ai.json` replaces `~/.codetac/ia.json` | |
+| `"provider": "none"` · `"compatible"` replace `"nenhum"` · `"compativel"` | |
+
+`CODETAC_LANG` no longer exists: explanations are always in English. Recordings made with 0.2 still open.

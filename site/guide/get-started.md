@@ -6,7 +6,7 @@
 
 ## What you need
 
-1. **Node.js 24 or newer.** Open the Terminal and type `node -v`. It must show `v24` or a higher number. If it does not, install the LTS version from [nodejs.org](https://nodejs.org). You need Node even if your app is in Python: codeTAC itself is installed with npm.
+1. **Node.js 24 or newer.** Open the Terminal and type `node -v`. It must show `v24` or a higher number. If it does not, install the LTS version from [nodejs.org](https://nodejs.org). You need Node even if your app is in Python: codeTAC itself is installed with npm. To only check whether your app is safe to ship (`codetac check`), Node 20 is enough.
 2. **Your app's project on your computer.** If your app lives in Lovable, Bolt, v0 or Replit, connect it to GitHub first, then download it:
    - on GitHub, press **Code → Download ZIP** and unzip the file;
    - or, if you use Git, `git clone <address>`.
@@ -15,7 +15,7 @@
 
 ::: tip How to open the Terminal
 - **Mac:** press Cmd+Space, type “Terminal”, press Enter.
-- **Windows:** Start menu, type “PowerShell”, press Enter. codeTAC has not been tested on Windows yet.
+- **Windows:** Start menu, type “PowerShell”, press Enter. On Windows, `codetac check` and the floor plan work; starting your app with codeTAC does not work yet.
 :::
 
 ## Which apps work
